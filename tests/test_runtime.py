@@ -880,3 +880,64 @@ def test_shutdown_does_not_resurrect_cancelled_maintenance(runtime):
         assert Runtime(runtime.data, runtime.config).queue.empty()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("restart_at,backup_at,hour,maintenance", [
+    ("05:00", "05:00", 5, "restart"),
+    ("07:00", "05:00", 7, "restart"),
+    ("off", "06:00", 6, "backup"),
+    ("off", "off", 5, None),
+])
+def test_daily_update_check_runs_once_at_maintenance_time(runtime, restart_at, backup_at, hour, maintenance):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    async def scenario():
+        now = datetime(2026, 11, 13, hour, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        runtime.config.overrides.update({"auto_update": True, "restart_at": restart_at, "backup_at": backup_at})
+        runtime.schedule_started = now.replace(hour=0)
+        runtime.process = SimpleNamespace(returncode=None)
+        runtime.game_ready = True
+        with patch("app.runtime.datetime") as clock:
+            clock.now.return_value = now - timedelta(minutes=1)
+            await runtime.tick()
+            assert not any(job["action"] == "check-update" for job in runtime.jobs)
+            clock.now.return_value = now
+            for _ in range(10):
+                await runtime.tick()
+        checks = [job for job in runtime.jobs if job["action"] == "check-update"]
+        assert len(checks) == 1
+        assert runtime.daily["check-update:2026-11-13"]
+        # Finish all pending work, then recreate the supervisor on the same day.
+        for job in runtime.jobs:
+            job["state"] = "concluído"
+        runtime.persist_pending()
+        restored = Runtime(runtime.data, runtime.config)
+        restored.schedule_started = now.replace(hour=0)
+        restored.process = SimpleNamespace(returncode=None)
+        restored.game_ready = True
+        with patch("app.runtime.datetime") as clock:
+            clock.now.return_value = now + timedelta(hours=1)
+            await restored.tick()
+            assert restored.queue.empty()
+            clock.now.return_value = now + timedelta(days=1)
+            await restored.tick()
+        assert restored.jobs[0]["action"] == "check-update"
+        assert [job["action"] for job in restored.jobs] == (["check-update", maintenance] if maintenance else ["check-update"])
+
+    asyncio.run(scenario())
+
+
+def test_daily_update_uses_same_stop_as_restart(runtime):
+    async def scenario():
+        runtime.schedule_once("check-update")
+        runtime.schedule_once("restart")
+        runtime.available_build = AsyncMock(return_value="2")
+        runtime.installed_build = lambda: "1"
+        check = runtime.queue.get_nowait()
+        await runtime.execute(check)
+        runtime.queue.task_done()
+        assert runtime.queue.qsize() == 1
+        assert runtime.jobs[-1]["action"] == "update"
+
+    asyncio.run(scenario())

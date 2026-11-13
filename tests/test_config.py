@@ -44,3 +44,15 @@ def test_arguments_no_shell_injection_and_order(tmp_path):
 def test_invalid_settings(config, field, value):
     with pytest.raises(ValueError):
         config.change({field: value}, [])
+
+
+def test_legacy_update_interval_does_not_break_existing_installation(tmp_path):
+    import json
+    from app.config import ConfigStore
+
+    path = tmp_path / "config/overrides.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"update_interval": 1800, "server_name": "Existing"}))
+    store = ConfigStore(tmp_path, {"SERVER_PASSWORD": "game-password", "UPDATE_INTERVAL": "1800"})
+    assert store.effective().server_name == "Existing"
+    assert "update_interval" not in store.describe()["values"]

@@ -183,11 +183,12 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     target = tmp_path / "server"
     log = tmp_path / "commands"
     env = {"VALHEIM_INSTALL_DIR": str(target), "COMMAND_LOG": str(log)}
-    result = shell(STUBS, env=env, input="\n\nsecret-game-password\n")
+    result = shell(STUBS, env=env, input="\n\n\nsecret-game-password\n")
     assert result.returncode == 0, result.stderr
     assert "secret-game-password" not in result.stdout
     assert "203.0.113.20:2456" in result.stdout
     original = (target / ".env").read_bytes()
+    assert b'WORLD_NAME="Dedicated"' in original
     original_compose = (target / "compose.yaml").read_bytes()
     assert "compose pull" in log.read_text()
     assert "compose run --rm --no-deps valheim preflight" in log.read_text()
@@ -208,9 +209,17 @@ def test_installation_directories_are_accessible_but_secrets_stay_private(tmp_pa
     target.mkdir(parents=True)
     target.chmod(0o700)
     result = shell(STUBS, env={"VALHEIM_INSTALL_DIR": str(target), "COMMAND_LOG": str(tmp_path / "commands")},
-                   input="\n\nsecret-game-password\n")
+                   input="\n\n\nsecret-game-password\n")
     assert result.returncode == 0, result.stderr
     assert target.stat().st_mode & 0o777 == 0o755
     assert (target / ".env").stat().st_mode & 0o777 == 0o600
     assert (target / "data").stat().st_mode & 0o777 == 0o700
     assert (target / "data/config/admin.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_install_asks_again_for_invalid_world_and_keeps_custom_name(tmp_path):
+    target = tmp_path / "server"
+    result = shell(STUBS, env={"VALHEIM_INSTALL_DIR": str(target), "COMMAND_LOG": str(tmp_path / "commands")},
+                   input="\n\n../invalid\n world\n" + "a" * 65 + "\nMeu Mundo-1_2\nsecret-game-password\n")
+    assert result.returncode == 0, result.stderr
+    assert 'WORLD_NAME="Meu Mundo-1_2"' in (target / ".env").read_text()

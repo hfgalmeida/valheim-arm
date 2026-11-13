@@ -228,7 +228,6 @@ class Runtime:
         self.lock_file = None
         self.worker_task = None
         self.scheduler_task = None
-        self.last_update = 0
         self.latest_build = None
         self.failed_update_build = None
         self.next_retry = 0
@@ -743,19 +742,24 @@ class Runtime:
         if self.live and self.game_ready:
             # Query first: a newly found update can absorb the queued daily
             # restart/backup before that maintenance operation starts.
-            if settings.auto_update and time.monotonic() - self.last_update >= settings.update_interval:
-                self.last_update = time.monotonic()
-                self.schedule_once("check-update")
+            update_at = settings.restart_at if settings.restart_at != "off" else settings.backup_at
+            if update_at == "off":
+                update_at = "05:00"
             due = []
-            for action, hour in (("restart", settings.restart_at), ("backup", settings.backup_at)):
+            for action, hour in (("check-update", update_at if settings.auto_update else "off"),
+                                 ("restart", settings.restart_at), ("backup", settings.backup_at)):
                 key = action + ":" + now.date().isoformat()
                 if hour != "off" and now.strftime("%H:%M") >= hour and key not in self.daily:
                     scheduled_at = now.replace(hour=int(hour[:2]), minute=int(hour[3:]), second=0, microsecond=0)
                     if scheduled_at > self.schedule_started:
                         due.append((action, key))
             if due:
-                # restart already includes snapshot, coalesce daily tasks.
-                self.schedule_once("restart" if any(action == "restart" for action, _ in due) else "backup")
+                # Check first so a new update absorbs the same daily stop.
+                if any(action == "check-update" for action, _ in due):
+                    self.schedule_once("check-update")
+                maintenance = {action for action, _ in due} - {"check-update"}
+                if maintenance:
+                    self.schedule_once("restart" if "restart" in maintenance else "backup")
                 self.daily.update({key: True for _, key in due})
                 self.daily = {k: v for k, v in self.daily.items() if k.split(":", 1)[1] >= now.date().isoformat()}
                 atomic_json(self.daily_path, self.daily)

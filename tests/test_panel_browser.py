@@ -82,15 +82,32 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.locator("#password").fill("admin-test-password")
         page.get_by_role("button", name="Entrar", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
+        assert page.get_by_role("tab").count() == 5
+        assert page.get_by_role("tabpanel").count() == 1
+        assert page.get_by_role("tab", name="Visão geral", exact=True).get_attribute("aria-selected") == "true"
+        assert page.locator("#config-form").is_hidden()
+        # Arrow keys activate the next tab; Home/End reach either end.
+        page.get_by_role("tab", name="Visão geral", exact=True).focus()
+        page.keyboard.press("End")
+        assert page.locator("#logs").is_visible()
+        page.keyboard.press("ArrowRight")
+        assert page.locator("#cpu").is_visible()
+        page.keyboard.press("ArrowRight")
+        assert page.locator("#config-form").is_visible()
+        assert page.get_by_role("tab", name="Configuração", exact=True).get_attribute("tabindex") == "0"
         page.locator("#setting-server_name").fill("Mundo de teste")
         page.locator("#setting-modifier_resources").select_option("more")
         page.get_by_role("button", name="Salvar configuração", exact=True).click()
         page.wait_for_function("document.querySelector('#notice').textContent.includes('Configuração salva')")
         assert requests[-1][1]["changes"] == {"server_name": "Mundo de teste", "modifier_resources": "more"}
+        page.get_by_role("tab", name="Visão geral", exact=True).click()
         page.get_by_role("button", name="Criar backup", exact=True).click()
         page.wait_for_function("document.querySelector('#notice').textContent.includes('Operação enviada')")
         assert requests[-1] == ("/actions", {"action": "backup"})
         assert page.locator("#players").inner_text() == "2"
+        page.get_by_role("tab", name="Jogadores", exact=True).click()
+        assert page.locator("#users-form").is_visible()
+        page.get_by_role("tab", name="Backups", exact=True).click()
         page.locator("#cloud-enabled").select_option("true")
         page.locator("#cloud-folder").fill("Valheim/teste")
         page.locator("#cloud-file").set_input_files({"name": "valheim-cloud.conf", "mimeType": "text/plain",
@@ -114,8 +131,15 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert page.locator("#backup-list a").count() == 1
         artifact = Path(__file__).resolve().parents[1] / ".artifacts/panel.png"
         artifact.parent.mkdir(exist_ok=True)
+        page.get_by_role("tab", name="Visão geral", exact=True).click()
         page.screenshot(path=str(artifact), full_page=True)
         page.set_viewport_size({"width": 390, "height": 844})
-        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        for tab in page.get_by_role("tab").all():
+            tab.click()
+            assert tab.get_attribute("aria-selected") == "true"
+            assert page.get_by_role("tabpanel").count() == 1
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        page.get_by_role("tab", name="Configuração", exact=True).click()
+        page.screenshot(path=str(artifact.with_name("panel-mobile.png")), full_page=True)
         assert not errors
         browser.close()

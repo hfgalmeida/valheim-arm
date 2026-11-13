@@ -33,7 +33,7 @@ curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/install.s
 sudo bash install-valheim.sh
 ```
 
-Informe o **IP público da instância Oracle**, o nome do servidor, a senha do jogo e uma senha administrativa para o painel. O instalador prepara o Docker, baixa a imagem pública `hfgalmeida/valheim-arm:latest` e inicia os serviços em `./valheim-arm`.
+Informe o **IP público da instância Oracle**, o nome do servidor, o nome do mundo, a senha do jogo e uma senha administrativa para o painel. O instalador prepara o Docker, baixa a imagem pública `hfgalmeida/valheim-arm:latest` e inicia os serviços em `./valheim-arm`.
 
 ## Jogar
 

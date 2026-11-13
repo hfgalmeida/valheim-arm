@@ -32,8 +32,7 @@ Os nomes abaixo são variáveis do Compose e do `.env`. Configurações do jogo/
 | `TIMEZONE` | America/Sao_Paulo | Fuso IANA usado pelo agendador |
 | `RESTART_AT` | 05:00 | HH:MM ou off |
 | `BACKUP_AT` | 05:00 | HH:MM ou off; combinado com reinício quando coincidem |
-| `AUTO_UPDATE` | true | Consulta e agenda atualização do jogo |
-| `UPDATE_INTERVAL` | 1800 | Consulta em segundos; mínimo 300 |
+| `AUTO_UPDATE` | true | Consulta uma vez por dia, no horário do reinício, e agenda atualização do jogo |
 | `RETAIN_DAILY` / `RETAIN_WEEKLY` | 7 / 4 | Dias e semanas distintos representados nos arquivos completos |
 | `BEPINEX` | false | Injeção do pack Linux, com plugins locais |
 | `BEPINEX_URL` / `BEPINEX_SHA256` | vazios | URL HTTPS e hash obrigatório quando habilitado |
@@ -109,6 +108,8 @@ O Docker normalmente publica as portas antes das regras do UFW. Use a OCI para r
 
 <a id="painel"></a>
 ## Painel e certificado
+
+O painel organiza as funções em cinco abas: **Visão geral** (controles e métricas), **Configuração** (mundo, manutenção e mods), **Jogadores** (listas de acesso), **Backups** (arquivos e envio à nuvem) e **Atividade** (operações e logs). Estado, jogadores conectados e código de crossplay permanecem no topo. As abas também aceitam as setas do teclado, Home e End.
 
 O endereço é `https://SEU_IP`. O Caddy e sua configuração HTTPS acompanham a imagem publicada; o Compose inicia o proxy com o IP definido em `SERVER_IP`. A seleção do certificado para acesso por IP já vem configurada. Os dados da autoridade certificadora ficam no volume persistente `caddy_data`, preservando a confiança instalada durante atualizações normais. Consulte o [HTTPS local do Caddy](https://caddyserver.com/docs/automatic-https#local-https).
 
@@ -223,6 +224,8 @@ Para BepInEx, obtenha um **BepInExPack_Valheim Linux** de fonte confiável, calc
 ## Atualização da imagem e recuperação
 
 ### Atualizar jogo, FEX e mods
+
+A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT` (05:00 por padrão), usando o fuso `TIMEZONE`. Se o reinício estiver desativado, usa `BACKUP_AT`; se ambos estiverem desativados, usa 05:00. A consulta precede a manutenção, permitindo atualizar, fazer backup e reiniciar com uma única parada. A data da consulta é persistida para evitar repetições ao recriar o contêiner. A atualização manual pelo painel continua disponível.
 
 Atualizações automáticas do **jogo** passam pela fila, aguardam zero jogadores, encerram graciosamente, criam backup e usam SteamCMD para instalar em uma pasta nova. O ponteiro `data/current` só muda após confirmação de sucesso. Uma falha de download preserva a instalação anterior; quando aplicável, o supervisor volta a iniciá-la. São mantidas duas instalações para recuperação.
 

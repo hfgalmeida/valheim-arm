@@ -54,7 +54,6 @@ class Settings(BaseModel):
     restart_at: str = "05:00"
     backup_at: str = "05:00"
     auto_update: bool = True
-    update_interval: int = Field(default=1800, ge=300, le=86400)
     retain_daily: int = Field(default=7, ge=1, le=365)
     retain_weekly: int = Field(default=4, ge=1, le=52)
     bepinex: bool = False
@@ -136,6 +135,7 @@ class ConfigStore:
         self.path = data / "config/overrides.json"
         self.base = {key: environ[key.upper()] for key in Settings.model_fields if key.upper() in environ}
         self.overrides = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        self.overrides.pop("update_interval", None)  # Replaced by daily scheduling.
         self.effective()  # Fail immediately, never silently discard invalid overrides.
 
     def effective(self):

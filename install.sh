@@ -101,7 +101,7 @@ fetch_if_missing() {
 }
 
 create_config() {
-    local detected ip name password temporary
+    local detected ip name world password temporary
     detected="$(curl -4 --fail --silent --show-error --connect-timeout 5 --max-time 8 https://api.ipify.org 2>/dev/null || true)"
     valid_ipv4 "$detected" || detected=''
     while true; do
@@ -114,6 +114,14 @@ create_config() {
     name="${name:-Meu Valheim}"
     [[ ${#name} -le 64 && ! "$name" =~ [[:cntrl:]] ]] || die 'Nome inválido: máximo 64 caracteres.'
     while true; do
+        IFS= read -r -p 'Nome do mundo [Dedicated]: ' world
+        world="${world:-Dedicated}"
+        if [[ ${#world} -le 64 && "$world" =~ ^[[:alnum:]_\ -]+$ && "$world" != ' '* && "$world" != *' ' ]]; then
+            break
+        fi
+        printf 'Use até 64 caracteres: letras, números, espaços internos, hífen ou sublinhado.\n'
+    done
+    while true; do
         read -r -s -p 'Senha para entrar no jogo (5–128 caracteres): ' password
         printf '\n'
         if [[ ${#password} -ge 5 && ${#password} -le 128 && ! "$password" =~ [[:cntrl:]] ]]; then
@@ -125,6 +133,7 @@ create_config() {
     {
         env_value SERVER_IP "$ip"
         env_value SERVER_NAME "$name"
+        env_value WORLD_NAME "$world"
         env_value SERVER_PASSWORD "$password"
     } > "$temporary"
     unset password
