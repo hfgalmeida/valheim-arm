@@ -8,6 +8,32 @@ Seu mundo Valheim na Oracle ARM, com instalação pelo Docker Hub e manutenção
 
 Na instância Oracle, libere **UDP 2456–2457** para jogar e **TCP 443** para o painel, tanto na rede OCI quanto no firewall local. Mantenha o acesso SSH. Depois execute:
 
+<details>
+<summary>Como liberar as portas na OCI e no Ubuntu</summary>
+
+**Na OCI:** abra **Compute → Instances → sua instância**. Na VNIC principal, abra a **Subnet** e depois **Security Lists**. Selecione a lista associada à sub-rede e use **Add Ingress Rules**:
+
+| Uso | Protocolo | Porta de destino | Origem (CIDR) |
+|---|---|---|---|
+| Jogo | UDP | `2456-2457` | `0.0.0.0/0` |
+| Painel | TCP | `443` | IP público do seu computador seguido de `/32` |
+| SSH/SCP | TCP | `22` | Preserve a regra de acesso SSH existente |
+
+Deixe a porta de origem como **All** e **Stateless** desmarcado (regra stateful). Para o painel, por exemplo, o IP `203.0.113.25` vira `203.0.113.25/32`. Se usar um **Network Security Group**, adicione as mesmas regras de entrada no NSG associado à VNIC. Veja o [guia de regras da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
+
+**No Ubuntu, se você usa UFW**, execute na sessão SSH do servidor (porta SSH padrão 22):
+
+```sh
+sudo ufw allow 22/tcp
+sudo ufw allow 2456:2457/udp
+sudo ufw allow 443/tcp
+sudo ufw status verbose
+```
+
+Se o status for `inactive`, o UFW não está filtrando o tráfego. O Docker configura suas próprias regras para as portas publicadas e esse tráfego pode passar antes do UFW; use as regras da OCI para restringir quem acessa o painel. Preserve regras de firewall existentes. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+
+</details>
+
 ```sh
 curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/install.sh -o install-valheim.sh
 bash install-valheim.sh
@@ -43,7 +69,60 @@ Os saves ficam em `valheim-arm/data`. Baixe uma cópia dos backups pelo painel p
 
 Acesse **https://SEU_IP** e entre com a senha administrativa definida durante a instalação. Lá você pode mudar configurações, habilitar crossplay, administrar usuários e baixar/restaurar backups.
 
-O HTTPS por IP usa um certificado local. Para confiar nele no navegador, siga a [orientação do certificado](docs/REFERENCE.md#painel). Isso é opcional para começar a jogar.
+O HTTPS por IP usa um certificado local. Baixe e importe o certificado para confiar nele no navegador. Isso é opcional para começar a jogar.
+
+<a id="certificado"></a>
+<details>
+<summary>Baixar o certificado com SCP no Windows ou Linux</summary>
+
+**1. Prepare o certificado no servidor**, pela sessão SSH, depois de iniciar a instalação:
+
+```sh
+cd ~/valheim-arm
+sudo docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./valheim-root.crt
+sudo chmod 644 valheim-root.crt
+```
+
+Copie somente esse certificado público. Nos exemplos abaixo, substitua `SEU_IP` pelo IP da Oracle e o caminho `oracle.key` pela chave privada que você usa no SSH. Os comandos seguintes são executados **no seu computador**, onde está o navegador. O usuário padrão do Ubuntu na OCI é `ubuntu`; ajuste o usuário e `/home/ubuntu/valheim-arm` se sua instalação usar outros caminhos.
+
+**2. No Windows 10/11:** o SCP vem no **OpenSSH Client**. Confira no PowerShell com `Get-Command scp`. Se não estiver instalado, abra o **PowerShell como administrador** e execute:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+Depois, no PowerShell do seu usuário, baixe o arquivo para Downloads:
+
+```powershell
+scp -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt "$env:USERPROFILE\Downloads\valheim-root.crt"
+```
+
+Para confiar no certificado apenas para seu usuário Windows:
+
+```powershell
+Import-Certificate -FilePath "$env:USERPROFILE\Downloads\valheim-root.crt" -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+Feche e reabra o navegador. A instalação do cliente segue o [guia OpenSSH da Microsoft](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
+
+**3. No Linux (Ubuntu/Debian):** instale o cliente OpenSSH e baixe para a pasta atual:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y openssh-client ca-certificates
+scp -i ~/.ssh/oracle.key ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt ./valheim-root.crt
+```
+
+Para adicionar à lista de autoridades confiáveis do sistema:
+
+```sh
+sudo cp valheim-root.crt /usr/local/share/ca-certificates/valheim-root.crt
+sudo update-ca-certificates
+```
+
+Se o navegador usar uma lista própria de certificados, importe também `valheim-root.crt` nas suas autoridades confiáveis. Mais detalhes na [referência do certificado](docs/REFERENCE.md#painel).
+
+</details>
 
 Uma parada solicitada pelo painel permanece parada até você iniciar novamente. Atualizar a imagem Docker do painel/FEX e restaurar backups são tarefas do administrador; o jogo recebe suas próprias atualizações automaticamente.
 

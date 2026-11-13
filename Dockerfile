@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/build_fex.py /tmp/build_fex.py
 RUN python3 /tmp/build_fex.py "$FEX_VERSION" "$BUILD_JOBS"
-ENV HOME=/tmp/fex-home
-RUN FEXRootFSFetcher --assume-yes --extract --distro-name ubuntu --distro-version 24.04 --force-ui tty
+# FEX appends "RootFS/" directly to this override, so retain the trailing slash.
+ENV HOME=/tmp/fex-home FEX_APP_DATA_LOCATION=/tmp/fex-home/.local/share/fex-emu/
+RUN mkdir -p "$HOME" "$FEX_APP_DATA_LOCATION" \
+    && FEXRootFSFetcher --assume-yes --extract --distro-name ubuntu --distro-version 24.04 --force-ui tty
 COPY docker/collect_rootfs.py /tmp/collect_rootfs.py
 RUN python3 /tmp/collect_rootfs.py
 

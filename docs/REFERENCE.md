@@ -93,6 +93,8 @@ openssl x509 -in valheim-root.crt -noout -fingerprint -sha256
 
 Transfira `valheim-root.crt` via SCP para seu computador e importe como autoridade confiável no sistema/navegador. No Windows, use o gerenciador de certificados do usuário → Autoridades de Certificação Raiz Confiáveis → Importar. Compare a impressão digital com a exibida via SSH. Instale somente o certificado público `root.crt`; não copie a chave da autoridade. Consulte o [HTTPS local do Caddy](https://caddyserver.com/docs/automatic-https#local-https).
 
+Os comandos para instalar o cliente SCP, baixar o certificado no Windows/Linux e importá-lo estão no [README](../README.md#certificado).
+
 Entre com a senha definida no servidor. Para trocá-la:
 
 ```sh
