@@ -200,6 +200,16 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 3. Após preservar o estado anterior e concluir a restauração, arquive o marcador de encerramento incompleto (renomeie `data/config/game-active.json` para `game-active.recovered.json`). Não remova o marcador só para contornar uma falha sem conferir os saves.
 4. Selecione o mundo correto nas configurações e inicie com `sudo docker compose up -d`. O painel pode estar indisponível enquanto somente o serviço do jogo estiver parado; ajustes offline devem ser feitos com o supervisor parado e JSON válido.
 
+### Parada do contêiner e reinícios
+
+O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações do painel e as manutenções agendadas continuam exigindo zero jogadores confirmado por dois minutos, com confirmação A2S no modo Steam e uma verificação final das conexões.
+
+O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação `World saved` antes de marcar a parada como limpa.
+
+Uma operação que já escreve saves ou backups tem até 120 segundos para concluir antes do cancelamento da tarefa; consultas de metadados da Steam são canceladas diretamente. O Compose mantém `stop_grace_period: 6m` para acomodar o encerramento HTTP, a operação e a saída do jogo. Portanto, alguns minutos de espera no `down` podem ser normais. Acompanhe em outra sessão com `sudo docker logs -f valheim-server`; evite encurtar o prazo com `down --timeout` durante um salvamento.
+
+Sem confirmação de saída e salvamento, o supervisor mantém o marcador de encerramento incompleto e não cria um backup que poderia ser inconsistente. Manutenções não enviam SIGKILL ao jogo; se o processo não encerrar dentro do prazo do contêiner, o Docker pode terminar forçadamente os processos restantes. Uma vez iniciado o desligamento, tarefas e a recuperação automática não voltam a iniciar o jogo. Uma nova inicialização do contêiner inicia o servidor novamente.
+
 ### Diagnóstico
 
 | Sintoma | Verificação |
@@ -213,6 +223,7 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 | SteamCMD: `Missing configuration` no app 896660 | O supervisor conclui a autoatualização separadamente, seleciona Linux e tenta o download até três vezes, renovando apenas `appcache/appinfo.vdf`, com esperas de 10 e 20 segundos. Se persistir, consulte os logs Steam em `data/steamcmd/logs` e `data/home/Steam/logs`; a recuperação geral tenta iniciar novamente após cinco minutos |
 | Tarefa fica adiada | Jogadores presentes, eventos recentes, A2S inacessível ou snapshot Connections ausente/expirado |
 | Crossplay não aparece | Saída PlayFab, log com join code, `crossplay` efetivo e compatibilidade dos mods |
+| Crossplay: `libatomic.so.1` ausente ou `DllNotFoundException` em Party | As dependências precisam ser amd64 dentro do rootfs FEX. A imagem inclui `libatomic1`, `libstdc++6`, `libpulse0` e `libpulse-mainloop-glib0` e suas dependências; instalar os pacotes ARM no host não corrige o ambiente x86. Atualize a imagem. Ao iniciar com crossplay, o supervisor verifica as dependências reais de `libparty.so` antes de executar o jogo |
 | Backup não restaura | Checksum lateral, integridade do tar.gz, espaço livre e jogo parado |
 | Painel mostra CPU limitada ao supervisor | cgroup v2 indisponível; habilitar o ambiente de referência em vez de interpretar esse valor como consumo do jogo |
 
@@ -288,6 +299,8 @@ As duas consultas usam `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` já configurados
 Após enviar os arquivos ao GitHub e cadastrar as credenciais, abra **Actions → Publish Docker Hub → Run workflow**. O formulário permite `fex_version=latest` ou uma tag estável como `FEX-2611`. Pushes automáticos usam a última release estável.
 
 A versão do FEX é resolvida antes do build e passada como argumento fixo. Assim, o cache não esconde uma release nova do emulador. A tag FEX aparece nos labels da imagem e sua proveniência completa em `/opt/build-info.json`. O cache de construção é armazenado no GitHub Actions.
+
+O build complementa o rootfs com as bibliotecas amd64 de atomic, C++ e PulseAudio necessárias ao jogo/PlayFab. O APT nativo usa fontes Ubuntu 24.04 assinadas e uma base de estado isolada para baixar a cadeia de dependências amd64; `dpkg-deb` extrai os arquivos sem executar scripts de instalação x86. Cada pacote, versão, arquitetura e SHA256 aparece em `guest_packages` no `/opt/build-info.json`. A publicação falha se uma biblioteca principal não for x86_64 ou se o carregador não resolver suas dependências pelo FEX. A verificação usa diretamente `ld-linux-x86-64.so.2 --list`, pois `ldd` sob emulação pode acabar listando dependências ARM do próprio emulador.
 
 Enquanto a versão ainda não tiver sido publicada, uma nova tentativa pode incorporar um FEX/rootfs/base atualizado. Após publicar, escolha outro número em `VERSION` para gerar uma nova imagem. Use o digest Docker para identificar exatamente o artefato publicado. O resumo do workflow lista as tags, e os logs de push informam o digest. A imagem é somente `linux/arm64`, ajustada a Neoverse N1.
 
@@ -435,6 +448,8 @@ No Windows com Edge instalado, use `$env:RUN_BROWSER_TESTS='1'` e `$env:BROWSER_
 ## Instalação e migração
 
 O instalador aceita Ubuntu 24.04 e 26.04 LTS ARM64 com páginas de 4 KiB, usa o repositório oficial Docker correspondente ao host (`noble` ou `resolute`) quando necessário e grava a instalação em `./valheim-arm`. Para escolher outra pasta, execute `VALHEIM_INSTALL_DIR=/caminho/servidor bash install-valheim.sh`. O IP sugerido é obtido por HTTPS em api.ipify.org e pode ser alterado no prompt. As portas da OCI e do firewall local precisam estar liberadas antes de jogar; o instalador não altera regras da nuvem.
+
+Se o UFW estiver ativo, o instalador acrescenta permissões de entrada para UDP 2456–2457 e TCP 443, inclusive em uma nova execução sobre instalação existente. Não habilita/desabilita o UFW, não altera SSH ou políticas padrão e não remove regras existentes. UFW ausente ou inativo é apenas informado. As regras de publicação/NAT do Docker normalmente passam antes do UFW; isso não contorna a rede OCI nem garante passagem por regras adicionais de encaminhamento, `DOCKER-USER`, firewalld ou nftables. O instalador não modifica esses outros firewalls.
 
 Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, Caddyfile, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
 

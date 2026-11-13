@@ -73,6 +73,22 @@ prepare_docker() {
     "${DOCKER[@]}" compose version >/dev/null || die 'Docker Compose indisponível.'
 }
 
+prepare_firewall() {
+    local status
+    if ! command -v ufw >/dev/null 2>&1; then
+        log 'UFW não instalado. Confira regras locais adicionais e a rede OCI; as portas serão publicadas pelo Docker.'
+        return
+    fi
+    status="$(LC_ALL=C "${ROOT[@]}" ufw status)" || die 'Não foi possível consultar o UFW.'
+    if [[ "$status" == *'Status: active'* ]]; then
+        log 'Liberando UDP 2456–2457 e TCP 443 no UFW ativo…'
+        "${ROOT[@]}" ufw allow 2456:2457/udp
+        "${ROOT[@]}" ufw allow 443/tcp
+    else
+        log 'UFW inativo; nenhuma regra local alterada.'
+    fi
+}
+
 fetch_if_missing() {
     local remote="$1" target="$2" temporary
     [[ ! -e "$target" ]] || return 0
@@ -133,6 +149,7 @@ main() {
         sudo -v
     fi
     prepare_docker
+    prepare_firewall
     command -v curl >/dev/null || "${ROOT[@]}" apt-get install -y curl
     umask 077
     mkdir -p -- "$INSTALL_DIR/docker"

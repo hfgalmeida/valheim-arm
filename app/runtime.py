@@ -24,6 +24,10 @@ from .config import ConfigStore, atomic_json
 from .players import Players, query_steam
 
 log = logging.getLogger("valheim")
+GAME_STOP_TIMEOUT = 150
+SHUTDOWN_JOB_TIMEOUT = 120
+STOP_PROGRESS_INTERVAL = 15
+LOG_DRAIN_TIMEOUT = 2
 
 
 class SteamError(RuntimeError):
@@ -80,6 +84,32 @@ def preflight(data: Path):
     result = subprocess.run(["FEXInterpreter", "/usr/bin/env", "VALHEIM_PREFLIGHT=1", "/usr/bin/uname", "-m"], capture_output=True, text=True, timeout=30)
     if result.returncode or "x86_64" not in result.stdout:
         raise RuntimeError("Smoke test do FEX falhou; confira kernel, rootfs e logs: " + result.stderr[-1000:])
+
+
+def guest_library_path(install):
+    root = Path(os.environ.get("FEX_ROOTFS", "/opt/rootfs"))
+    return ":".join(map(str, (install / "linux64", install,
+        install / "valheim_server_Data/Plugins", install / "valheim_server_Data/Plugins/x86_64",
+        root / "usr/lib/x86_64-linux-gnu", root / "lib/x86_64-linux-gnu",
+        root / "usr/lib/x86_64-linux-gnu/pulseaudio")))
+
+
+def check_crossplay(install):
+    root = Path(os.environ.get("FEX_ROOTFS", "/opt/rootfs"))
+    loader = root / "usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"
+    libraries = sorted(p for p in (install / "valheim_server_Data/Plugins").rglob("*.so")
+                       if p.name.lower() == "libparty.so")
+    if not libraries:
+        raise RuntimeError("Crossplay: biblioteca Party não encontrada na instalação do Valheim")
+    env = os.environ.copy()
+    env["FEX_ROOTFS"] = str(root)
+    env.pop("LD_TRACE_LOADED_OBJECTS", None)
+    for library in libraries:
+        paths = guest_library_path(install) + ":" + str(library.parent)
+        result = subprocess.run(["FEXInterpreter", str(loader), "--library-path", paths, "--list", str(library)],
+                                env=env, capture_output=True, text=True, timeout=30)
+        if result.returncode:
+            raise RuntimeError("Crossplay: dependência x86 ausente ou incompatível; atualize a imagem Docker. " + result.stderr[-2000:])
 
 
 def download(url, target, limit=256 * 1024**2):
@@ -185,6 +215,7 @@ class Runtime:
         self.next_recovery = 0
         self.persistence_error = None
         self.last_save = 0
+        self.stop_request = None
         self.clean_marker = data / "config/game-active.json"
         self.clean_stop = not self.clean_marker.exists()
         self.daily_path = data / "config/schedule.json"
@@ -369,6 +400,12 @@ class Runtime:
             await self.install()
         settings = self.config.effective()
         install = self.current_install()
+        if settings.crossplay:
+            try:
+                await asyncio.to_thread(check_crossplay, install)
+            except Exception:
+                self.state = "falha"
+                raise
         await asyncio.to_thread(install_bepinex, self.data, install, settings)
         steam_lib = self.data / "home/.steam/sdk64"
         steam_lib.mkdir(parents=True, exist_ok=True)
@@ -377,13 +414,14 @@ class Runtime:
         if source.exists():
             target.unlink(missing_ok=True)
             target.symlink_to(source)
-        guest_env = ["SteamAppId=892970", "LD_LIBRARY_PATH=" + str(install / "linux64") + ":" + str(install)]
+        guest_env = ["SteamAppId=892970", "LD_LIBRARY_PATH=" + guest_library_path(install)]
         if settings.bepinex:
             guest_env += ["LD_PRELOAD=" + str(install / "libdoorstop.so"), "DOORSTOP_ENABLE=TRUE",
                           "DOORSTOP_ENABLED=1", "DOORSTOP_TARGET_ASSEMBLY=" + str(install / "BepInEx/core/BepInEx.Preloader.dll"),
                           "DOORSTOP_INVOKE_DLL_PATH=" + str(install / "BepInEx/core/BepInEx.Preloader.dll")]
         self.players.reset()
         self.state = "iniciando"
+        self.stop_request = None
         self.running = settings
         self.clean_stop = False
         atomic_json(self.clean_marker, {"started": time.time(), "world": settings.world_name})
@@ -413,47 +451,83 @@ class Runtime:
         finally:
             self.join_code = None
             code = await process.wait()
-            self.state = "parado" if code == 0 else "falha"
+            self.state = "parado" if code in (0, -signal.SIGINT) else "falha"
             self.players.reset()
             self.emit(f"Processo do jogo encerrado: {code}")
             self.next_recovery = time.monotonic() + 300
 
     async def stop(self, safe=True):
-        if not self.live:
+        process = self.process
+        pending = self.stop_request is not None and self.stop_request[0] is process
+        if not self.live and not pending:
             if not self.clean_stop:
                 raise RuntimeError("O jogo terminou sem parada limpa; inicie e encerre corretamente antes de manter os saves")
             return
-        if safe:
-            if not self.players.idle():
-                raise RuntimeError("Aguardando zero jogadores confirmado por dois minutos")
-            if not self.running.crossplay:
-                count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
-                if count != 0:
-                    raise RuntimeError("Consulta Steam divergente ou indisponível")
-        pid = self.process.pid
-        requested = time.monotonic()
-        # Freeze game threads to prevent processing new admissions (including
-        # PlayFab relays), then drain captured output before the final check.
-        os.killpg(pid, signal.SIGSTOP)
-        try:
-            await asyncio.sleep(0.25)
-            if safe and not self.players.idle():
-                raise RuntimeError("Conexão detectada na verificação final; parada cancelada")
-            self.state = "parando"
-            os.killpg(pid, signal.SIGINT)
-        finally:
-            os.killpg(pid, signal.SIGCONT)
-        try:
-            await asyncio.wait_for(asyncio.shield(self.reader), timeout=150)
-        except asyncio.TimeoutError:
-            self.state = "falha"
-            raise RuntimeError("Parada excedeu 150s; jogo não foi morto, operação cancelada")
-        if self.process.returncode not in (0, -signal.SIGINT):
+        if not pending:
+            if safe:
+                if not self.players.idle():
+                    raise RuntimeError("Aguardando zero jogadores confirmado por dois minutos")
+                if not self.running.crossplay:
+                    count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
+                    if count != 0:
+                        raise RuntimeError("Consulta Steam divergente ou indisponível")
+            pid = process.pid
+            if safe:
+                # Scheduled/panel operations still freeze admissions and drain
+                # captured connection events before requesting a clean save.
+                os.killpg(pid, signal.SIGSTOP)
+            try:
+                if safe:
+                    await asyncio.sleep(0.25)
+                    if not self.players.idle():
+                        raise RuntimeError("Conexão detectada na verificação final; parada cancelada")
+                requested = time.monotonic()
+                os.killpg(pid, signal.SIGINT)
+                self.stop_request = (process, requested)
+                self.state = "parando"
+                self.emit(f"SIGINT enviado ao jogo; aguardando salvamento e saída por até {GAME_STOP_TIMEOUT}s")
+            finally:
+                if safe:
+                    try:
+                        os.killpg(pid, signal.SIGCONT)
+                    except ProcessLookupError:
+                        pass
+        else:
+            self.emit("Aguardando a parada já solicitada; mantendo o prazo original")
+        requested = self.stop_request[1]
+        deadline = requested + GAME_STOP_TIMEOUT
+        next_progress = time.monotonic() + STOP_PROGRESS_INTERVAL
+        reader = asyncio.ensure_future(self.reader)
+        self.reader = reader
+        # A descendant may keep stdout open after the game exits. Observe the
+        # process returncode too, then allow a bounded drain of the final log.
+        while not reader.done():
+            if process.returncode is not None:
+                try:
+                    await asyncio.wait_for(asyncio.shield(reader), timeout=LOG_DRAIN_TIMEOUT)
+                except asyncio.TimeoutError:
+                    self.emit("Jogo encerrado; finalizando leitura do log que permaneceu aberta")
+                    reader.cancel()
+                    await asyncio.gather(reader, return_exceptions=True)
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self.state = "falha"
+                raise RuntimeError(f"Parada excedeu {GAME_STOP_TIMEOUT}s; jogo não foi morto, backup/reinício cancelados")
+            if time.monotonic() >= next_progress:
+                self.emit(f"Aguardando o jogo salvar e encerrar; restam até {remaining:.0f}s")
+                next_progress = time.monotonic() + STOP_PROGRESS_INTERVAL
+            await asyncio.wait([reader], timeout=min(1, remaining))
+        if not reader.cancelled():
+            await reader
+        if process.returncode not in (0, -signal.SIGINT):
             raise RuntimeError("Saída anormal; backup/atualização cancelados")
         if self.last_save < requested:
             raise RuntimeError("Saída sem confirmação World saved; backup/atualização cancelados")
         self.clean_stop = True
+        self.state = "parado"
         self.clean_marker.unlink(missing_ok=True)
+        self.emit("Jogo encerrado com salvamento confirmado")
 
     async def snapshot(self, reason):
         if self.live:
@@ -510,6 +584,7 @@ class Runtime:
             self.active = job
             job["state"] = "executando"
             job.pop("error", None)
+            self.emit("Executando operação: " + job["action"])
             try:
                 if job.get("scheduled"):
                     self.persist_pending()
@@ -519,7 +594,7 @@ class Runtime:
                 job["state"] = "concluído"
             except Exception as exc:
                 job["state"], job["error"] = "falha", str(exc)
-                self.emit("Operação falhou: " + str(exc))
+                self.emit(("Operação adiada" if job.get("scheduled") and job["action"] in ("restart", "backup", "update") else "Operação falhou") + " (" + job["action"] + "): " + str(exc))
                 if job["action"] == "start":
                     self.next_recovery = time.monotonic() + 300
                     self.emit("Nova tentativa de inicialização em cinco minutos")
@@ -589,6 +664,8 @@ class Runtime:
 
     async def shutdown(self):
         self.closing = True
+        self.want_running = False
+        self.emit("Desligamento do contêiner solicitado; suspendendo tarefas e preparando parada do jogo")
         if self.cloud_task:
             self.cloud_task.cancel()
             await asyncio.gather(self.cloud_task, return_exceptions=True)
@@ -602,9 +679,10 @@ class Runtime:
                 queued = self.queue.get_nowait()
                 queued["state"] = "adiado" if queued.get("scheduled") else "cancelado"
                 self.queue.task_done()
-        if self.active:
+        if self.active and self.active["action"] != "check-update":
+            self.emit(f"Aguardando operação {self.active['action']} em andamento por até {SHUTDOWN_JOB_TIMEOUT}s")
             try:
-                await asyncio.wait_for(self.queue.join(), timeout=120)
+                await asyncio.wait_for(self.queue.join(), timeout=SHUTDOWN_JOB_TIMEOUT)
             except asyncio.TimeoutError:
                 self.emit("Supervisor aguardava operação ao receber desligamento")
         if self.worker_task:
@@ -614,8 +692,9 @@ class Runtime:
         # Explicit container shutdown is an administrator action, not an automatic
         # maintenance decision; it must honor Docker's termination deadline.
         try:
-            if self.live:
+            if self.live or self.stop_request is not None:
                 await self.stop(safe=False)
         finally:
             if self.lock_file:
                 self.lock_file.close()
+        self.emit("Supervisor encerrado")

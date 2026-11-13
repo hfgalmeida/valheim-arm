@@ -76,6 +76,45 @@ def test_config_escaping_does_not_execute_shell(tmp_path):
     assert "NEVER" in result.stdout
 
 
+@pytest.mark.parametrize("active", [True, False])
+def test_firewall_only_opens_authorized_ports_when_ufw_is_active(tmp_path, active):
+    script = r'''
+ufw() {
+    if [[ "$1" == status ]]; then printf 'Status: %s\n' "$UFW_STATE"; return; fi
+    printf '%s\n' "$*" >> "$FIREWALL_LOG"
+}
+prepare_firewall
+'''
+    log = tmp_path / "ufw.log"
+    env = {"FIREWALL_LOG": str(log), "UFW_STATE": "active" if active else "inactive"}
+    for _ in range(2):
+        result = shell(script, env=env)
+        assert result.returncode == 0, result.stderr
+    if active:
+        assert log.read_text().splitlines() == ["allow 2456:2457/udp", "allow 443/tcp"] * 2
+    else:
+        assert not log.exists()
+
+
+def test_missing_ufw_does_not_install_or_enable_firewall():
+    script = r'''
+command() { if [[ "$*" == '-v ufw' ]]; then return 1; fi; builtin command "$@"; }
+ufw() { return 99; }
+prepare_firewall
+'''
+    result = shell(script)
+    assert result.returncode == 0, result.stderr
+    assert "OCI" in result.stdout
+
+
+def test_ufw_status_failure_stops_before_changing_rules(tmp_path):
+    log = tmp_path / "ufw.log"
+    result = shell('ufw() { if [[ "$1" == status ]]; then return 1; fi; printf changed > "$FIREWALL_LOG"; }; prepare_firewall',
+                   env={"FIREWALL_LOG": str(log)})
+    assert result.returncode != 0
+    assert not log.exists()
+
+
 @pytest.mark.parametrize("password", ["a $USER ${NOT_DEFINED} # 'quote' \\ slash $(whoami)",
     "trailing-backslash\\", "slash\\'quote\"end", "$$literal \\n text", "senha çãõ"])
 def test_compose_reads_quoted_password_literally(tmp_path, password):
@@ -116,6 +155,7 @@ STUBS = r'''
 check_platform() { :; }
 sudo() { if [[ "$1" == -v ]]; then return 0; fi; "$@"; }
 prepare_docker() { ROOT=(); DOCKER=(fake_docker); }
+prepare_firewall() { :; }
 install() { mkdir -p "${@: -1}"; }
 curl() {
     if [[ "${@: -1}" == https://api.ipify.org ]]; then printf '203.0.113.20'; return; fi

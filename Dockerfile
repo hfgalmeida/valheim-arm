@@ -15,6 +15,8 @@ RUN mkdir -p "$HOME" "$FEX_APP_DATA_LOCATION" \
     && FEXRootFSFetcher --assume-yes --extract --distro-name ubuntu --distro-version 24.04 --force-ui tty
 COPY docker/collect_rootfs.py /tmp/collect_rootfs.py
 RUN python3 /tmp/collect_rootfs.py
+COPY docker/prepare_guest.py /tmp/prepare_guest.py
+RUN python3 /tmp/prepare_guest.py
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \

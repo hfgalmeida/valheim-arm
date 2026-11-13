@@ -6,7 +6,7 @@ Seu mundo Valheim na Oracle ARM, com instalação pelo Docker Hub e manutenção
 
 ## Instalar
 
-Na instância Oracle, libere **UDP 2456–2457** para jogar e **TCP 443** para o painel, tanto na rede OCI quanto no firewall local. Mantenha o acesso SSH. Depois execute:
+Na rede OCI, libere **UDP 2456–2457** para jogar e **TCP 443** para o painel. O instalador libera essas portas no Ubuntu quando o UFW está ativo, preservando as demais regras e o acesso SSH. Se usar outro firewall local, libere-as nele também. Depois execute:
 
 <details>
 <summary>Como liberar as portas na OCI e no Ubuntu</summary>
@@ -21,16 +21,15 @@ Na instância Oracle, libere **UDP 2456–2457** para jogar e **TCP 443** para o
 
 Deixe a porta de origem como **All** e **Stateless** desmarcado (regra stateful). Para o painel, por exemplo, o IP `203.0.113.25` vira `203.0.113.25/32`. Se usar um **Network Security Group**, adicione as mesmas regras de entrada no NSG associado à VNIC. Veja o [guia de regras da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
 
-**No Ubuntu, se você usa UFW**, execute na sessão SSH do servidor (porta SSH padrão 22):
+**No Ubuntu:** o instalador libera as portas abaixo quando o UFW está ativo. Para ajustar uma instalação anterior manualmente, execute na sessão SSH, preservando sua regra de acesso SSH:
 
 ```sh
-sudo ufw allow 22/tcp
 sudo ufw allow 2456:2457/udp
 sudo ufw allow 443/tcp
 sudo ufw status verbose
 ```
 
-Se o status for `inactive`, o UFW não está filtrando o tráfego. O Docker configura suas próprias regras para as portas publicadas e esse tráfego pode passar antes do UFW; use as regras da OCI para restringir quem acessa o painel. Preserve regras de firewall existentes. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+Se o status for `inactive`, o UFW não está filtrando o tráfego; o instalador não o habilita nem o desabilita. O Docker configura suas próprias regras para as portas publicadas e esse tráfego normalmente passa antes do UFW; use as regras da OCI para restringir quem acessa o painel. Regras adicionais de encaminhamento, `DOCKER-USER` ou nftables ainda podem bloquear o jogo. O instalador não remove essas regras nem desabilita o firewall. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
 
 </details>
 
@@ -70,6 +69,8 @@ Os horários usam **America/Sao_Paulo**. Manutenções que param o jogo aguardam
 Os saves ficam em `valheim-arm/data`. Baixe uma cópia dos backups pelo painel para guardá-la fora da instância.
 
 Quer automatizar essa cópia? No painel, **Backup na nuvem** permite enviar os novos backups para **OneDrive, Dropbox ou Google Drive**. Autorize sua conta uma vez no computador e importe a conexão no painel; veja [como conectar](docs/REFERENCE.md#nuvem).
+
+Para parar a instalação, execute `sudo docker compose down` na pasta `valheim-arm`. O comando aguarda o jogo salvar e encerrar, podendo levar alguns minutos; em outra sessão SSH, acompanhe com `sudo docker logs -f valheim-server`. Para subir novamente, use `sudo docker compose up -d`. Parar pelo Docker solicita o salvamento mesmo com jogadores conectados; pelo painel, a parada aguarda zero jogadores confirmado por dois minutos.
 
 ## Painel
 

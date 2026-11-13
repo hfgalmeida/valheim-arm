@@ -1,5 +1,7 @@
 import asyncio
+import os
 import signal
+import sys
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -356,6 +358,153 @@ def test_shutdown_does_not_restart_during_snapshot_failure(runtime):
     with pytest.raises(ValueError):
         asyncio.run(runtime.execute({"action": "backup"}))
     runtime.start.assert_not_awaited()
+
+
+def test_container_shutdown_stops_game_without_waiting_for_empty_players(runtime):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.clean_stop = False
+
+        async def finish():
+            runtime.last_save = time.monotonic()
+            runtime.process.returncode = 0
+
+        runtime.reader = asyncio.create_task(finish())
+        with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.query_steam") as query:
+            await runtime.shutdown()
+        assert runtime.closing and not runtime.want_running
+        assert runtime.clean_stop
+        kill.assert_called_once_with(42, signal.SIGINT)
+        query.assert_not_called()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Sinais e grupos de processos Linux necessários")
+@pytest.mark.parametrize("safe", [True, False])
+@pytest.mark.parametrize("saved", [True, False])
+def test_real_process_signals_require_save_confirmation(runtime, safe, saved):
+    async def scenario():
+        code = ('import signal,sys\n'
+                'def stop(*args):\n'
+                + (' print("World saved", flush=True)\n' if saved else '')
+                + ' sys.exit(0)\n'
+                'signal.signal(signal.SIGINT, stop)\n'
+                'print("ready", flush=True)\n'
+                'while True: signal.pause()\n')
+        child = await asyncio.create_subprocess_exec(sys.executable, "-u", "-c", code,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+        runtime.process = child
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": True})
+        runtime.clean_stop = False
+        try:
+            assert await asyncio.wait_for(child.stdout.readline(), timeout=5) == b"ready\n"
+            runtime.reader = asyncio.create_task(runtime.read_game(child))
+            runtime.players.consume("Connections 0 ZDOS:1")
+            runtime.players.empty_since -= 121
+            if saved:
+                await asyncio.wait_for(runtime.stop(safe=safe), timeout=5)
+                assert runtime.clean_stop
+            else:
+                with pytest.raises(RuntimeError, match="World saved"):
+                    await asyncio.wait_for(runtime.stop(safe=safe), timeout=5)
+                assert not runtime.clean_stop
+            assert child.returncode == 0
+        finally:
+            if child.returncode is None:
+                os.killpg(child.pid, signal.SIGKILL)
+                await child.wait()
+            if runtime.reader:
+                await asyncio.gather(runtime.reader, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_stop_finishes_when_game_exited_but_stdout_stays_open(runtime):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.clean_stop = False
+        runtime.reader = asyncio.create_task(asyncio.Event().wait())
+
+        def finish(*_):
+            runtime.process.returncode = 0
+            runtime.last_save = time.monotonic()
+
+        with patch("app.runtime.os.killpg", side_effect=finish, create=True), patch("app.runtime.LOG_DRAIN_TIMEOUT", 0.01):
+            await asyncio.wait_for(runtime.stop(safe=False), timeout=1)
+        assert runtime.clean_stop
+        assert runtime.reader.cancelled()
+        assert runtime.state == "parado"
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_stop_is_resumed_without_repeating_signal_or_deadline(runtime):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.clean_stop = False
+        signalled, finish = asyncio.Event(), asyncio.Event()
+
+        async def reader():
+            await finish.wait()
+            runtime.last_save = time.monotonic()
+            runtime.process.returncode = 0
+
+        runtime.reader = asyncio.create_task(reader())
+        with patch("app.runtime.os.killpg", side_effect=lambda *_: signalled.set(), create=True) as kill:
+            original = asyncio.create_task(runtime.stop(safe=False))
+            await signalled.wait()
+            requested = runtime.stop_request
+            original.cancel()
+            await asyncio.gather(original, return_exceptions=True)
+            assert not runtime.reader.cancelled()
+            resumed = asyncio.create_task(runtime.stop(safe=False))
+            await asyncio.sleep(0)
+            finish.set()
+            await resumed
+            assert runtime.stop_request == requested
+            kill.assert_called_once_with(42, signal.SIGINT)
+        assert runtime.clean_stop
+
+    asyncio.run(scenario())
+
+
+def test_stop_timeout_never_kills_or_marks_world_clean(runtime):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.clean_stop = False
+        runtime.reader = asyncio.create_task(asyncio.Event().wait())
+        with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.GAME_STOP_TIMEOUT", 0.02):
+            with pytest.raises(RuntimeError, match="Parada excedeu"):
+                await runtime.stop(safe=False)
+            with pytest.raises(RuntimeError, match="Parada excedeu"):
+                await runtime.stop(safe=False)
+            kill.assert_called_once_with(42, signal.SIGINT)
+        assert not runtime.clean_stop
+        assert runtime.live
+        runtime.reader.cancel()
+        await asyncio.gather(runtime.reader, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_cancels_metadata_query_without_waiting_two_minutes(runtime):
+    async def scenario():
+        started = asyncio.Event()
+
+        async def execute(_):
+            started.set()
+            await asyncio.Event().wait()
+
+        runtime.execute = execute
+        runtime.schedule_once("check-update")
+        runtime.worker_task = asyncio.create_task(runtime.worker())
+        await started.wait()
+        await asyncio.wait_for(runtime.shutdown(), timeout=1)
+        assert runtime.worker_task.done()
+        assert runtime.active is None
+
+    asyncio.run(scenario())
 
 
 def test_restore_does_not_prune_selected_source(runtime):
