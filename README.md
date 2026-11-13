@@ -2,6 +2,15 @@
 
 Servidor Valheim na Oracle ARM: instale com Docker, jogue e gerencie pelo navegador. Atualizações do jogo, backups e reinícios são automáticos.
 
+## Funcionalidades
+
+- **Instalação via Docker Compose**, com imagem pronta para ARM64 e execução do Valheim pelo FEX.
+- **Painel web com HTTPS**, métricas em tempo real e controles para iniciar, parar e reiniciar o servidor. [Detalhes](docs/REFERENCE.md#painel).
+- **Atualizações e manutenção automáticas**, com verificação de jogadores, salvamento antes das paradas e recuperação após falhas. [Detalhes](docs/REFERENCE.md#operacao).
+- **Backups automáticos**, download e restauração pelo painel, com envio opcional para OneDrive, Dropbox ou Google Drive. [Detalhes](docs/REFERENCE.md#backups).
+- **Configuração do mundo e crossplay**, modificadores e listas de administradores, banidos e jogadores permitidos. [Detalhes](docs/REFERENCE.md#configuracao).
+- **Suporte opcional a mods BepInEx**, com instalação de pacote verificado. [Detalhes](docs/REFERENCE.md#backups).
+
 ## Instalar
 
 Você precisa de Ubuntu 24.04 ou 26.04 LTS ARM64, páginas de memória de 4 KiB, 2 OCPUs, 12 GB de RAM, cerca de 30 GB livres e acesso sudo.
