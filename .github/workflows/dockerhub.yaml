@@ -78,7 +78,7 @@ jobs:
             echo '::error::Configure DOCKERHUB_USERNAME e o secret DOCKERHUB_TOKEN neste repositório.'
             exit 1
           fi
-          image="${CONFIGURED_IMAGE:-${DOCKERHUB_USERNAME}/valheim-arm}"
+          image="${CONFIGURED_IMAGE:-${GITHUB_REPOSITORY,,}}"
           if [[ ! "$image" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
             echo '::error::DOCKERHUB_IMAGE deve ser namespace/repositorio, em minúsculas e sem tag.'
             exit 1
@@ -91,6 +91,7 @@ jobs:
         env:
           IMAGE: ${{ steps.config.outputs.image }}
           IMAGE_VERSION: ${{ needs.validate.outputs.version }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: python3 docker/check_image_version.py "$IMAGE" "$IMAGE_VERSION"
 
       - name: Resolve stable FEX version
@@ -162,6 +163,7 @@ jobs:
         env:
           IMAGE: ${{ steps.config.outputs.image }}
           IMAGE_VERSION: ${{ needs.validate.outputs.version }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: python3 docker/check_image_version.py "$IMAGE" "$IMAGE_VERSION"
 
       - name: Log in to Docker Hub

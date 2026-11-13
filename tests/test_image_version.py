@@ -1,4 +1,5 @@
 import io
+import base64
 import json
 import runpy
 import urllib.error
@@ -34,6 +35,52 @@ def test_explicitly_missing_manifest_allows_build():
     opener = Mock(side_effect=[token(), http_error(404, [{"code": "MANIFEST_UNKNOWN"}])])
     check("hfgalmeida/valheim-arm", "0.2.0", opener)
     assert opener.call_count == 2
+
+
+def test_authenticated_check_uses_pat_only_at_token_endpoint():
+    opener = Mock(side_effect=[token(), http_error(404, [{"code": "MANIFEST_UNKNOWN"}])])
+    check("hfgalmeida/valheim-arm", "0.2.0", opener, username="owner", password="test-pat")
+    auth = opener.call_args_list[0].args[0]
+    manifest = opener.call_args_list[1].args[0]
+    assert auth.full_url.startswith("https://auth.docker.io/token?")
+    assert "pull%2Cpush" in auth.full_url
+    assert "account=owner" in auth.full_url
+    expected = base64.b64encode(b"owner:test-pat").decode()
+    assert auth.headers["Authorization"] == "Basic " + expected
+    assert manifest.headers["Authorization"] == "Bearer read-only-token"
+    assert "test-pat" not in auth.full_url and "test-pat" not in manifest.full_url
+
+
+def test_authenticated_existing_tag_remains_blocked():
+    opener = Mock(side_effect=[token(), io.BytesIO(b"manifest")])
+    with pytest.raises(RuntimeError, match="já está publicada"):
+        check("hfgalmeida/valheim-arm", "0.1.0", opener, username="owner", password="test-pat")
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_wrong_credentials_have_actionable_error_without_secret(status):
+    opener = Mock(side_effect=[http_error(status)])
+    with pytest.raises(RuntimeError) as result:
+        check("hfgalmeida/valheim-arm", "0.2.0", opener, username="owner", password="sensitive-pat")
+    message = str(result.value)
+    assert "DOCKERHUB_TOKEN" in message and "DOCKERHUB_IMAGE" in message
+    assert "sensitive-pat" not in message
+    assert "publicação bloqueada" in message
+
+
+@pytest.mark.parametrize("username,password", [("owner", None), (None, "test-pat")])
+def test_partial_credentials_are_not_silently_downgraded_to_anonymous(username, password):
+    opener = Mock()
+    with pytest.raises(ValueError, match="juntos"):
+        check("hfgalmeida/valheim-arm", "0.2.0", opener, username=username, password=password)
+    opener.assert_not_called()
+
+
+def test_access_token_response_is_supported():
+    opener = Mock(side_effect=[io.BytesIO(b'{"access_token":"access-token"}'),
+                               http_error(404, [{"code": "MANIFEST_UNKNOWN"}])])
+    check("hfgalmeida/valheim-arm", "0.2.0", opener)
+    assert opener.call_args_list[1].args[0].headers["Authorization"] == "Bearer access-token"
 
 
 @pytest.mark.parametrize("status", [401, 403, 404, 429, 500, 503])

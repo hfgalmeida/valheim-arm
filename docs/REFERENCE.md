@@ -227,9 +227,9 @@ No GitHub, abra **Settings → Secrets and variables → Actions** neste reposit
 |---|---|---|
 | Variable | `DOCKERHUB_USERNAME` | Seu usuário real no Docker Hub; não precisa ser igual ao GitHub |
 | Secret | `DOCKERHUB_TOKEN` | Token Docker Hub com permissão de leitura e escrita no repositório de destino |
-| Variable opcional | `DOCKERHUB_IMAGE` | Nome completo, por exemplo `hfgalmeida/valheim-arm` ou `suaorganizacao/valheim-arm`; sem registry ou tag |
+| Variable opcional | `DOCKERHUB_IMAGE` | Sobrescreve o destino padrão, por exemplo `suaorganizacao/valheim-arm`; sem registry ou tag |
 
-Se `DOCKERHUB_IMAGE` estiver ausente, o destino será `DOCKERHUB_USERNAME/valheim-arm`. O workflow também aceita `DOCKERHUB_USERNAME` como secret para aproveitar esse padrão quando já utilizado em outros projetos.
+Se `DOCKERHUB_IMAGE` estiver ausente, o workflow usa `GITHUB_REPOSITORY` em minúsculas: proprietário e nome do repositório GitHub. Neste projeto, o destino é automaticamente `hfgalmeida/valheim-arm`; não é necessário configurar o nome da imagem. `DOCKERHUB_USERNAME` é usado somente para autenticação no Docker Hub, e a conta deve ter permissão para publicar nesse destino. O workflow também aceita `DOCKERHUB_USERNAME` como secret para aproveitar esse padrão quando já utilizado em outros projetos.
 
 Crie o repositório `valheim-arm` no namespace desejado no Docker Hub e selecione **Public** para permitir downloads públicos. Se ele já existir, abra **My Hub → Repositories → valheim-arm → Settings → Visibility settings → Make public** e confirme o nome, conforme o [guia de visibilidade Docker Hub](https://docs.docker.com/docker-hub/repos/manage/access/). Essa alteração é feita no Docker Hub; o workflow não muda a visibilidade do repositório.
 
@@ -261,6 +261,8 @@ Commits que não alteram `VERSION` continuam passando pelo workflow `Checks`, ma
 
 Use um número novo para cada versão. O workflow não incrementa o arquivo por conta própria. Antes de compilar, ele consulta a tag exata no Docker Hub: se já existir, encerra com erro e pede para aumentar `VERSION`. A verificação é repetida antes do envio da imagem. Uma execução manual também passa por essa validação, incluindo execuções em outras branches. Falhas de rede, autenticação, limite de consultas ou respostas inesperadas bloqueiam a publicação; somente a confirmação de tag ausente permite continuar. `latest` pode ser atualizada ao publicar uma nova versão. Execuções de publicação são serializadas.
 
+As duas consultas usam `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` já configurados no Actions para obter autorização no registry, inclusive na primeira publicação. O token é passado por variável de ambiente e não aparece nos argumentos do comando. Se ocorrer HTTP 401/403, confirme que o usuário é o Docker ID, que o token está válido com leitura/escrita e que `DOCKERHUB_IMAGE` aponta para um namespace em que essa conta pode publicar. Esses erros não são tratados como tag disponível. O download público na Oracle continua dispensando login.
+
 Após enviar os arquivos ao GitHub e cadastrar as credenciais, abra **Actions → Publish Docker Hub → Run workflow**. O formulário permite `fex_version=latest` ou uma tag estável como `FEX-2611`. Pushes automáticos usam a última release estável.
 
 A versão do FEX é resolvida antes do build e passada como argumento fixo. Assim, o cache não esconde uma release nova do emulador. A tag FEX aparece nos labels da imagem e sua proveniência completa em `/opt/build-info.json`. O cache de construção é armazenado no GitHub Actions.
@@ -277,7 +279,7 @@ O `compose.yaml` distribuído já baixa a imagem indicada por `VALHEIM_IMAGE`; n
 VALHEIM_IMAGE=hfgalmeida/valheim-arm:0.1.0
 ```
 
-Use o namespace real do Docker Hub, que pode ser diferente do usuário GitHub. A variável `DOCKERHUB_IMAGE` configura o destino da publicação no CI; `VALHEIM_IMAGE` configura o que a Oracle baixa e pode incluir uma tag ou digest específico.
+O destino padrão da publicação é `hfgalmeida/valheim-arm`, obtido do repositório GitHub. Use `DOCKERHUB_IMAGE` no CI somente para publicar em outro namespace/repositório. `VALHEIM_IMAGE` configura o que a Oracle baixa e pode incluir uma tag ou digest específico; seu padrão também é `hfgalmeida/valheim-arm:latest`.
 
 Para seguir automaticamente a referência da publicação mais recente ao executar `pull`, use `:latest`. Para selecionar uma versão numerada, use exatamente o número de `VERSION` como tag e atualize o `.env` da Oracle ao decidir migrar. Publicar uma imagem não reinicia nem atualiza a instância por conta própria.
 
