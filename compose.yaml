@@ -1,0 +1,85 @@
+services:
+  valheim:
+    build:
+      context: .
+      args:
+        FEX_VERSION: ${FEX_VERSION:-latest}
+        BUILD_JOBS: ${BUILD_JOBS:-2}
+    platform: linux/arm64
+    init: true
+    restart: unless-stopped
+    user: "10001:10001"
+    stop_grace_period: 6m
+    mem_limit: 10g
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-Valheim ARM}
+      WORLD_NAME: ${WORLD_NAME:-Dedicated}
+      SERVER_PASSWORD: ${SERVER_PASSWORD:?Defina SERVER_PASSWORD no .env}
+      SERVER_PORT: "2456"
+      PUBLIC: ${PUBLIC:-true}
+      CROSSPLAY: ${CROSSPLAY:-false}
+      PRESET: ${PRESET:-}
+      MODIFIER_COMBAT: ${MODIFIER_COMBAT:-}
+      MODIFIER_DEATHPENALTY: ${MODIFIER_DEATHPENALTY:-}
+      MODIFIER_RESOURCES: ${MODIFIER_RESOURCES:-}
+      MODIFIER_RAIDS: ${MODIFIER_RAIDS:-}
+      MODIFIER_PORTALS: ${MODIFIER_PORTALS:-}
+      KEY_NOBUILDCOST: ${KEY_NOBUILDCOST:-false}
+      KEY_PLAYEREVENTS: ${KEY_PLAYEREVENTS:-false}
+      KEY_PASSIVEMOBS: ${KEY_PASSIVEMOBS:-false}
+      KEY_NOMAP: ${KEY_NOMAP:-false}
+      SAVE_INTERVAL: ${SAVE_INTERVAL:-1800}
+      NATIVE_BACKUPS: ${NATIVE_BACKUPS:-4}
+      TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
+      RESTART_AT: ${RESTART_AT:-05:00}
+      BACKUP_AT: ${BACKUP_AT:-05:00}
+      AUTO_UPDATE: ${AUTO_UPDATE:-true}
+      UPDATE_INTERVAL: ${UPDATE_INTERVAL:-1800}
+      RETAIN_DAILY: ${RETAIN_DAILY:-7}
+      RETAIN_WEEKLY: ${RETAIN_WEEKLY:-4}
+      BEPINEX: ${BEPINEX:-false}
+      BEPINEX_URL: ${BEPINEX_URL:-}
+      BEPINEX_SHA256: ${BEPINEX_SHA256:-}
+      PANEL_ORIGIN: https://${SERVER_IP:?Defina SERVER_IP no .env}
+      FEX_ROOTFS: /opt/rootfs
+      FEX_DISKCACHE: ${FEX_DISKCACHE:-1}
+      FEX_DISKCACHEPATH: /data/cache
+      FEX_DISKCACHEMAXFILESIZE: ${FEX_DISKCACHEMAXFILESIZE:-1073741824}
+      FEX_MAXINST: ${FEX_MAXINST:-5000}
+      FEX_MULTIBLOCK: ${FEX_MULTIBLOCK:-1}
+      FEX_TSOENABLED: ${FEX_TSOENABLED:-1}
+    ports:
+      - "2456-2457:2456-2457/udp"
+    volumes:
+      - ./data:/data
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "/opt/venv/bin/python", "-m", "app.cli", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 2m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  proxy:
+    image: caddy:2.10.2-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      SERVER_IP: ${SERVER_IP:?Defina SERVER_IP no .env}
+    ports: ["443:443"]
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [valheim]
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: {max-size: "5m", max-file: "2"}
+volumes:
+  caddy_data:
+  caddy_config:

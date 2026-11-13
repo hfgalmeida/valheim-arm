@@ -1,0 +1,17 @@
+{
+    auto_https disable_redirects
+    admin off
+}
+https://{$SERVER_IP} {
+    tls internal
+    request_body {
+        max_size 64KB
+    }
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+    }
+    reverse_proxy valheim:8080
+}

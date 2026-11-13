@@ -1,0 +1,37 @@
+name: Checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  supervisor:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - run: node --check app/static/panel.js
+      - run: docker compose config --quiet
+        env:
+          SERVER_IP: 192.0.2.1
+          SERVER_PASSWORD: ci-game-password
+  arm-build:
+    # Expensive native build, explicitly requested through workflow_dispatch.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      SERVER_IP: 192.0.2.1
+      SERVER_PASSWORD: ci-game-password
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo install -d -o 10001 -g 10001 -m 0700 data
+      - run: docker compose build --pull
+      - run: docker compose run --rm --no-deps valheim preflight
+      - run: docker compose run --rm --no-deps --entrypoint cat valheim /opt/build-info.json
