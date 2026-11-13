@@ -1,10 +1,6 @@
 services:
   valheim:
-    build:
-      context: .
-      args:
-        FEX_VERSION: ${FEX_VERSION:-latest}
-        BUILD_JOBS: ${BUILD_JOBS:-2}
+    image: ${VALHEIM_IMAGE:?Defina VALHEIM_IMAGE com a imagem publicada no Docker Hub}
     platform: linux/arm64
     init: true
     restart: unless-stopped

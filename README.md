@@ -4,13 +4,13 @@ Servidor dedicado Valheim para **Oracle Ampere A1, 2 OCPUs, 12 GB e Ubuntu 24.04
 
 Inclui painel em português por HTTPS/IP, gráficos em tempo real, configurações persistentes, listas de usuários do jogo, crossplay opcional, modificadores individuais, BepInEx opcional, backups para download, atualização do jogo e reinício diário com verificação de jogadores.
 
-Para gerar e publicar a imagem automaticamente pelo GitHub Actions, veja [Publicação no Docker Hub](docs/DOCKERHUB.md), com as variáveis/secrets necessários neste repositório e instruções para usar a imagem pronta na Oracle.
+A instalação usa exclusivamente imagens prontas baixadas pelo Docker Compose: Valheim ARM do Docker Hub e Caddy para HTTPS. Na Oracle, você precisa apenas do Compose, do `.env` e do Caddyfile; FEX, Python e bibliotecas já estão dentro da imagem.
 
 **Estado de validação:** testes locais do supervisor executados; imagem Docker/FEX, BepInEx, crossplay e desempenho ainda precisam da [aceitação na Oracle](docs/ACCEPTANCE.md). Não há credenciais OCI nem Docker nesta estação. A primeira implantação deve começar em um mundo de teste, seguindo a prova funcional antes de importar um save importante.
 
 ## 1. Preparar a instância
 
-Use Ubuntu 24.04 ARM64, kernel >= 5.15, páginas de 4 KiB e CPU Ampere A1. Reserve aproximadamente 30 GB livres para construir a imagem, armazenar duas instalações do jogo e manter backups; o espaço necessário cresce com os mundos. O preflight exige pelo menos 6 GiB livres para a operação inicial. O contêiner do jogo tem limite de 10 GiB, deixando margem para o sistema e o proxy.
+Use Ubuntu 24.04 ARM64, kernel >= 5.15, páginas de 4 KiB e CPU Ampere A1. Reserve aproximadamente 30 GB livres para as imagens, duas instalações do jogo e backups; o espaço necessário cresce com os mundos. O preflight exige pelo menos 6 GiB livres para a operação inicial. O contêiner do jogo tem limite de 10 GiB, deixando margem para o sistema e o proxy.
 
 Confirme a plataforma:
 
@@ -25,7 +25,7 @@ Saídas esperadas: `aarch64`, `4096` e kernel suportado. Instale Docker pelo rep
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl git
+sudo apt-get install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -37,7 +37,7 @@ printf '%s\n' \
   'Architectures: arm64' \
   'Signed-By: /etc/apt/keyrings/docker.asc' | sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null
 sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo docker compose version
 ```
 
@@ -47,9 +47,23 @@ Na VNIC/sub-rede OCI, configure NSG ou Security List com entrada TCP **443** par
 
 Verifique também o firewall local: `sudo iptables -S`, `sudo iptables -S DOCKER-USER` e `sudo ufw status`. As portas publicadas pelo Docker podem contornar regras UFW; a restrição do painel deve existir no NSG/Security List. Se houver política local de bloqueio no encaminhamento, autorize os mesmos destinos na cadeia `DOCKER-USER`, antes da regra de rejeição, e persista conforme a política da máquina. Não substitua o firewall existente nem remova regras de SSH.
 
-## 2. Configurar e construir
+## 2. Baixar os arquivos de instalação
 
-Copie ou clone este repositório para a instância e entre em sua pasta:
+Para uma instalação nova, baixe somente estes três arquivos. O código-fonte e o Dockerfile não são necessários na instância:
+
+```sh
+mkdir -p valheim-arm/docker
+cd valheim-arm
+curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/compose.yaml -o compose.yaml
+curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/.env.example -o .env.example
+curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/docker/Caddyfile -o docker/Caddyfile
+```
+
+Esses links ficam disponíveis após os arquivos serem enviados à `main` do GitHub. A imagem também precisa ter sido publicada no Docker Hub. Se você mantém o projeto, siga [DOCKERHUB.md](docs/DOCKERHUB.md) para fazer a publicação pelo GitHub Actions.
+
+## 3. Configurar e instalar com Docker Compose
+
+Os comandos abaixo são para uma instalação nova. Se já houver uma instalação, preserve `.env`, `data` e os volumes do proxy; adicione `VALHEIM_IMAGE` ao `.env` existente e siga a atualização em [OPERATIONS.md](docs/OPERATIONS.md), sem substituir suas configurações pelo exemplo.
 
 ```sh
 cp .env.example .env
@@ -57,20 +71,22 @@ chmod 600 .env
 nano .env
 sudo install -d -o 10001 -g 10001 -m 0700 data
 sudo docker compose config --quiet
-sudo docker compose build --pull
+sudo docker compose pull
 sudo docker compose run --rm --no-deps valheim preflight
 sudo docker compose run --rm --no-deps valheim set-password
-sudo docker compose up -d
+sudo docker compose up -d --no-build
 sudo docker compose logs -f valheim
 ```
 
-Defina `SERVER_IP` com o IPv4 público real e `SERVER_PASSWORD` com a senha do jogo (mínimo cinco caracteres). A senha administrativa, com mínimo de 12 caracteres, é solicitada no terminal pelo comando `set-password`; ela é diferente da senha do jogo.
+Antes de executar os comandos Docker, edite `.env`: defina `VALHEIM_IMAGE` com o endereço real da imagem, por exemplo `seuusuario/valheim-arm:latest`, `SERVER_IP` com o IPv4 público real e `SERVER_PASSWORD` com a senha do jogo (mínimo cinco caracteres). Troque o namespace de exemplo pelo usado na publicação; não presuma que ele seja igual ao usuário GitHub.
 
-O primeiro build compila FEX nativamente e baixa um rootfs Ubuntu x86 com bibliotecas i386. Pode demorar em duas OCPUs. O build usa duas tarefas por padrão; `BUILD_JOBS=1` reduz pressão de memória. Não configure `platform: linux/amd64`: isso emularia também todo o contêiner.
+A senha administrativa, com mínimo de 12 caracteres, é solicitada no terminal pelo comando `set-password`; ela é diferente da senha do jogo. Se a imagem do Docker Hub for privada, execute `sudo docker login` com uma credencial de leitura antes de `docker compose pull`. Imagens públicas não exigem login. O token de publicação fica no GitHub Actions; ele não é necessário no `.env` da instalação.
 
-O FEX mais recente é resolvido **durante a construção**, e sua tag, commit e hash são registrados em `/opt/build-info.json`. O rootfs é extraído para `/opt/rootfs`, sem FUSE e sem privilégios adicionais. O supervisor invoca FEX explicitamente, sem registrar binfmt no host.
+O primeiro `pull` baixa as imagens prontas. Na primeira inicialização, o contêiner instala SteamCMD e baixa o servidor oficial Valheim para `data`; acompanhe o log até o mundo ficar online. Nenhuma compilação ocorre na Oracle. Mantenha `platform: linux/arm64`.
 
-## 3. Acessar o painel
+A versão do FEX é a incluída na imagem publicada e pode ser consultada em `/opt/build-info.json`. O rootfs x86 com bibliotecas i386 já está extraído em `/opt/rootfs`, sem FUSE nem registro de binfmt no host. Para atualizar FEX e o painel, baixe uma nova imagem conforme [OPERATIONS.md](docs/OPERATIONS.md).
+
+## 4. Acessar o painel
 
 O endereço é `https://SEU_IP`. O Caddy emite um certificado local com esse IP e renova os certificados automaticamente. Para confiar na autoridade dessa instalação, obtenha o certificado por SSH:
 
@@ -91,7 +107,7 @@ A troca invalida as sessões existentes. Sessões expiram em oito horas e també
 
 Se mudar o IP, atualize `SERVER_IP` no `.env` e execute `sudo docker compose up -d`. O Caddy emitirá um certificado para o novo IP usando a mesma autoridade persistente.
 
-## 4. Operação diária
+## 5. Operação diária
 
 As configurações seguem **padrões → Compose → ajustes do painel**. Um ajuste do painel continua prevalecendo após recriar o contêiner. Use “Usar Compose” para removê-lo. Valores do jogo são aplicados na próxima inicialização; horários e retenção são lidos pelo agendador sem reiniciar o jogo. A indicação de alterações pendentes compara a configuração atual com a da última inicialização.
 
@@ -109,7 +125,7 @@ Tarefas automáticas ocupadas/incertas tentam novamente a cada cinco minutos, se
 
 O healthcheck verifica o supervisor; consulte o estado do jogo e o log no painel. Uma falha do processo do jogo fica visível e exige ação do administrador, evitando reinícios em ciclo por um mod quebrado.
 
-## 5. Backups, mods e recuperação
+## 6. Backups, mods e recuperação
 
 Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação `World saved`. Se houver jogadores continuamente, os arquivos completos serão adiados; os backups nativos continuam funcionando.
 
@@ -125,9 +141,9 @@ Para BepInEx, obtenha um **BepInExPack_Valheim Linux** de fonte confiável, calc
 
 Consulte [OPERATIONS.md](docs/OPERATIONS.md) para atualização do FEX, rollback e diagnóstico, e [ACCEPTANCE.md](docs/ACCEPTANCE.md) para o roteiro de validação em ARM.
 
-## Desenvolvimento
+## Desenvolvimento (mantenedores)
 
-Python 3.12 e Node para conferir a sintaxe do JavaScript:
+O ambiente abaixo serve aos testes do código-fonte na máquina do mantenedor/CI. A instalação na Oracle usa exclusivamente as imagens Docker Hub descritas acima. Para desenvolver, use Python 3.12 e Node:
 
 ```sh
 python -m venv .venv

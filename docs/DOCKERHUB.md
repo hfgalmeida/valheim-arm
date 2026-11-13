@@ -2,6 +2,8 @@
 
 O workflow `.github/workflows/dockerhub.yaml` testa o supervisor, constrói a imagem em um runner **ARM64 nativo**, executa o preflight do FEX e publica a mesma imagem testada no Docker Hub. Não usa QEMU nem outro emulador para construir a imagem.
 
+Este guia é para o mantenedor que publica a imagem. Para instalar o servidor, siga o [README](../README.md): somente Docker Compose e arquivos de configuração são necessários na Oracle. A compilação fica no GitHub Actions.
+
 ## Configuração deste repositório
 
 Configurações de um projeto não são copiadas automaticamente para outro. Secrets e variables de repositório precisam existir em **hfgalmeida/valheim-arm**. Se forem de uma organização, conceda acesso a este repositório na política desses secrets/variables. Secrets vinculados a um Environment não são lidos por este workflow, que não seleciona Environment.
@@ -43,17 +45,13 @@ O preflight não instala SteamCMD nem executa o Valheim, e não substitui a acei
 
 ## Usar a imagem publicada na Oracle
 
-No `compose.yaml` da instalação, substitua o bloco `build` do serviço `valheim` pela imagem publicada:
+O `compose.yaml` distribuído já baixa a imagem indicada por `VALHEIM_IMAGE`; não há bloco `build` na instalação. No `.env` da Oracle, configure a referência correspondente à publicação:
 
-```yaml
-services:
-  valheim:
-    image: seuusuario/valheim-arm:latest
-    platform: linux/arm64
-    # Preserve environment, ports, volumes e demais opções existentes.
+```dotenv
+VALHEIM_IMAGE=seuusuario/valheim-arm:latest
 ```
 
-Esse trecho é apenas a alteração no serviço existente, não um arquivo Compose completo. A instalação local continua suportando build pelo código; não é necessário alterá-la para usar o workflow.
+Use o namespace real do Docker Hub, que pode ser diferente do usuário GitHub. A variável `DOCKERHUB_IMAGE` configura o destino da publicação no CI; `VALHEIM_IMAGE` configura o que a Oracle baixa e pode incluir uma tag ou digest específico.
 
 Para imagens privadas, faça `sudo docker login` na Oracle com uma credencial de leitura. Pare o jogo de forma segura pelo painel antes de trocar sua imagem e execute:
 

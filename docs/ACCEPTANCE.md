@@ -6,7 +6,7 @@ Execute em Ubuntu 24.04 ARM64, 2 OCPUs/12 GB, começando em um mundo descartáve
 
 ## Etapa 1 — prova funcional obrigatória
 
-- [ ] Construir a imagem nativamente e executar `preflight`, sem binfmt, privilégios adicionais, FUSE ou outro emulador.
+- [ ] Configurar `VALHEIM_IMAGE` com a imagem publicada, executar `docker compose pull` e `preflight`, sem compilar na instância nem instalar binfmt, privilégios adicionais, FUSE ou outro emulador. Registrar também o digest da imagem baixada.
 - [ ] Configurar senha administrativa, iniciar vanilla, observar conexão e entrar com cliente Steam.
 - [ ] Identificar `Connections N ZDOS:` nos logs; confirmar estado desconhecido antes do primeiro snapshot e durante conexões/desconexões.
 - [ ] Habilitar crossplay, reiniciar e entrar por join code com cliente compatível de outra plataforma. Confirmar que eventos PlayFab invalidam a contagem até o próximo snapshot. Guardar amostras anonimizadas para atualizar os testes.

@@ -1,9 +1,10 @@
 # Configuração
 
-Os nomes abaixo são variáveis do Compose e do `.env`. Na API, use os mesmos nomes em minúsculas. O painel salva seus ajustes em `data/config/overrides.json`, com precedência sobre o Compose. Não edite esse arquivo enquanto o supervisor estiver rodando.
+Os nomes abaixo são variáveis do Compose e do `.env`. Configurações do jogo/supervisor usam os mesmos nomes em minúsculas na API. `VALHEIM_IMAGE`, `SERVER_IP` e opções `FEX_*` pertencem à implantação e não são editáveis pelo painel. O painel salva seus ajustes em `data/config/overrides.json`, com precedência sobre o Compose. Não edite esse arquivo enquanto o supervisor estiver rodando.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
+| `VALHEIM_IMAGE` | obrigatório | Imagem publicada no Docker Hub, por exemplo `namespace/valheim-arm:latest`; aceita digest para fixar versão |
 | `SERVER_IP` | obrigatório | IPv4 público do painel/certificado; alterar exige recriar ambos os serviços |
 | `SERVER_NAME` | Valheim ARM | Nome exibido pelo servidor |
 | `WORLD_NAME` | Dedicated | Seleciona/cria mundo; preserva os anteriores |
@@ -50,12 +51,10 @@ CROSSPLAY=true
 
 ## FEX
 
-O cache JIT usa `data/cache` e é separado dos saves. O build é Release, ajustado a Neoverse N1, sem interface gráfica, thunks gráficos ou telemetria offline. LTO fica desligado para reduzir o custo da construção em duas OCPUs. Nenhuma extensão ARM inexistente é forçada.
+O cache JIT usa `data/cache` e é separado dos saves. FEX já vem pronto na imagem Docker Hub, em Release ajustado a Neoverse N1, sem interface gráfica, thunks gráficos ou telemetria offline. Nenhuma extensão ARM inexistente é forçada. A instalação apenas baixa essa imagem.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `FEX_VERSION` | latest | Última release estável no build; aceita tag `FEX-2611` ou equivalente |
-| `BUILD_JOBS` | 2 | Paralelismo de construção, 1–8 |
 | `FEX_DISKCACHE` | 1 | Cache JIT em disco |
 | `FEX_DISKCACHEMAXFILESIZE` | 1073741824 | Limite do arquivo principal do cache; índice pode usar espaço adicional |
 | `FEX_MAXINST` | 5000 | Máximo de instruções por bloco |
@@ -65,3 +64,5 @@ O cache JIT usa `data/cache` e é separado dos saves. O build é Release, ajusta
 São opções avançadas documentadas pelo [FEX](https://wiki.fex-emu.com/index.php/Development%3AConfiguring_FEX). Altere uma por vez e compare o mesmo mundo/carga. Desativar TSO ou alterar os blocos pode prejudicar correção e estabilidade; não é adotado como otimização padrão. Nenhuma melhoria de desempenho foi medida nesta estação Windows.
 
 Alterações FEX no `.env` exigem recriar o contêiner, preferencialmente após parada segura pelo painel. Para voltar aos padrões, restaure os valores de `.env.example`. Para limpar o cache, pare o serviço e mova `data/cache` para uma pasta de diagnóstico; crie novamente a pasta com proprietário 10001. Não altere o diretório de saves.
+
+A versão do emulador é selecionada pela imagem em `VALHEIM_IMAGE`. `FEX_VERSION` e `BUILD_JOBS` ficam restritos à construção pelo mantenedor/CI e não fazem parte do `.env` da instalação. A publicação da imagem está documentada em [DOCKERHUB.md](DOCKERHUB.md).

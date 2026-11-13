@@ -6,16 +6,21 @@ Atualizações automáticas do **jogo** passam pela fila, aguardam zero jogadore
 
 Uma instalação que baixa corretamente mas falha ao executar permanece disponível para diagnóstico. A ativação não é um teste de conexão real. Verifique o log após cada atualização, especialmente com mods. Não há atualização automática do BepInEx/plugins.
 
-Para atualizar **FEX**, primeiro solicite parada segura pelo painel e confirme que terminou. Então:
+Para atualizar **FEX e o painel**, use uma nova imagem do Docker Hub. Primeiro crie um backup, solicite parada segura pelo painel e confirme que terminou. Execute na pasta da instalação:
 
 ```sh
-sudo docker compose build --pull --no-cache valheim
+sudo docker compose stop valheim
+sudo docker compose pull valheim
 sudo docker compose run --rm --no-deps valheim preflight
-sudo docker compose up -d
+sudo docker compose up -d --no-build
 sudo docker compose exec valheim cat /opt/build-info.json
 ```
 
-`FEX_VERSION=latest` consulta a última release estável a cada build sem cache. Para reproduzir uma versão do interpretador, use a tag registrada como `FEX_VERSION`; o rootfs e os pacotes Ubuntu continuam vindo dos repositórios no momento do build. Preserve também a imagem Docker anterior se precisar reproduzir todo o ambiente. Tags fixas não congelam todos os componentes da imagem.
+`VALHEIM_IMAGE` no `.env` seleciona a imagem: use `namespace/valheim-arm:latest`, uma tag publicada como `:v1.0.0` ou um digest `namespace/valheim-arm@sha256:...` para fixar exatamente o artefato. Ao escolher outra referência, salve `.env` antes do `pull`. Se o download ou preflight falhar, não avance para o `up`; confira o erro e volte à referência anterior se necessário. Os volumes de saves, configurações e backups são preservados.
+
+O `pull` só obtém uma versão nova do FEX quando o mantenedor já publicou outra imagem. `FEX_VERSION` e `BUILD_JOBS` são opções de construção usadas no CI, não configurações da instalação. Para atualizar o Caddy, planeje uma janela para o painel, execute `sudo docker compose pull proxy` e `sudo docker compose up -d --no-build proxy`; a autoridade HTTPS permanece no volume persistente.
+
+Para reverter **a imagem do supervisor/FEX**, pare o serviço, ajuste `VALHEIM_IMAGE` para a tag/digest anterior, execute `pull`, preflight e `up -d --no-build`. Preserve previamente um backup e confira compatibilidade dos dados. Isso não reverte automaticamente a instalação Valheim em `data/installs` nem os saves; o rollback do jogo é descrito abaixo.
 
 Para atualizar BepInEx, faça backup, pare o jogo, altere URL e SHA256 do pack, mantenha os plugins/configurações persistentes e reinicie. Verifique a compatibilidade dos plugins com a versão do jogo. Para desativar a injeção, salve `bepinex=false` no painel e reinicie; as pastas são preservadas. Alguns mods alteram saves e podem exigir seus próprios procedimentos de remoção.
 

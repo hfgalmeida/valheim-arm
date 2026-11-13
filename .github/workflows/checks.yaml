@@ -19,6 +19,7 @@ jobs:
       - run: node --check app/static/panel.js
       - run: docker compose config --quiet
         env:
+          VALHEIM_IMAGE: valheim-arm:ci
           SERVER_IP: 192.0.2.1
           SERVER_PASSWORD: ci-game-password
   arm-build:
@@ -27,11 +28,12 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     env:
+      VALHEIM_IMAGE: valheim-arm:ci
       SERVER_IP: 192.0.2.1
       SERVER_PASSWORD: ci-game-password
     steps:
       - uses: actions/checkout@v4
       - run: sudo install -d -o 10001 -g 10001 -m 0700 data
-      - run: docker compose build --pull
+      - run: docker build --pull --platform linux/arm64 --tag valheim-arm:ci .
       - run: docker compose run --rm --no-deps valheim preflight
       - run: docker compose run --rm --no-deps --entrypoint cat valheim /opt/build-info.json
