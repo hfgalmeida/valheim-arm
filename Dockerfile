@@ -1,4 +1,9 @@
 FROM caddy:2.10.2-alpine AS caddy
+# Copy to a fresh inode without the upstream cap_net_bind_service xattr.
+# The binary must also execute under cap-drop ALL / no-new-privileges.
+RUN cp /usr/bin/caddy /usr/bin/caddy.clean \
+    && chmod 0755 /usr/bin/caddy.clean \
+    && mv /usr/bin/caddy.clean /usr/bin/caddy
 
 FROM ubuntu:24.04 AS builder
 ARG FEX_VERSION=latest
@@ -36,7 +41,8 @@ COPY --from=builder /opt/rootfs /opt/rootfs
 COPY --from=builder /opt/build-info.json /opt/build-info.json
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY docker/Caddyfile /etc/caddy/Caddyfile
-RUN ldconfig
+RUN ldconfig \
+    && python3 -c "import os; assert 'security.capability' not in os.listxattr('/usr/bin/caddy'), 'Caddy must not carry file capabilities'"
 WORKDIR /opt/valheim
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
