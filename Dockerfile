@@ -16,13 +16,15 @@ RUN python3 /tmp/collect_rootfs.py
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    HOME=/data/home PATH=/opt/venv/bin:/usr/local/bin:/usr/bin:/bin
+    HOME=/data/home \
+    PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv ca-certificates curl libssl3t64 libstdc++6 tzdata \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 valheim && useradd --uid 10001 --gid 10001 --home-dir /data/home valheim \
-    && mkdir /data && chown 10001:10001 /data \
-    && python3 -m venv /opt/venv
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd --gid 10001 valheim \
+    && useradd --uid 10001 --gid 10001 --home-dir /data/home valheim \
+    && mkdir /data && chown 10001:10001 /data
+RUN python3 -m venv /opt/venv
 COPY --from=builder /usr/local/ /usr/local/
 COPY --from=builder /opt/rootfs /opt/rootfs
 COPY --from=builder /opt/build-info.json /opt/build-info.json
