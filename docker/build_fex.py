@@ -20,7 +20,8 @@ subprocess.run(["git", "clone", "--recursive", "--depth", "1", "--branch", versi
                 "https://github.com/FEX-Emu/FEX.git", "/tmp/FEX"], check=True)
 commit = subprocess.check_output(["git", "-C", "/tmp/FEX", "rev-parse", "HEAD"], text=True).strip()
 subprocess.run(["cmake", "-S", "/tmp/FEX", "-B", "/tmp/build", "-G", "Ninja",
-                "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++",
+                "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_COMPILER=clang-18", "-DCMAKE_CXX_COMPILER=clang++-18",
+                "-DCMAKE_CXX_COMPILER_CLANG_SCAN_DEPS=/usr/bin/clang-scan-deps-18",
                 "-DCMAKE_INSTALL_PREFIX=/usr/local", "-DBUILD_TESTING=OFF", "-DBUILD_FEXCONFIG=OFF",
                 "-DBUILD_THUNKS=OFF", "-DENABLE_LTO=OFF", "-DENABLE_OFFLINE_TELEMETRY=OFF",
                 "-DTUNE_CPU=neoverse-n1", "-DUSE_LINKER=lld"], check=True)

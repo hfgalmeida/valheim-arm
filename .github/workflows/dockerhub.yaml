@@ -3,7 +3,7 @@ name: Publish Docker Hub
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    paths: [VERSION]
   workflow_dispatch:
     inputs:
       fex_version:
@@ -25,6 +25,8 @@ jobs:
     name: Test supervisor
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -34,6 +36,23 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
+      - name: Read image version
+        id: version
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = Path("VERSION").read_text(encoding="utf-8").strip()
+          number = r"(?:0|[1-9][0-9]*)"
+          if not re.fullmatch(rf"{number}\.{number}\.{number}", version):
+              raise SystemExit("VERSION deve conter somente X.Y.Z, por exemplo 0.1.0, sem prefixo v.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+          print(f"Versão da imagem: {version}")
+          PY
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
 
@@ -67,6 +86,13 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
           test "$(uname -m)" = aarch64
 
+      - name: Reject an already published version
+        shell: bash
+        env:
+          IMAGE: ${{ steps.config.outputs.image }}
+          IMAGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: python3 docker/check_image_version.py "$IMAGE" "$IMAGE_VERSION"
+
       - name: Resolve stable FEX version
         id: fex
         shell: bash
@@ -91,10 +117,11 @@ jobs:
           images: ${{ steps.config.outputs.image }}
           flavor: latest=false
           tags: |
+            type=raw,value=${{ needs.validate.outputs.version }},priority=900,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
             type=sha,format=long
           labels: |
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
             io.valheim-arm.fex.version=${{ steps.fex.outputs.version }}
 
       - name: Set up native Buildx
@@ -129,6 +156,13 @@ jobs:
             "$image" preflight
           docker run --rm --platform linux/arm64 --entrypoint cat \
             "$image" /opt/build-info.json
+
+      - name: Recheck version before publishing
+        shell: bash
+        env:
+          IMAGE: ${{ steps.config.outputs.image }}
+          IMAGE_VERSION: ${{ needs.validate.outputs.version }}
+        run: python3 docker/check_image_version.py "$IMAGE" "$IMAGE_VERSION"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v4

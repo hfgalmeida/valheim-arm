@@ -116,6 +116,63 @@ def test_worker_serializes_and_continues_after_failure(runtime):
     asyncio.run(scenario())
 
 
+def test_failed_initial_install_is_retried_without_busy_loop(runtime):
+    async def scenario():
+        runtime.start = AsyncMock(side_effect=RuntimeError("Steam offline"))
+        runtime.submit("start")
+        worker = asyncio.create_task(runtime.worker())
+        await runtime.queue.join()
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        assert runtime.next_recovery > time.monotonic()
+        await runtime.tick()
+        assert runtime.queue.empty()
+        runtime.next_recovery = 0
+        await runtime.tick()
+        assert runtime.queue.qsize() == 1
+        assert runtime.jobs[-1]["action"] == "start"
+        await runtime.tick()
+        assert runtime.queue.qsize() == 1
+
+    asyncio.run(scenario())
+
+
+def test_manual_stop_disables_recovery_even_after_crash(runtime):
+    async def scenario():
+        runtime.clean_stop = False
+        await runtime.execute({"action": "stop"})
+        await runtime.tick()
+        assert not runtime.want_running
+        assert runtime.queue.empty()
+        runtime.start = AsyncMock()
+        await runtime.execute({"action": "start"})
+        assert runtime.want_running
+        runtime.start.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_crash_recovery_uses_existing_world_not_restore(runtime):
+    async def scenario():
+        runtime.process = SimpleNamespace(returncode=1)
+        runtime.clean_stop = False
+        runtime.start = AsyncMock()
+        runtime.backups.restore = lambda *_: (_ for _ in ()).throw(AssertionError("must not restore saves automatically"))
+        await runtime.tick()
+        job = runtime.jobs[-1]
+        assert job["action"] == "start"
+        await runtime.execute(job)
+        runtime.start.assert_awaited_once()
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_never_schedules_recovery(runtime):
+    runtime.closing = True
+    asyncio.run(runtime.tick())
+    assert runtime.queue.empty()
+
+
 def test_scheduled_failure_is_persisted_and_retried(runtime):
     async def scenario():
         runtime.process = SimpleNamespace(returncode=None)

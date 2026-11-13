@@ -28,4 +28,11 @@
 - [ ] Construção e prova funcional FEX/SteamCMD/Valheim na Oracle ARM.
 - [ ] Validação de crossplay, BepInEx e formatos reais dos logs na Oracle.
 - [ ] Medições e ajustes de desempenho no Ampere A1.
-- [ ] Aceitação completa conforme docs/ACCEPTANCE.md.
+- [ ] Aceitação completa conforme docs/REFERENCE.md#validacao.
+
+### Instalação pública simplificada
+
+- [x] Imagem pública padrão hfgalmeida/valheim-arm:latest.
+- [x] Instalador interativo com Docker, configuração e inicialização automáticos.
+- [x] README direto para jogadores e referência avançada única.
+- [x] Recuperação automática com intervalo de cinco minutos e respeito à parada manual.

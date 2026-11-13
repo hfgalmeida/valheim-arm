@@ -4,7 +4,7 @@ ARG BUILD_JOBS=2
 ENV DEBIAN_FRONTEND=noninteractive
 RUN test "$(uname -m)" = aarch64
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git clang lld cmake ninja-build pkg-config python3 \
+    ca-certificates curl git clang-18 clang-tools-18 lld cmake ninja-build pkg-config python3 \
     libssl-dev libstdc++-14-dev squashfs-tools erofs-utils \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/build_fex.py /tmp/build_fex.py

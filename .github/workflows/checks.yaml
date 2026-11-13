@@ -17,6 +17,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: python -m pytest -q
       - run: node --check app/static/panel.js
+      - run: bash -n install.sh
+      - run: shellcheck install.sh
       - run: docker compose config --quiet
         env:
           VALHEIM_IMAGE: valheim-arm:ci

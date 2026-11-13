@@ -1,6 +1,6 @@
 services:
   valheim:
-    image: ${VALHEIM_IMAGE:?Defina VALHEIM_IMAGE com a imagem publicada no Docker Hub}
+    image: ${VALHEIM_IMAGE:-hfgalmeida/valheim-arm:latest}
     platform: linux/arm64
     init: true
     restart: unless-stopped

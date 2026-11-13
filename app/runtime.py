@@ -171,6 +171,8 @@ class Runtime:
         self.last_update = 0
         self.latest_build = None
         self.next_retry = 0
+        self.want_running = True
+        self.next_recovery = 0
         self.persistence_error = None
         self.last_save = 0
         self.clean_marker = data / "config/game-active.json"
@@ -214,6 +216,7 @@ class Runtime:
                 "pending_config": self.running is not None and self.running != self.config.effective(),
                 "installed_build": self.installed_build(), "available_build": self.latest_build,
                 "maintenance_persistence_error": self.persistence_error,
+                "automatic_recovery": self.want_running and not self.closing,
                 "jobs": list(self.jobs), "logs": list(self.logs)}
 
     def submit(self, action, backup=None):
@@ -358,6 +361,7 @@ class Runtime:
             self.state = "parado" if code == 0 else "falha"
             self.players.reset()
             self.emit(f"Processo do jogo encerrado: {code}")
+            self.next_recovery = time.monotonic() + 300
 
     async def stop(self, safe=True):
         if not self.live:
@@ -410,7 +414,13 @@ class Runtime:
     async def execute(self, job):
         action = job["action"]
         if action == "start":
+            if job.get("scheduled") and not self.want_running:
+                return
+            self.want_running = True
             await self.start()
+            return
+        if action == "stop" and not self.live:
+            self.want_running = False
             return
         if action == "check-update":
             self.latest_build = await self.available_build()
@@ -428,6 +438,7 @@ class Runtime:
         was_running = self.live
         await self.stop()
         if action == "stop":
+            self.want_running = False
             return
         try:
             job["result"] = await self.snapshot(action)
@@ -453,6 +464,9 @@ class Runtime:
             except Exception as exc:
                 job["state"], job["error"] = "falha", str(exc)
                 self.emit("Operação falhou: " + str(exc))
+                if job["action"] == "start":
+                    self.next_recovery = time.monotonic() + 300
+                    self.emit("Nova tentativa de inicialização em cinco minutos")
                 if job.get("scheduled") and job["action"] in ("restart", "backup", "update"):
                     job["state"] = "adiado"
                     self.next_retry = time.monotonic() + 300
@@ -486,8 +500,12 @@ class Runtime:
             await asyncio.sleep(5)
 
     async def tick(self):
-        if self.active is not None:
+        if self.active is not None or self.closing:
             return
+        if not self.live and self.want_running and self.queue.empty() and time.monotonic() >= self.next_recovery:
+            self.next_recovery = time.monotonic() + 300
+            self.emit("Tentando iniciar o servidor automaticamente")
+            self.schedule_once("start")
         settings = self.config.effective()
         now = datetime.now(ZoneInfo(settings.timezone))
         if self.live:
