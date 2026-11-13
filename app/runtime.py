@@ -26,6 +26,12 @@ from .players import Players, query_steam
 log = logging.getLogger("valheim")
 
 
+class SteamError(RuntimeError):
+    def __init__(self, code, output):
+        self.code, self.output = code, output
+        super().__init__(f"SteamCMD falhou (código de saída {code}); consulte os logs e /data/home/Steam/logs/stderr.txt")
+
+
 def public_build(output):
     match = re.search(r'"896660"\s*\{', output)
     if not match:
@@ -267,13 +273,14 @@ class Runtime:
         await asyncio.to_thread(install_steam, self.data)
         steam = self.data / "steamcmd"
         command = ["FEXInterpreter", "/usr/bin/env", "LD_LIBRARY_PATH=" + str(steam / "linux32"),
-                   str(steam / "linux32/steamcmd"), *args]
+                   str(steam / "linux32/steamcmd"), "+@sSteamCmdForcePlatformType", "linux", *args]
         lines = []
 
         async def run():
             # Valve's steamcmd.sh re-executes on 42 after a self-update. We run
             # the binary through FEX, so handle that restart here, with a limit.
             for attempt in range(4):
+                first_line = len(lines)
                 child = await asyncio.create_subprocess_exec(*command, cwd=steam,
                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
                 try:
@@ -293,7 +300,7 @@ class Runtime:
                     self.emit("SteamCMD solicitou reinício após autoatualização (código 42); executando novamente")
                     continue
                 if code:
-                    raise RuntimeError(f"SteamCMD falhou (código de saída {code}); consulte os logs e /data/home/Steam/logs/stderr.txt")
+                    raise SteamError(code, "\n".join(lines[first_line:]))
                 return "\n".join(lines)
 
         # One deadline covers the download and all self-update restarts.
@@ -303,12 +310,39 @@ class Runtime:
         output = await self.run_steam(["+login", "anonymous", "+app_info_update", "1", "+app_info_print", "896660", "+quit"], timeout=180)
         return public_build(output)
 
+    async def fetch_game(self, stage):
+        # Finish SteamCMD's bootstrap before asking it to install the game.
+        await self.run_steam(["+quit"], timeout=180)
+
+        async def fetch():
+            for attempt in range(3):
+                try:
+                    output = await self.run_steam(["+force_install_dir", str(stage), "+login", "anonymous",
+                                                  "+app_info_update", "1", "+app_update", "896660", "validate", "+quit"])
+                    if "Failed to install app '896660' (Missing configuration)" not in output:
+                        return output
+                    raise SteamError(0, output)
+                except SteamError as exc:
+                    missing = "Failed to install app '896660' (Missing configuration)" in exc.output
+                    if not missing or exc.code not in (0, 8) or attempt == 2:
+                        raise
+                    # Invalidate only disposable app metadata, never saves,
+                    # downloaded depots, credentials or the current install.
+                    for cache in (self.data / "steamcmd/appcache/appinfo.vdf",
+                                  self.data / "home/Steam/appcache/appinfo.vdf"):
+                        cache.unlink(missing_ok=True)
+                    delay = 10 * (attempt + 1)
+                    self.emit(f"SteamCMD: Missing configuration; metadados serão consultados novamente em {delay}s (tentativa {attempt + 2}/3)")
+                    await asyncio.sleep(delay)
+
+        return await asyncio.wait_for(fetch(), timeout=1800)
+
     async def install(self):
         self.state = "instalando"
         stage = self.data / "installs" / uuid.uuid4().hex
         stage.mkdir()
         try:
-            output = await self.run_steam(["+force_install_dir", str(stage), "+login", "anonymous", "+app_update", "896660", "validate", "+quit"])
+            output = await self.fetch_game(stage)
             if "Success! App '896660' fully installed" not in output or not (stage / "valheim_server.x86_64").is_file():
                 raise RuntimeError("SteamCMD não confirmou instalação válida")
             # All game processes are stopped before this method is called.

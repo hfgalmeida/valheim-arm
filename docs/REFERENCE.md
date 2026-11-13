@@ -112,6 +112,8 @@ Backups nativos permanecem habilitados durante o jogo. Arquivos completos são c
 
 Arquivos completos contêm saves, listas, ajustes do painel e configurações de mods, com manifesto e hashes SHA256. A senha administrativa não é exportada. Ajustes podem incluir a senha do jogo: trate os arquivos como privados. A retenção mantém representantes de sete dias e quatro semanas, além do mais recente, podendo descartar backups intermediários do mesmo dia.
 
+O Valheim 1.0 introduziu um [sistema de saves dividido em chunks](https://steamcommunity.com/app/892970/announcements/). O backup do projeto copia todos os arquivos de `data/saves` recursivamente, sem filtrar extensões, preservando as pastas completas dos mundos, os chunks e os backups nativos. A restauração recria essa árvore inteira, substituindo a anterior para evitar sobras de saves diferentes. O envio para a nuvem usa o mesmo arquivo completo. Os testes incluem uma árvore sintética do formato novo; a validação de salvar, restaurar e carregar um mundo real na Oracle permanece pendente.
+
 Baixe um `.tar.gz` pelo painel ou ative o envio automático para a nuvem descrito abaixo. Backups no mesmo volume não protegem contra perda desse disco.
 
 <a id="nuvem"></a>
@@ -132,7 +134,7 @@ A conexão contém credenciais da conta: guarde o arquivo local em lugar privado
 
 Para restaurar: pare o jogo pelo painel, selecione um arquivo, confirme a restauração e acompanhe a operação. Um backup prévio é criado. A restauração substitui o diretório de saves, incluindo listas; configurações do supervisor e mods arquivadas são preservadas para recuperação manual, mas não são reaplicadas automaticamente. Selecione no painel o mundo indicado pelo resultado e inicie o jogo. Para importar um backup baixado anteriormente, envie o `.tar.gz` por SCP para `data/backups`, preserve seu nome original, gere o sidecar com `sha256sum ARQUIVO.tar.gz | cut -d ' ' -f 1 > ARQUIVO.tar.gz.sha256` e ajuste proprietário para `10001:10001`.
 
-Para importar um mundo do PC: pare o jogo, copie os arquivos `.db` e `.fwl` correspondentes para `data/saves/worlds_local/`, ajuste o proprietário e selecione o mesmo nome em `WORLD_NAME`. Preserve uma cópia externa dos arquivos originais.
+Para importar um mundo do PC: pare o jogo e copie para `data/saves/worlds_local/` a pasta inteira do mundo no formato novo, preservando todos os arquivos internos. Para um mundo no formato antigo, copie o par `.db` e `.fwl` correspondente. Ajuste o proprietário de todos os arquivos importados para `10001:10001` e selecione em `WORLD_NAME` o nome do mundo (o nome da pasta no formato novo ou o nome sem extensão no antigo). Não renomeie nem selecione arquivos isolados de um save dividido em chunks. Preserve uma cópia externa dos arquivos originais.
 
 Para BepInEx, obtenha um **BepInExPack_Valheim Linux** de fonte confiável, calcule seu SHA256 e configure `BEPINEX=true`, `BEPINEX_URL=https://...` e `BEPINEX_SHA256=...`. O pacote deve conter `libdoorstop.so` junto de `BepInEx/core`. As opções podem ser definidas no painel. Plugins ficam em `data/mods/BepInEx/plugins`, configurações em `data/mods/BepInEx/config` e patchers em `data/mods/BepInEx/patchers`. Copie-os com o jogo parado e proprietário `10001:10001`. O [BepInEx](https://docs.bepinex.dev/articles/user_guide/installation/) deve corresponder ao jogo Linux x86_64 e ao runtime esperado pelos plugins. Não há atualização automática de mods. Clientes de console não instalam plugins; use mods compatíveis com clientes vanilla ao habilitar crossplay.
 
@@ -207,6 +209,7 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 | Login sempre recusado | Definir senha pelo comando local; aguardar cinco minutos se houve tentativas excessivas |
 | SteamCMD falha | Saída DNS/HTTPS/Steam, espaço livre, rootfs com loader i386 e log do supervisor |
 | Jogo não inicia | Mensagens do FEX, versão registrada, permissões 10001, arquivo do mundo e plugins |
+| SteamCMD: `Missing configuration` no app 896660 | O supervisor conclui a autoatualização separadamente, seleciona Linux e tenta o download até três vezes, renovando apenas `appcache/appinfo.vdf`, com esperas de 10 e 20 segundos. Se persistir, consulte os logs Steam em `data/steamcmd/logs` e `data/home/Steam/logs`; a recuperação geral tenta iniciar novamente após cinco minutos |
 | Tarefa fica adiada | Jogadores presentes, eventos recentes, A2S inacessível ou snapshot Connections ausente/expirado |
 | Crossplay não aparece | Saída PlayFab, log com join code, `crossplay` efetivo e compatibilidade dos mods |
 | Backup não restaura | Checksum lateral, integridade do tar.gz, espaço livre e jogo parado |

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.runtime import Runtime, public_build
+from app.runtime import Runtime, SteamError, public_build
 
 
 def steam_child(code, lines=()):
@@ -22,6 +22,8 @@ def test_steam_self_update_restarts_same_command_immediately(runtime):
         output = asyncio.run(runtime.run_steam(["+login", "anonymous", "+quit"]))
     assert spawn.await_count == 2
     assert spawn.await_args_list[0] == spawn.await_args_list[1]
+    command = spawn.await_args_list[0].args
+    assert command[command.index("+@sSteamCmdForcePlatformType") + 1] == "linux"
     assert "Success! App '896660' fully installed." in output
     assert any("42" in line["message"] for line in runtime.logs)
 
@@ -54,6 +56,56 @@ def test_steam_timeout_kills_process_after_self_update_restart(runtime):
             asyncio.run(runtime.run_steam(["+quit"], timeout=0.05))
     kill.assert_called_once_with(42, 9)
     child.wait.assert_awaited_once()
+
+
+def test_missing_configuration_refreshes_only_app_metadata_and_retries(runtime):
+    cache = runtime.data / "steamcmd/appcache/appinfo.vdf"
+    cache.parent.mkdir(parents=True)
+    cache.write_bytes(b"stale")
+    world = runtime.data / "saves/world.db"
+    world.write_bytes(b"world-data")
+    depot = runtime.data / "steamcmd/steamapps/depot.cache"
+    depot.parent.mkdir(parents=True)
+    depot.write_bytes(b"downloaded-depot")
+    failure = SteamError(8, "ERROR! Failed to install app '896660' (Missing configuration)")
+    success = "Success! App '896660' fully installed."
+    runtime.run_steam = AsyncMock(side_effect=["bootstrap ready", failure, success])
+    with patch("app.runtime.asyncio.sleep", new=AsyncMock()) as sleep:
+        assert asyncio.run(runtime.fetch_game(runtime.data / "installs/stage")) == success
+    assert runtime.run_steam.await_args_list[0].args == (["+quit"],)
+    first, second = runtime.run_steam.await_args_list[1:]
+    assert first == second
+    assert first.args[0].index("+app_info_update") < first.args[0].index("+app_update")
+    assert not cache.exists()
+    assert world.read_bytes() == b"world-data"
+    assert depot.read_bytes() == b"downloaded-depot"
+    sleep.assert_awaited_once_with(10)
+
+
+def test_missing_configuration_retries_are_bounded(runtime):
+    failure = SteamError(8, "ERROR! Failed to install app '896660' (Missing configuration)")
+    runtime.run_steam = AsyncMock(side_effect=["ready", failure, failure, failure])
+    with patch("app.runtime.asyncio.sleep", new=AsyncMock()) as sleep:
+        with pytest.raises(SteamError):
+            asyncio.run(runtime.fetch_game(runtime.data / "installs/stage"))
+    assert runtime.run_steam.await_count == 4
+    assert [call.args for call in sleep.await_args_list] == [(10,), (20,)]
+
+
+def test_other_steam_install_error_is_not_retried(runtime):
+    runtime.run_steam = AsyncMock(side_effect=["ready", SteamError(8, "Disk write failure")])
+    with patch("app.runtime.asyncio.sleep", new=AsyncMock()) as sleep:
+        with pytest.raises(SteamError):
+            asyncio.run(runtime.fetch_game(runtime.data / "installs/stage"))
+    assert runtime.run_steam.await_count == 2
+    sleep.assert_not_awaited()
+
+
+def test_zero_exit_code_with_missing_configuration_is_retried(runtime):
+    runtime.run_steam = AsyncMock(side_effect=["ready", "ERROR! Failed to install app '896660' (Missing configuration)", "success"])
+    with patch("app.runtime.asyncio.sleep", new=AsyncMock()):
+        assert asyncio.run(runtime.fetch_game(runtime.data / "installs/stage")) == "success"
+    assert runtime.run_steam.await_count == 3
 
 
 @pytest.mark.parametrize("crossplay", [True, False])

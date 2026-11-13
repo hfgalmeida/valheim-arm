@@ -33,6 +33,38 @@ def test_roundtrip_and_admin_excluded(tmp_path, config):
     assert json.loads((tmp_path / "config/admin.json").read_text())["hash"] == "never-export"
 
 
+def test_roundtrip_chunked_world_and_native_backup_preserves_all_files(tmp_path, config):
+    # Synthetic 1.0-style tree: preserve all files, including new extensions.
+    saves = save_fixture(tmp_path)
+    expected = {
+        "Dedicated.db": b"legacy-world",
+        "Dedicated.fwl": b"legacy-metadata",
+        "Dedicated/_main.0.db2": b"world-index",
+        "Dedicated/_main.0.fwl2": b"metadata",
+        "Dedicated/_main.0.chunks": b"chunk-index",
+        "Dedicated/_main.0.ok": b"commit-marker",
+        "Dedicated/0_0.chunk": b"terrain-and-buildings",
+        "Dedicated/1_0.chunk": b"another-zone",
+        "Dedicated/future.extension": b"opaque-new-data",
+        "Dedicated_backup_auto-20261113050000/_main.0.db2": b"native-backup-index",
+        "Dedicated_backup_auto-20261113050000/0_0.chunk": b"native-backup-chunk",
+    }
+    for name, content in expected.items():
+        path = saves / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    backups = Backups(tmp_path)
+    name = backups.create("manual", config.effective(), "123")
+    manifest, _ = backups.validate(backups.resolve(name))
+    assert all("saves/worlds_local/" + path in manifest["files"] for path in expected)
+    (saves / "Dedicated/0_0.chunk").write_bytes(b"changed")
+    (saves / "Dedicated/_main.0.ok").unlink()
+    (saves / "Dedicated/stale.chunk").write_bytes(b"must-not-survive-restore")
+    backups.restore(name)
+    actual = {path.relative_to(saves).as_posix(): path.read_bytes() for path in saves.rglob("*") if path.is_file()}
+    assert actual == expected
+
+
 def test_disk_failure_preserves_previous(tmp_path, config):
     save_fixture(tmp_path)
     backups = Backups(tmp_path)
