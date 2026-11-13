@@ -63,14 +63,18 @@ services:
       options: {max-size: "10m", max-file: "3"}
   proxy:
     container_name: valheim-proxy
-    image: caddy:2.10.2-alpine
+    image: ${VALHEIM_IMAGE:-hfgalmeida/valheim-arm:latest}
     platform: linux/arm64
+    user: "0:0"
+    entrypoint: ["/usr/bin/caddy"]
+    command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     restart: unless-stopped
     environment:
       SERVER_IP: ${SERVER_IP:?Defina SERVER_IP no .env}
+      XDG_DATA_HOME: /data
+      XDG_CONFIG_HOME: /config
     ports: ["443:443"]
     volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [valheim]

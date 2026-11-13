@@ -1,144 +1,58 @@
 # Valheim ARM
 
-Seu mundo Valheim na Oracle ARM, com instalação pelo Docker Hub e manutenção automática.
-
-**Precisa de:** Ubuntu 24.04 ou 26.04 LTS ARM64, páginas de memória de 4 KiB, 2 OCPUs, 12 GB de RAM, aproximadamente 30 GB livres e acesso sudo. A imagem pública é `hfgalmeida/valheim-arm:latest`.
+Servidor Valheim na Oracle ARM: instale com Docker, jogue e gerencie pelo navegador. Atualizações do jogo, backups e reinícios são automáticos.
 
 ## Instalar
 
-Na rede OCI, libere **UDP 2456–2457** para jogar e **TCP 443** para o painel. O instalador libera essas portas no Ubuntu quando o UFW está ativo, preservando as demais regras e o acesso SSH. Se usar outro firewall local, libere-as nele também. Depois execute:
+Você precisa de Ubuntu 24.04 ou 26.04 LTS ARM64, páginas de memória de 4 KiB, 2 OCPUs, 12 GB de RAM, cerca de 30 GB livres e acesso sudo.
 
-<details>
-<summary>Como liberar as portas na OCI e no Ubuntu</summary>
+Na OCI, libere as portas abaixo, preservando seu acesso SSH:
 
-**Na OCI:** abra **Compute → Instances → sua instância**. Na VNIC principal, abra a **Subnet** e depois **Security Lists**. Selecione a lista associada à sub-rede e use **Add Ingress Rules**:
+| Uso | Porta | Origem |
+|---|---|---|
+| Jogo | UDP 2456–2457 | `0.0.0.0/0` |
+| Painel | TCP 443 | IP público do seu computador `/32` |
 
-| Uso | Protocolo | Porta de destino | Origem (CIDR) |
-|---|---|---|---|
-| Jogo | UDP | `2456-2457` | `0.0.0.0/0` |
-| Painel | TCP | `443` | IP público do seu computador seguido de `/32` |
-| SSH/SCP | TCP | `22` | Preserve a regra de acesso SSH existente |
+Use regras de entrada stateful e porta de origem **All**. [Detalhes de rede e firewall](docs/REFERENCE.md#rede). O instalador libera essas portas quando o UFW está ativo; outros firewalls locais precisam permitir o tráfego.
 
-Deixe a porta de origem como **All** e **Stateless** desmarcado (regra stateful). Para o painel, por exemplo, o IP `203.0.113.25` vira `203.0.113.25/32`. Se usar um **Network Security Group**, adicione as mesmas regras de entrada no NSG associado à VNIC. Veja o [guia de regras da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
-
-**No Ubuntu:** o instalador libera as portas abaixo quando o UFW está ativo. Para ajustar uma instalação anterior manualmente, execute na sessão SSH, preservando sua regra de acesso SSH:
-
-```sh
-sudo ufw allow 2456:2457/udp
-sudo ufw allow 443/tcp
-sudo ufw status verbose
-```
-
-Se o status for `inactive`, o UFW não está filtrando o tráfego; o instalador não o habilita nem o desabilita. O Docker configura suas próprias regras para as portas publicadas e esse tráfego normalmente passa antes do UFW; use as regras da OCI para restringir quem acessa o painel. Regras adicionais de encaminhamento, `DOCKER-USER` ou nftables ainda podem bloquear o jogo. O instalador não remove essas regras nem desabilita o firewall. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
-
-</details>
+Na sessão SSH do servidor, execute:
 
 ```sh
 curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/install.sh -o install-valheim.sh
 sudo bash install-valheim.sh
 ```
 
-Informe o IP público, o nome do servidor, a senha do jogo e uma senha para o painel. O instalador prepara o Docker quando necessário, baixa as imagens prontas, verifica a plataforma e inicia o servidor. A instalação fica em `./valheim-arm`.
+Informe o IP público, o nome do servidor, a senha do jogo e uma senha administrativa para o painel. O instalador prepara o Docker, baixa a imagem pública `hfgalmeida/valheim-arm:latest` e inicia os serviços em `./valheim-arm`.
 
-Os contêineres se chamam `valheim-server` (jogo e painel) e `valheim-proxy` (HTTPS). Nos comandos `docker compose`, os serviços continuam sendo `valheim` e `proxy`.
+## Jogar
 
-Se uma instalação anterior com `sudo` apresentar `Permission denied` ao entrar na pasta, execute `sudo chmod 755 ~/valheim-arm ~/valheim-arm/docker`. Esse ajuste vale somente para essas duas pastas; mantenha as permissões restritas de `.env` e `data`.
-
-O primeiro download do jogo demora alguns minutos. Para acompanhar:
+O primeiro download e carregamento do mundo podem levar alguns minutos. Para acompanhar:
 
 ```sh
 cd valheim-arm
 sudo docker compose logs -f valheim
 ```
 
-Quando aparecer `Game server connected`, adicione **SEU_IP:2456** no Valheim, entre com a senha do jogo e jogue. Use **Ctrl+C** para sair da visualização do log; o servidor continua ligado.
+Após o carregamento, adicione **SEU_IP:2456** no Valheim e entre com a senha do jogo. **Ctrl+C** sai da visualização dos logs e mantém o servidor ligado.
 
-## O que acontece sozinho
+## Acessar o painel
+
+Abra **https://SEU_IP** e entre com a senha administrativa definida na instalação. O HTTPS já vem configurado; para o navegador confiar no certificado local, siga uma vez o [guia de certificado para Windows ou Linux](docs/REFERENCE.md#certificado).
+
+Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baixar/restaurar backups. Ao habilitar crossplay e reiniciar, o código de entrada aparece quando a sessão fica disponível.
+
+## Manutenção automática
 
 | Tarefa | Padrão |
 |---|---|
-| Atualização do jogo | Verifica a cada 30 minutos e atualiza quando o servidor está vazio |
-| Save do mundo | A cada 30 minutos, com backups internos do jogo |
-| Backup completo | Diário às 05h e antes de atualizar o jogo |
-| Retenção dos backups | Sete dias e quatro semanas representados nos arquivos |
-| Reinício diário | Às 05h, junto com o backup |
+| Atualizações do jogo | Verificação a cada 30 minutos |
+| Save do mundo | A cada 30 minutos, com backups internos |
+| Backup completo e reinício | Diariamente às 05h; backup também antes de atualizar |
+| Retenção | Sete dias e quatro semanas |
 | Recuperação de falhas | Nova tentativa de iniciar após cinco minutos |
 
-Os horários usam **America/Sao_Paulo**. Manutenções que param o jogo aguardam os jogadores saírem; quando a contagem é incerta, a tarefa é adiada. Backups completos também aguardam essa janela. Os backups internos do jogo continuam durante a partida.
+Os horários usam **America/Sao_Paulo**. Manutenções aguardam o servidor ficar vazio e confirmam o salvamento antes de criar backups. Você pode configurar o [envio automático para OneDrive, Dropbox ou Google Drive](docs/REFERENCE.md#nuvem) pelo painel.
 
-Os saves ficam em `valheim-arm/data`. Baixe uma cópia dos backups pelo painel para guardá-la fora da instância.
+Os dados ficam em `valheim-arm/data`. Guarde também uma cópia dos backups fora da instância.
 
-Quer automatizar essa cópia? No painel, **Backup na nuvem** permite enviar os novos backups para **OneDrive, Dropbox ou Google Drive**. Autorize sua conta uma vez no computador e importe a conexão no painel; veja [como conectar](docs/REFERENCE.md#nuvem).
-
-Para parar a instalação, execute `sudo docker compose down` na pasta `valheim-arm`. O comando aguarda o jogo salvar e encerrar, podendo levar alguns minutos; em outra sessão SSH, acompanhe com `sudo docker logs -f valheim-server`. Para subir novamente, use `sudo docker compose up -d`. Parar pelo Docker solicita o salvamento mesmo com jogadores conectados; pelo painel, a parada aguarda zero jogadores confirmado por dois minutos.
-
-## Painel
-
-Acesse **https://SEU_IP** e entre com a senha administrativa definida durante a instalação. Lá você pode mudar configurações, habilitar crossplay, administrar usuários e baixar/restaurar backups. Com crossplay ativo, o código de entrada aparece no topo do painel assim que o jogo registra a sessão. Compartilhe esse código e a senha do jogo com os jogadores; após reiniciar, consulte o código novamente.
-
-O HTTPS por IP usa um certificado local. Baixe e importe o certificado para confiar nele no navegador. Isso é opcional para começar a jogar.
-
-<a id="certificado"></a>
-<details>
-<summary>Baixar o certificado com SCP no Windows ou Linux</summary>
-
-**1. Prepare o certificado no servidor**, pela sessão SSH, depois de iniciar a instalação:
-
-```sh
-cd ~/valheim-arm
-sudo docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./valheim-root.crt
-sudo chmod 644 valheim-root.crt
-```
-
-Copie somente esse certificado público. Nos exemplos abaixo, substitua `SEU_IP` pelo IP da Oracle e o caminho `oracle.key` pela chave privada que você usa no SSH. Os comandos seguintes são executados **no seu computador**, onde está o navegador. O usuário padrão do Ubuntu na OCI é `ubuntu`; ajuste o usuário e `/home/ubuntu/valheim-arm` se sua instalação usar outros caminhos.
-
-**2. No Windows 10/11:** o SCP vem no **OpenSSH Client**. Confira no PowerShell com `Get-Command scp`. Se não estiver instalado, abra o **PowerShell como administrador** e execute:
-
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-```
-
-Depois, no PowerShell do seu usuário, baixe o arquivo para Downloads:
-
-```powershell
-scp -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt "$env:USERPROFILE\Downloads\valheim-root.crt"
-```
-
-Para confiar no certificado apenas para seu usuário Windows:
-
-```powershell
-Import-Certificate -FilePath "$env:USERPROFILE\Downloads\valheim-root.crt" -CertStoreLocation Cert:\CurrentUser\Root
-```
-
-Feche e reabra o navegador. A instalação do cliente segue o [guia OpenSSH da Microsoft](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
-
-**3. No Linux (Ubuntu/Debian):** instale o cliente OpenSSH e baixe para a pasta atual:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y openssh-client ca-certificates
-scp -i ~/.ssh/oracle.key ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt ./valheim-root.crt
-```
-
-Para adicionar à lista de autoridades confiáveis do sistema:
-
-```sh
-sudo cp valheim-root.crt /usr/local/share/ca-certificates/valheim-root.crt
-sudo update-ca-certificates
-```
-
-Se o navegador usar uma lista própria de certificados, importe também `valheim-root.crt` nas suas autoridades confiáveis. Mais detalhes na [referência do certificado](docs/REFERENCE.md#painel).
-
-</details>
-
-Uma parada solicitada pelo painel permanece parada até você iniciar novamente. Atualizar a imagem Docker do painel/FEX e restaurar backups são tarefas do administrador; o jogo recebe suas próprias atualizações automaticamente.
-
-## Precisa ajustar algo?
-
-As opções extras, importação de mundos, mods e recuperação estão reunidas na [referência avançada](docs/REFERENCE.md). Para instalar e jogar, não é preciso seguir esse guia.
-
-O instalador preserva uma instalação existente e não reinicia um mundo que já esteja rodando. Para retomá-lo após uma falha de instalação, execute novamente na mesma pasta de origem.
-
-Para quem mantém o projeto: todo push na `main` tenta publicar a versão de [VERSION](VERSION). Você pode manter o mesmo número até a imagem ser publicada; depois, aumente a versão. Veja [publicação](docs/REFERENCE.md#publicacao).
-
-A validação completa de FEX, crossplay, BepInEx e desempenho na Oracle é acompanhada no [roteiro de aceitação](docs/REFERENCE.md#validacao).
+Configurações avançadas, certificado, importação de mundos, mods e administração estão na [referência](docs/REFERENCE.md).

@@ -1,6 +1,7 @@
 {
     auto_https disable_redirects
     admin off
+    skip_install_trust
     default_sni {$SERVER_IP}
 }
 https://{$SERVER_IP} {

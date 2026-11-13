@@ -38,4 +38,5 @@ jobs:
       - run: sudo install -d -o 10001 -g 10001 -m 0700 data
       - run: docker build --pull --platform linux/arm64 --tag valheim-arm:ci .
       - run: docker compose run --rm --no-deps valheim preflight
+      - run: docker compose run --rm --no-deps proxy validate --config /etc/caddy/Caddyfile --adapter caddyfile
       - run: docker compose run --rm --no-deps --entrypoint cat valheim /opt/build-info.json

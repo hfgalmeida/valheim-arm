@@ -20,7 +20,7 @@ def test_proxy_presents_public_ip_certificate_without_sni(tmp_path):
     source = Path(__file__).resolve().parents[1] / "docker/Caddyfile"
     caddyfile = tmp_path / "Caddyfile"
     # Tests must never install a certificate authority in the host trust store.
-    caddyfile.write_text(source.read_text().replace("admin off", "admin off\n    skip_install_trust"))
+    caddyfile.write_text(source.read_text())
     env = os.environ | {"SERVER_IP": ip}
     result = subprocess.run([CADDY, "adapt", "--config", str(caddyfile), "--adapter", "caddyfile"],
                             capture_output=True, text=True, env=env)

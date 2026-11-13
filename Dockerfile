@@ -1,3 +1,5 @@
+FROM caddy:2.10.2-alpine AS caddy
+
 FROM ubuntu:24.04 AS builder
 ARG FEX_VERSION=latest
 ARG BUILD_JOBS=2
@@ -32,6 +34,8 @@ RUN python3 -m venv /opt/venv
 COPY --from=builder /usr/local/ /usr/local/
 COPY --from=builder /opt/rootfs /opt/rootfs
 COPY --from=builder /opt/build-info.json /opt/build-info.json
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
+COPY docker/Caddyfile /etc/caddy/Caddyfile
 RUN ldconfig
 WORKDIR /opt/valheim
 COPY requirements.txt .

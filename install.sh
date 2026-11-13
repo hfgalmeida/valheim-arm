@@ -152,15 +152,14 @@ main() {
     prepare_firewall
     command -v curl >/dev/null || "${ROOT[@]}" apt-get install -y curl
     umask 077
-    mkdir -p -- "$INSTALL_DIR/docker"
+    mkdir -p -- "$INSTALL_DIR"
     # Allow the SSH user to enter an installation created by sudo. Keep files
     # private via umask 077; data has its own ownership and mode below.
-    chmod 0755 -- "$INSTALL_DIR" "$INSTALL_DIR/docker"
+    chmod 0755 -- "$INSTALL_DIR"
     cd -- "$INSTALL_DIR"
     INSTALL_DIR="$PWD"
     log "Preparando Valheim em $INSTALL_DIR"
     fetch_if_missing compose.yaml compose.yaml
-    fetch_if_missing docker/Caddyfile docker/Caddyfile
     SERVER_ADDRESS='IP configurado no .env'
     if [[ -f .env ]]; then
         log 'Configuração existente preservada.'

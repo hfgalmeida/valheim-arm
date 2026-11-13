@@ -3,6 +3,7 @@
 Para instalar e jogar, siga apenas o [README](../README.md). Aqui ficam opções extras, recuperação e informações para mantenedores.
 
 - [Configuração](#configuracao)
+- [Rede e firewall](#rede)
 - [Painel e certificado](#painel)
 - [Backups e mods](#backups)
 - [Atualização da imagem e recuperação](#operacao)
@@ -81,19 +82,97 @@ Alterações FEX no `.env` exigem recriar o contêiner, preferencialmente após 
 
 A versão do emulador é selecionada pela imagem em `VALHEIM_IMAGE`. `FEX_VERSION` e `BUILD_JOBS` ficam restritos à construção pelo mantenedor/CI e não fazem parte do `.env` da instalação. A publicação da imagem está documentada em [publicação](#publicacao).
 
+<a id="rede"></a>
+## Rede e firewall
+
+Na OCI, abra **Compute → Instances → sua instância**. Na VNIC principal, abra a **Subnet**, depois **Security Lists** e use **Add Ingress Rules** na lista associada à sub-rede.
+
+| Uso | Protocolo | Porta de destino | Origem (CIDR) |
+|---|---|---|---|
+| Jogo | UDP | `2456-2457` | `0.0.0.0/0` |
+| Painel | TCP | `443` | IP público do administrador seguido de `/32` |
+| SSH/SCP | TCP | `22` por padrão | Preserve a regra SSH existente |
+
+Use porta de origem **All** e deixe **Stateless** desmarcado. Se usar NSG, confira as regras aplicáveis à VNIC. Veja as [regras de segurança da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
+
+O instalador libera UDP 2456–2457 e TCP 443 quando o UFW está ativo, sem alterar SSH ou habilitar/desabilitar o firewall. Para administrar essas permissões manualmente:
+
+```sh
+sudo ufw allow 2456:2457/udp
+sudo ufw allow 443/tcp
+sudo ufw status verbose
+```
+
+O Docker normalmente publica as portas antes das regras do UFW. Use a OCI para restringir o acesso ao painel e confira regras adicionais de encaminhamento, `DOCKER-USER`, firewalld ou nftables. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+
 <a id="painel"></a>
 ## Painel e certificado
 
-O endereço é `https://SEU_IP`. O Caddy emite um certificado local com esse IP e renova os certificados automaticamente. Para confiar na autoridade dessa instalação, obtenha o certificado por SSH:
+O endereço é `https://SEU_IP`. O Caddy e sua configuração HTTPS acompanham a imagem publicada; o Compose inicia o proxy com o IP definido em `SERVER_IP`. A seleção do certificado para acesso por IP já vem configurada. Os dados da autoridade certificadora ficam no volume persistente `caddy_data`, preservando a confiança instalada durante atualizações normais. Consulte o [HTTPS local do Caddy](https://caddyserver.com/docs/automatic-https#local-https).
+
+<a id="certificado"></a>
+### Confiar no certificado do painel
+
+O certificado local precisa ser confiado uma vez no computador usado para acessar o painel. Siga o procedimento do seu sistema abaixo. Instale somente o certificado público `root.crt`; a chave privada permanece no servidor.
+
+**1. Prepare o certificado no servidor**, pela sessão SSH, depois de iniciar a instalação:
 
 ```sh
+cd ~/valheim-arm
 sudo docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./valheim-root.crt
+sudo chmod 644 valheim-root.crt
 openssl x509 -in valheim-root.crt -noout -fingerprint -sha256
 ```
 
-Transfira `valheim-root.crt` via SCP para seu computador e importe como autoridade confiável no sistema/navegador. No Windows, use o gerenciador de certificados do usuário → Autoridades de Certificação Raiz Confiáveis → Importar. Compare a impressão digital com a exibida via SSH. Instale somente o certificado público `root.crt`; não copie a chave da autoridade. Consulte o [HTTPS local do Caddy](https://caddyserver.com/docs/automatic-https#local-https).
+Copie somente esse certificado público. Nos exemplos abaixo, substitua `SEU_IP` pelo IP da Oracle e o caminho `oracle.key` pela chave privada que você usa no SSH. Os comandos seguintes são executados **no seu computador**, onde está o navegador. O usuário padrão do Ubuntu na OCI é `ubuntu`; ajuste o usuário e `/home/ubuntu/valheim-arm` se sua instalação usar outros caminhos.
 
-Os comandos para instalar o cliente SCP, baixar o certificado no Windows/Linux e importá-lo estão no [README](../README.md#certificado).
+**2. No Windows 10/11:** o SCP vem no **OpenSSH Client**. Confira no PowerShell com `Get-Command scp`. Se não estiver instalado, abra o **PowerShell como administrador** e execute:
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+```
+
+Depois, no PowerShell do seu usuário, baixe o arquivo para Downloads:
+
+```powershell
+scp -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt "$env:USERPROFILE\Downloads\valheim-root.crt"
+```
+
+Confira a impressão digital SHA256 do certificado baixado e compare com a mostrada no servidor. O campo `Thumbprint` usual do Windows usa SHA1 e não serve para essa comparação:
+
+```powershell
+$rootCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("$env:USERPROFILE\Downloads\valheim-root.crt")
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+[BitConverter]::ToString($sha256.ComputeHash($rootCert.RawData)).Replace("-", ":")
+$sha256.Dispose()
+$rootCert.Dispose()
+```
+
+Se forem iguais, confie no certificado apenas para seu usuário Windows:
+
+```powershell
+Import-Certificate -FilePath "$env:USERPROFILE\Downloads\valheim-root.crt" -CertStoreLocation Cert:\CurrentUser\Root
+```
+
+Execute a importação no PowerShell do mesmo usuário que abre o navegador. Feche e reabra o navegador. Se ele usar um repositório próprio de certificados, importe também nas suas autoridades confiáveis. A instalação do cliente segue o [guia OpenSSH da Microsoft](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
+
+**3. No Linux (Ubuntu/Debian):** instale o cliente OpenSSH e baixe para a pasta atual:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y openssh-client ca-certificates
+scp -i ~/.ssh/oracle.key ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt ./valheim-root.crt
+openssl x509 -in valheim-root.crt -noout -fingerprint -sha256
+```
+
+Compare a impressão digital com a exibida no servidor. Se forem iguais, adicione à lista de autoridades confiáveis do sistema:
+
+```sh
+sudo cp valheim-root.crt /usr/local/share/ca-certificates/valheim-root.crt
+sudo update-ca-certificates
+```
+
+Se o navegador usar uma lista própria de certificados, importe também `valheim-root.crt` nas suas autoridades confiáveis.
 
 Entre com a senha definida no servidor. Para trocá-la:
 
@@ -219,11 +298,8 @@ Sem confirmação de saída e salvamento, o supervisor mantém o marcador de enc
 | Login sempre recusado | Definir senha pelo comando local; aguardar cinco minutos se houve tentativas excessivas |
 | SteamCMD falha | Saída DNS/HTTPS/Steam, espaço livre, rootfs com loader i386 e log do supervisor |
 | Jogo não inicia | Mensagens do FEX, versão registrada, permissões 10001, arquivo do mundo e plugins |
-| Navegador: `ERR_SSL_PROTOCOL_ERROR` ao acessar pelo IP | O Caddyfile deve conter `default_sni {$SERVER_IP}` no bloco global para selecionar o certificado correto sem SNI atrás do NAT do Docker. Confirme o IP no `.env`, atualize o Caddyfile e recrie somente o proxy com `sudo docker compose up -d --no-deps --force-recreate proxy`. O instalador preserva arquivos existentes, portanto uma nova execução não substitui um Caddyfile antigo. Referência: [Caddy default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni) |
-| SteamCMD: `Missing configuration` no app 896660 | O supervisor conclui a autoatualização separadamente, seleciona Linux e tenta o download até três vezes, renovando apenas `appcache/appinfo.vdf`, com esperas de 10 e 20 segundos. Se persistir, consulte os logs Steam em `data/steamcmd/logs` e `data/home/Steam/logs`; a recuperação geral tenta iniciar novamente após cinco minutos |
 | Tarefa fica adiada | Jogadores presentes, eventos recentes, A2S inacessível ou snapshot Connections ausente/expirado |
 | Crossplay não aparece | Saída PlayFab, log com join code, `crossplay` efetivo e compatibilidade dos mods |
-| Crossplay: `libatomic.so.1` ausente ou `DllNotFoundException` em Party | As dependências precisam ser amd64 dentro do rootfs FEX. A imagem inclui `libatomic1`, `libstdc++6`, `libpulse0` e `libpulse-mainloop-glib0` e suas dependências; instalar os pacotes ARM no host não corrige o ambiente x86. Atualize a imagem. Ao iniciar com crossplay, o supervisor verifica as dependências reais de `libparty.so` antes de executar o jogo |
 | Backup não restaura | Checksum lateral, integridade do tar.gz, espaço livre e jogo parado |
 | Painel mostra CPU limitada ao supervisor | cgroup v2 indisponível; habilitar o ambiente de referência em vez de interpretar esse valor como consumo do jogo |
 
@@ -451,7 +527,9 @@ O instalador aceita Ubuntu 24.04 e 26.04 LTS ARM64 com páginas de 4 KiB, usa o 
 
 Se o UFW estiver ativo, o instalador acrescenta permissões de entrada para UDP 2456–2457 e TCP 443, inclusive em uma nova execução sobre instalação existente. Não habilita/desabilita o UFW, não altera SSH ou políticas padrão e não remove regras existentes. UFW ausente ou inativo é apenas informado. As regras de publicação/NAT do Docker normalmente passam antes do UFW; isso não contorna a rede OCI nem garante passagem por regras adicionais de encaminhamento, `DOCKER-USER`, firewalld ou nftables. O instalador não modifica esses outros firewalls.
 
-Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, Caddyfile, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
+Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
+
+Os dois serviços usam a mesma imagem publicada: o serviço `valheim` executa o supervisor e o serviço `proxy` executa o Caddy incluído na imagem. A configuração do proxy é interna; atualizações chegam pela imagem.
 
 O `.env.example` contém somente o essencial. Todas as opções avançadas continuam disponíveis no `compose.yaml` e nas tabelas acima. A imagem padrão é pública, `hfgalmeida/valheim-arm:latest`, e não exige login. Modificadores, crossplay, horários, usuários e backups podem ser administrados pelo painel. Alterações do jogo ficam pendentes até uma reinicialização segura; ajustes de horário são lidos pelo agendador.
 
