@@ -11,9 +11,11 @@ Na OCI, libere as portas abaixo, preservando seu acesso SSH:
 | Uso | Porta | Origem |
 |---|---|---|
 | Jogo | UDP 2456–2457 | `0.0.0.0/0` |
-| Painel | TCP 443 | IP público do seu computador `/32` |
+| Painel | TCP 443 | `0.0.0.0/0` |
 
 Use regras de entrada stateful e porta de origem **All**. [Detalhes de rede e firewall](docs/REFERENCE.md#rede). O instalador libera essas portas quando o UFW está ativo; outros firewalls locais precisam permitir o tráfego.
+
+A origem `0.0.0.0/0` permite acessar o painel de qualquer rede, sem cadastrar o IP do seu computador. A tela de login fica pública; proteja o acesso com uma senha administrativa forte.
 
 Na sessão SSH do servidor, execute:
 
@@ -22,7 +24,7 @@ curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/install.s
 sudo bash install-valheim.sh
 ```
 
-Informe o IP público, o nome do servidor, a senha do jogo e uma senha administrativa para o painel. O instalador prepara o Docker, baixa a imagem pública `hfgalmeida/valheim-arm:latest` e inicia os serviços em `./valheim-arm`.
+Informe o **IP público da instância Oracle**, o nome do servidor, a senha do jogo e uma senha administrativa para o painel. O instalador prepara o Docker, baixa a imagem pública `hfgalmeida/valheim-arm:latest` e inicia os serviços em `./valheim-arm`.
 
 ## Jogar
 

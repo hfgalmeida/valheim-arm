@@ -90,10 +90,12 @@ Na OCI, abra **Compute → Instances → sua instância**. Na VNIC principal, ab
 | Uso | Protocolo | Porta de destino | Origem (CIDR) |
 |---|---|---|---|
 | Jogo | UDP | `2456-2457` | `0.0.0.0/0` |
-| Painel | TCP | `443` | IP público do administrador seguido de `/32` |
+| Painel | TCP | `443` | `0.0.0.0/0` |
 | SSH/SCP | TCP | `22` por padrão | Preserve a regra SSH existente |
 
 Use porta de origem **All** e deixe **Stateless** desmarcado. Se usar NSG, confira as regras aplicáveis à VNIC. Veja as [regras de segurança da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
+
+Com `0.0.0.0/0`, a tela de login do painel fica acessível de qualquer rede e o acesso administrativo exige a senha do painel. Para restringir o acesso por rede, opcionalmente substitua essa origem pelo IP público do administrador seguido de `/32`. O `SERVER_IP` solicitado na instalação é sempre o IP público da instância Oracle.
 
 O instalador libera UDP 2456–2457 e TCP 443 quando o UFW está ativo, sem alterar SSH ou habilitar/desabilitar o firewall. Para administrar essas permissões manualmente:
 
