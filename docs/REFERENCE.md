@@ -189,7 +189,7 @@ Se mudar o IP, atualize `SERVER_IP` no `.env` e execute `sudo docker compose up 
 <a id="backups"></a>
 ## Backups e mods
 
-Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação `World saved`. Se houver jogadores continuamente, os arquivos completos serão adiados; os backups nativos continuam funcionando.
+Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo). Se houver jogadores continuamente, os arquivos completos serão adiados; os backups nativos continuam funcionando.
 
 Arquivos completos contêm saves, listas, ajustes do painel e configurações de mods, com manifesto e hashes SHA256. A senha administrativa não é exportada. Ajustes podem incluir a senha do jogo: trate os arquivos como privados. A retenção mantém representantes de sete dias e quatro semanas, além do mais recente, podendo descartar backups intermediários do mesmo dia.
 
@@ -265,7 +265,7 @@ Antes, inspecione um eventual `.rollback-current` deixado por uma tentativa ante
 
 ### Queda de energia ou parada incompleta
 
-O supervisor deixa `data/config/game-active.json` enquanto o jogo estiver ativo e só remove o marcador após confirmar save e saída limpa. Se houver timeout de 150 segundos ou o jogo terminar sem `World saved`, backup/atualização são cancelados. Os saves anteriores não são sobrescritos pela manutenção.
+O supervisor deixa `data/config/game-active.json` enquanto o jogo estiver ativo e só remove o marcador após confirmar save e saída limpa. Se houver timeout de 150 segundos ou o jogo terminar sem confirmação final de salvamento, backup/atualização são cancelados. Os saves anteriores não são sobrescritos pela manutenção.
 
 Primeiro confira logs e espaço em disco. Se o mundo ainda iniciar, inicie o jogo e solicite uma parada limpa antes de retomar a manutenção. Caso precise restaurar sem conseguir iniciar o mundo:
 
@@ -285,11 +285,15 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 
 O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações do painel e as manutenções agendadas continuam exigindo zero jogadores confirmado por dois minutos, com confirmação A2S no modo Steam e uma verificação final das conexões.
 
-O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação `World saved` antes de marcar a parada como limpa.
+O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo) antes de marcar a parada como limpa.
 
 Uma operação que já escreve saves ou backups tem até 120 segundos para concluir antes do cancelamento da tarefa; consultas de metadados da Steam são canceladas diretamente. O Compose mantém `stop_grace_period: 6m` para acomodar o encerramento HTTP, a operação e a saída do jogo. Portanto, alguns minutos de espera no `down` podem ser normais. Acompanhe em outra sessão com `sudo docker logs -f valheim-server`; evite encurtar o prazo com `down --timeout` durante um salvamento.
 
 Sem confirmação de saída e salvamento, o supervisor mantém o marcador de encerramento incompleto e não cria um backup que poderia ser inconsistente. Manutenções não enviam SIGKILL ao jogo; se o processo não encerrar dentro do prazo do contêiner, o Docker pode terminar forçadamente os processos restantes. Uma vez iniciado o desligamento, tarefas e a recuperação automática não voltam a iniciar o jogo. Uma nova inicialização do contêiner inicia o servidor novamente.
+
+Somente impedimentos de segurança anteriores ao SIGINT (jogo ainda carregando, jogadores presentes ou contagem indisponível) e falhas de persistência anteriores à execução adiam automaticamente uma manutenção. Erros de salvamento, backup, atualização ou retorno do jogo encerram a tarefa com falha; a operação inteira não é repetida. Se necessário, a recuperação do jogo ocorre separadamente. Uma versão cuja atualização falhou não provoca novas paradas automáticas no mesmo supervisor: tente novamente pelo painel ou aguarde outra versão disponível.
+
+Os horários diários passam a valer a partir da inicialização do supervisor: instalar ou recriar o contêiner depois do horário não dispara imediatamente um reinício retroativo. Tarefas apenas aguardando na fila são preservadas e aguardam o jogo ficar pronto; uma manutenção interrompida durante a execução é registrada como falha, pois não é seguro repetir efeitos já realizados. Cliques repetidos na mesma operação pendente compartilham a tarefa existente; uma manutenção manual concluída cancela tarefas automáticas equivalentes ainda pendentes.
 
 ### Diagnóstico
 
@@ -317,7 +321,7 @@ sudo docker compose exec valheim cat /opt/build-info.json
 sudo df -h ./data
 ```
 
-Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas, depois a cada cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa essas tentativas até você iniciar novamente. A recuperação não restaura backups por conta própria; erros persistentes ficam nos logs.
+Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização.
 
 <a id="publicacao"></a>
 ## Publicar imagem

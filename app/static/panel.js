@@ -16,7 +16,7 @@ function update(s){
   if(s.cloud)cloudStatus(s.cloud);
   $("crossplay-info").hidden=!s.crossplay;
   $("join-code").textContent=s.join_code||(s.running?"Aguardando código do servidor…":"Disponível ao iniciar o servidor");
-  $("status").textContent="Estado: "+s.state;$("players").textContent=s.players.count===null?"?":s.players.count;$("player-reason").textContent=s.players.reason;
+  $("status").textContent="Estado: "+s.state+(s.recovery_error?" — "+s.recovery_error:"");$("players").textContent=s.players.count===null?"?":s.players.count;$("player-reason").textContent=s.players.reason;
   $("versions").textContent="Build instalado: "+(s.installed_build||"—")+" · Disponível: "+(s.available_build||"—");$("pending").textContent=s.pending_config?"Alterações aguardam reinício":"";
   $("logs").textContent=s.logs.map(l=>new Date(l.time*1000).toLocaleTimeString()+"  "+l.message).join("\n");$("jobs").replaceChildren();
   [...s.jobs].reverse().slice(0,15).forEach(j=>{const r=document.createElement("div");r.className="job";r.textContent=j.action+" · "+j.state+(j.error?" — "+j.error:"")+(j.result?" — "+j.result:"");$("jobs").append(r);});

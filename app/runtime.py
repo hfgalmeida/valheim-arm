@@ -28,12 +28,25 @@ GAME_STOP_TIMEOUT = 150
 SHUTDOWN_JOB_TIMEOUT = 120
 STOP_PROGRESS_INTERVAL = 15
 LOG_DRAIN_TIMEOUT = 2
+MAX_RECOVERY_FAILURES = 5
+STABLE_SESSION_SECONDS = 600
+
+
+class MaintenanceDeferred(RuntimeError):
+    """Safety checks refused maintenance before any stop signal was sent."""
 
 
 class SteamError(RuntimeError):
     def __init__(self, code, output):
         self.code, self.output = code, output
         super().__init__(f"SteamCMD falhou (código de saída {code}); consulte os logs e /data/home/Steam/logs/stderr.txt")
+
+
+def save_completed(line):
+    # Legacy saves and the final commit of the chunked save format. Earlier
+    # stages (even DB2/FWL written) do not confirm a complete world save.
+    return bool(re.search(r"\bWorld saved\b|\bWorld save \(5/5\) done\.", line)
+                and not re.search(r"\b(?:error|failed|exception)\b", line, re.IGNORECASE))
 
 
 def public_build(output):
@@ -203,6 +216,9 @@ class Runtime:
         self.world_loaded = False
         self.transport_ready = False
         self.startup_failures = 0
+        self.ready_since = None
+        self.recovery_error = None
+        self.schedule_started = datetime.now(ZoneInfo(self.config.effective().timezone))
         self.state = "parado"
         self.logs = deque(maxlen=500)
         self.jobs = deque()
@@ -214,6 +230,7 @@ class Runtime:
         self.scheduler_task = None
         self.last_update = 0
         self.latest_build = None
+        self.failed_update_build = None
         self.next_retry = 0
         self.want_running = True
         self.next_recovery = 0
@@ -226,9 +243,14 @@ class Runtime:
         self.daily = json.loads(self.daily_path.read_text()) if self.daily_path.exists() else {}
         self.pending_path = data / "config/maintenance.json"
         for job in json.loads(self.pending_path.read_text()) if self.pending_path.exists() else []:
-            job["state"] = "fila"
             self.jobs.append(job)
-            self.queue.put_nowait(job)
+            if job["state"] == "executando":
+                job["state"] = "falha"
+                job["error"] = "Manutenção interrompida pelo supervisor; não será repetida automaticamente"
+                self.emit(job["error"])
+            elif job["state"] in ("fila", "adiado"):
+                job["state"] = "fila"
+                self.queue.put_nowait(job)
 
     @property
     def live(self):
@@ -264,6 +286,7 @@ class Runtime:
                 "installed_build": self.installed_build(), "available_build": self.latest_build,
                 "maintenance_persistence_error": self.persistence_error,
                 "automatic_recovery": self.want_running and not self.closing,
+                "recovery_error": self.recovery_error,
                 "cloud": self.cloud.describe(), "jobs": list(self.jobs), "logs": list(self.logs)}
 
     def submit(self, action, backup=None):
@@ -271,6 +294,10 @@ class Runtime:
             raise ValueError("Ação desconhecida")
         if action == "restore":
             self.backups.resolve(backup or "")
+        for pending in self.jobs:
+            if (not pending.get("scheduled") and pending["action"] == action
+                    and pending.get("backup") == backup and pending["state"] in ("fila", "executando")):
+                return pending
         job = {"id": uuid.uuid4().hex, "action": action, "backup": backup, "state": "fila", "created": time.time()}
         self.queue.put_nowait(job)
         self.jobs.append(job)
@@ -290,6 +317,24 @@ class Runtime:
         except OSError:
             self.persistence_error = "Não foi possível persistir manutenção; confira espaço e permissões"
             self.emit(self.persistence_error)
+
+    def disable_recovery(self):
+        self.want_running = False
+        for job in self.jobs:
+            if job.get("scheduled") and job["state"] in ("fila", "adiado"):
+                job["state"] = "cancelado"
+        self.persist_pending()
+
+    def recovery_failed(self, startup=True):
+        self.startup_failures += 1
+        if self.startup_failures >= MAX_RECOVERY_FAILURES:
+            self.recovery_error = "Recuperação suspensa após cinco falhas consecutivas; consulte os logs e use Iniciar para tentar novamente"
+            self.disable_recovery()
+            self.emit(self.recovery_error)
+            return
+        delay = (15, 30, 60)[self.startup_failures - 1] if startup and self.startup_failures <= 3 else 300
+        self.next_recovery = time.monotonic() + delay
+        self.emit(f"Recuperação automática: nova tentativa de iniciar em {delay}s")
 
     async def boot(self):
         import fcntl
@@ -401,6 +446,7 @@ class Runtime:
             return
         self.join_code = None
         self.game_ready = self.world_loaded = self.transport_ready = False
+        self.ready_since = None
         if self.current_install() is None:
             await self.install()
         settings = self.config.effective()
@@ -447,13 +493,13 @@ class Runtime:
                         self.transport_ready = True
                 elif "Game server connected" in text or "Opened Steam server" in text:
                     self.transport_ready = True
-                if "World saved" in text:
+                if save_completed(text):
                     self.last_save = time.monotonic()
                 if "Loading: Done" in text:
                     self.world_loaded = True
-                if self.world_loaded and self.transport_ready:
+                if self.world_loaded and self.transport_ready and not self.game_ready:
                     self.game_ready = True
-                    self.startup_failures = 0
+                    self.ready_since = time.monotonic()
                     self.state = "online"
                 self.emit(text)
         except Exception as exc:
@@ -468,13 +514,9 @@ class Runtime:
             self.emit(f"Processo do jogo encerrado: {code}")
             expected = self.stop_request is not None and self.stop_request[0] is process
             if not expected and self.want_running and not self.closing:
-                if not self.game_ready:
-                    self.startup_failures += 1
-                    delay = (15, 30, 60)[self.startup_failures - 1] if self.startup_failures <= 3 else 300
-                else:
-                    delay = 300
-                self.next_recovery = time.monotonic() + delay
-                self.emit(f"Recuperação automática: nova tentativa de iniciar em {delay}s")
+                if self.ready_since is not None and time.monotonic() - self.ready_since >= STABLE_SESSION_SECONDS:
+                    self.startup_failures = 0
+                self.recovery_failed(startup=not self.game_ready)
             self.game_ready = False
 
     async def stop(self, safe=True):
@@ -487,11 +529,11 @@ class Runtime:
         if not pending:
             if safe:
                 if not self.players.idle():
-                    raise RuntimeError("Aguardando zero jogadores confirmado por dois minutos")
+                    raise MaintenanceDeferred("Aguardando zero jogadores confirmado por dois minutos")
                 if not self.running.crossplay:
                     count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
                     if count != 0:
-                        raise RuntimeError("Consulta Steam divergente ou indisponível")
+                        raise MaintenanceDeferred("Consulta Steam divergente ou indisponível")
             pid = process.pid
             if safe:
                 # Scheduled/panel operations still freeze admissions and drain
@@ -501,7 +543,7 @@ class Runtime:
                 if safe:
                     await asyncio.sleep(0.25)
                     if not self.players.idle():
-                        raise RuntimeError("Conexão detectada na verificação final; parada cancelada")
+                        raise MaintenanceDeferred("Conexão detectada na verificação final; parada cancelada")
                 requested = time.monotonic()
                 os.killpg(pid, signal.SIGINT)
                 self.stop_request = (process, requested)
@@ -544,7 +586,7 @@ class Runtime:
         if process.returncode not in (0, -signal.SIGINT):
             raise RuntimeError("Saída anormal; backup/atualização cancelados")
         if self.last_save < requested:
-            raise RuntimeError("Saída sem confirmação World saved; backup/atualização cancelados")
+            raise RuntimeError("Saída sem confirmação de salvamento concluído; backup/atualização cancelados")
         self.clean_stop = True
         self.state = "parado"
         self.clean_marker.unlink(missing_ok=True)
@@ -567,15 +609,19 @@ class Runtime:
         if action == "start":
             if job.get("scheduled") and not self.want_running:
                 return
+            if not job.get("scheduled"):
+                self.startup_failures = 0
+                self.recovery_error = None
             self.want_running = True
             await self.start()
             return
         if action == "stop" and not self.live:
-            self.want_running = False
+            self.disable_recovery()
             return
         if action == "check-update":
             self.latest_build = await self.available_build()
-            if self.installed_build() and self.latest_build != self.installed_build():
+            if (self.installed_build() and self.latest_build != self.installed_build()
+                    and self.latest_build != self.failed_update_build):
                 self.schedule_once("update")
             return
         if action == "restore":
@@ -586,10 +632,25 @@ class Runtime:
             manifest = await asyncio.to_thread(self.backups.restore, job["backup"])
             job["result"] = "Saves restaurados. Mundo do arquivo: " + manifest["world"]
             return
+        if action == "update" and job.get("scheduled") and self.latest_build is not None:
+            if self.installed_build() == self.latest_build:
+                job["result"] = "Versão já instalada; parada dispensada"
+                return
+        if job.get("scheduled") and (not self.live or not self.game_ready):
+            raise MaintenanceDeferred("Aguardando o jogo ficar pronto antes da manutenção")
         was_running = self.live
-        await self.stop()
+        try:
+            await self.stop()
+        except MaintenanceDeferred:
+            raise
+        except Exception:
+            # A failed save/stop must never replay the whole maintenance job.
+            # If the process has exited, recover the game independently.
+            if was_running and not self.live:
+                self.next_recovery = time.monotonic() + 300
+            raise
         if action == "stop":
-            self.want_running = False
+            self.disable_recovery()
             return
         try:
             job["result"] = await self.snapshot(action)
@@ -597,11 +658,28 @@ class Runtime:
                 await self.install()
         finally:
             if was_running and not self.live and not self.closing:
-                await self.start()
+                try:
+                    await self.start()
+                except Exception:
+                    self.recovery_failed(startup=False)
+                    raise
+        if not job.get("scheduled"):
+            # A completed manual maintenance already satisfied equivalent work.
+            for pending in self.jobs:
+                if (pending.get("scheduled") and pending["state"] in ("fila", "adiado")
+                        and (pending["action"] in ("backup", "restart")
+                             or action == pending["action"] == "update")):
+                    pending["state"] = "cancelado"
+            self.persist_pending()
+        if action == "update":
+            self.failed_update_build = None
 
     async def worker(self):
         while True:
             job = await self.queue.get()
+            if job["state"] == "cancelado":
+                self.queue.task_done()
+                continue
             self.active = job
             job["state"] = "executando"
             job.pop("error", None)
@@ -610,16 +688,18 @@ class Runtime:
                 if job.get("scheduled"):
                     self.persist_pending()
                     if self.persistence_error:
-                        raise RuntimeError(self.persistence_error)
+                        raise MaintenanceDeferred(self.persistence_error)
                 await self.execute(job)
                 job["state"] = "concluído"
             except Exception as exc:
                 job["state"], job["error"] = "falha", str(exc)
-                self.emit(("Operação adiada" if job.get("scheduled") and job["action"] in ("restart", "backup", "update") else "Operação falhou") + " (" + job["action"] + "): " + str(exc))
+                deferred = isinstance(exc, MaintenanceDeferred) and job.get("scheduled") and job["action"] in ("restart", "backup", "update")
+                self.emit(("Operação adiada" if deferred else "Operação falhou") + " (" + job["action"] + "): " + str(exc))
+                if job["action"] == "update" and not deferred:
+                    self.failed_update_build = self.latest_build
                 if job["action"] == "start":
-                    self.next_recovery = time.monotonic() + 300
-                    self.emit("Nova tentativa de inicialização em cinco minutos")
-                if job.get("scheduled") and job["action"] in ("restart", "backup", "update"):
+                    self.recovery_failed(startup=False)
+                if deferred:
                     job["state"] = "adiado"
                     self.next_retry = time.monotonic() + 300
             finally:
@@ -670,14 +750,16 @@ class Runtime:
             for action, hour in (("restart", settings.restart_at), ("backup", settings.backup_at)):
                 key = action + ":" + now.date().isoformat()
                 if hour != "off" and now.strftime("%H:%M") >= hour and key not in self.daily:
-                    due.append((action, key))
+                    scheduled_at = now.replace(hour=int(hour[:2]), minute=int(hour[3:]), second=0, microsecond=0)
+                    if scheduled_at > self.schedule_started:
+                        due.append((action, key))
             if due:
                 # restart already includes snapshot, coalesce daily tasks.
                 self.schedule_once("restart" if any(action == "restart" for action, _ in due) else "backup")
                 self.daily.update({key: True for _, key in due})
                 self.daily = {k: v for k, v in self.daily.items() if k.split(":", 1)[1] >= now.date().isoformat()}
                 atomic_json(self.daily_path, self.daily)
-        if time.monotonic() >= self.next_retry:
+        if self.want_running and self.live and self.game_ready and time.monotonic() >= self.next_retry:
             for job in self.jobs:
                 if job["state"] == "adiado":
                     job["state"] = "fila"
@@ -698,7 +780,8 @@ class Runtime:
             # Discard queued operations, preserving scheduled intents on disk.
             while not self.queue.empty():
                 queued = self.queue.get_nowait()
-                queued["state"] = "adiado" if queued.get("scheduled") else "cancelado"
+                if queued["state"] != "cancelado":
+                    queued["state"] = "adiado" if queued.get("scheduled") else "cancelado"
                 self.queue.task_done()
         if self.active and self.active["action"] != "check-update":
             self.emit(f"Aguardando operação {self.active['action']} em andamento por até {SHUTDOWN_JOB_TIMEOUT}s")

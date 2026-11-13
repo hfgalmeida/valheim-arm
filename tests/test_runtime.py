@@ -8,7 +8,24 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.runtime import Runtime, SteamError, public_build
+from app.runtime import MaintenanceDeferred, Runtime, SteamError, public_build, save_completed
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("World saved", True),
+    ("11/13/2026 22:45:40: World saved (480ms)", True),
+    ("11/13/2026 22:45:40: World save (5/5) done. Total time [480ms]", True),
+    ("World save (1/5) Cloud & Backup checks done [11ms] => Save number 1", False),
+    ("World save (2/5) Chunks writing done [330ms]", False),
+    ("World save (3/5) DB2 writing done [91ms]", False),
+    ("World save (4/5) FWL writing done [6ms]", False),
+    ("World save (5/5) failed", False),
+    ("Error: World saved", False),
+    ("Skipping backup. World session not long enough.", False),
+    ("Processo do jogo encerrado: 0", False),
+])
+def test_only_completed_world_saves_are_acknowledged(line, expected):
+    assert save_completed(line) is expected
 
 
 def steam_child(code, lines=()):
@@ -386,7 +403,8 @@ def test_initial_loading_does_not_trigger_maintenance(runtime):
 def test_scheduled_failure_is_persisted_and_retried(runtime):
     async def scenario():
         runtime.process = SimpleNamespace(returncode=None)
-        runtime.execute = AsyncMock(side_effect=RuntimeError("occupied"))
+        runtime.game_ready = True
+        runtime.execute = AsyncMock(side_effect=MaintenanceDeferred("occupied"))
         runtime.schedule_once("restart")
         task = asyncio.create_task(runtime.worker())
         await runtime.queue.join()
@@ -438,12 +456,12 @@ def test_container_shutdown_stops_game_without_waiting_for_empty_players(runtime
 
 @pytest.mark.skipif(os.name != "posix", reason="Sinais e grupos de processos Linux necessários")
 @pytest.mark.parametrize("safe", [True, False])
-@pytest.mark.parametrize("saved", [True, False])
+@pytest.mark.parametrize("saved", [False, "World saved", "World save (5/5) done. Total time [480ms]"])
 def test_real_process_signals_require_save_confirmation(runtime, safe, saved):
     async def scenario():
         code = ('import signal,sys\n'
                 'def stop(*args):\n'
-                + (' print("World saved", flush=True)\n' if saved else '')
+                + (' print(' + repr(saved) + ', flush=True)\n' if saved else '')
                 + ' sys.exit(0)\n'
                 'signal.signal(signal.SIGINT, stop)\n'
                 'print("ready", flush=True)\n'
@@ -462,7 +480,7 @@ def test_real_process_signals_require_save_confirmation(runtime, safe, saved):
                 await asyncio.wait_for(runtime.stop(safe=safe), timeout=5)
                 assert runtime.clean_stop
             else:
-                with pytest.raises(RuntimeError, match="World saved"):
+                with pytest.raises(RuntimeError, match="salvamento"):
                     await asyncio.wait_for(runtime.stop(safe=safe), timeout=5)
                 assert not runtime.clean_stop
             assert child.returncode == 0
@@ -563,6 +581,62 @@ def test_shutdown_cancels_metadata_query_without_waiting_two_minutes(runtime):
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("action", ["backup", "restart", "update"])
+@pytest.mark.parametrize("complete", [True, False])
+def test_chunked_save_shutdown_drives_maintenance_safely(runtime, action, complete):
+    async def scenario():
+        lines = asyncio.Queue()
+        process = SimpleNamespace(pid=42, returncode=None, stdout=SimpleNamespace(readline=lines.get))
+
+        async def wait():
+            return process.returncode
+
+        process.wait = wait
+        runtime.process = process
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": True})
+        runtime.clean_stop = False
+        runtime.clean_marker.write_text("{}")
+        runtime.players.consume("Connections 0 ZDOS:81")
+        runtime.players.empty_since -= 121
+        # A successful earlier autosave must not authorize this shutdown.
+        runtime.last_save = time.monotonic() - 60
+        runtime.reader = asyncio.create_task(runtime.read_game(process))
+        runtime.snapshot = AsyncMock(return_value="saved.tar.gz")
+        runtime.install = AsyncMock()
+        runtime.start = AsyncMock()
+
+        def signal_game(_pid, sig):
+            if sig == signal.SIGINT:
+                for stage in ("World save (1/5) Cloud & Backup checks done [11ms]",
+                              "World save (2/5) Chunks writing done [330ms]",
+                              "World save (3/5) DB2 writing done [91ms]",
+                              "World save (4/5) FWL writing done [6ms]"):
+                    lines.put_nowait((stage + "\n").encode())
+                if complete:
+                    lines.put_nowait(b"World save (5/5) done. Total time [480ms]\n")
+                process.returncode = 0
+                lines.put_nowait(b"")
+
+        with patch("app.runtime.os.killpg", side_effect=signal_game, create=True), \
+                patch("app.runtime.signal.SIGSTOP", 19, create=True), patch("app.runtime.signal.SIGCONT", 18, create=True):
+            if complete:
+                await runtime.execute({"action": action})
+                runtime.snapshot.assert_awaited_once_with(action)
+                runtime.start.assert_awaited_once()
+                assert runtime.install.await_count == (1 if action == "update" else 0)
+                assert not runtime.clean_marker.exists()
+            else:
+                with pytest.raises(RuntimeError, match="salvamento"):
+                    await runtime.execute({"action": action})
+                runtime.snapshot.assert_not_awaited()
+                runtime.install.assert_not_awaited()
+                runtime.start.assert_not_awaited()
+                assert runtime.clean_marker.exists()
+        assert runtime.clean_stop is complete
+
+    asyncio.run(scenario())
+
+
 def test_restore_does_not_prune_selected_source(runtime):
     runtime.backups.create = lambda *args: "backup-name"
     runtime.backups.prune = lambda *args: (_ for _ in ()).throw(AssertionError("must not prune"))
@@ -608,9 +682,201 @@ def test_stop_requires_save_after_signal(runtime, saved):
                 await runtime.stop()
                 assert runtime.clean_stop and not runtime.clean_marker.exists()
             else:
-                with pytest.raises(RuntimeError, match="World saved"):
+                with pytest.raises(RuntimeError, match="salvamento"):
                     await runtime.stop()
                 assert not runtime.clean_stop and runtime.clean_marker.exists()
             assert [call.args[1] for call in kill.call_args_list] == [19, signal.SIGINT, 18]
+
+    asyncio.run(scenario())
+
+
+async def finish_worker(runtime):
+    worker = asyncio.create_task(runtime.worker())
+    await runtime.queue.join()
+    worker.cancel()
+    await asyncio.gather(worker, return_exceptions=True)
+
+
+@pytest.mark.parametrize("action", ["restart", "backup", "update"])
+def test_failed_maintenance_after_stop_is_never_replayed(runtime, action):
+    async def scenario():
+        runtime.process = SimpleNamespace(returncode=None)
+
+        async def stop():
+            runtime.process.returncode = 0
+
+        async def start():
+            runtime.process = SimpleNamespace(returncode=None)
+
+        runtime.stop = AsyncMock(side_effect=stop)
+        runtime.start = AsyncMock(side_effect=start)
+        runtime.snapshot = AsyncMock(side_effect=OSError("disk full"))
+        runtime.game_ready = True
+        runtime.schedule_once(action)
+        await finish_worker(runtime)
+        assert runtime.jobs[0]["state"] == "falha"
+        runtime.next_retry = 0
+        for _ in range(10):
+            await runtime.tick()
+        assert runtime.queue.empty()
+        runtime.stop.assert_awaited_once()
+        runtime.start.assert_awaited_once()
+        assert Runtime(runtime.data, runtime.config).queue.empty()
+
+    asyncio.run(scenario())
+
+
+def test_inflight_maintenance_is_not_replayed_after_supervisor_restart(runtime):
+    runtime.schedule_once("restart")
+    runtime.jobs[0]["state"] = "executando"
+    runtime.persist_pending()
+    restored = Runtime(runtime.data, runtime.config)
+    assert restored.queue.empty()
+    assert restored.jobs[0]["state"] == "falha"
+    assert "interrompida" in restored.jobs[0]["error"]
+
+
+def test_manual_stop_cancels_pending_automatic_work(runtime):
+    async def scenario():
+        runtime.schedule_once("restart")
+        runtime.schedule_once("check-update")
+        await runtime.execute({"action": "stop"})
+        runtime.execute = AsyncMock()
+        await finish_worker(runtime)
+        runtime.execute.assert_not_awaited()
+        assert all(job["state"] == "cancelado" for job in runtime.jobs)
+        await runtime.tick()
+        assert runtime.queue.empty()
+        assert Runtime(runtime.data, runtime.config).queue.empty()
+
+    asyncio.run(scenario())
+
+
+def test_repeated_manual_clicks_do_not_duplicate_jobs(runtime):
+    first = runtime.submit("restart")
+    assert runtime.submit("restart") is first
+    assert runtime.queue.qsize() == 1
+
+
+def test_completed_manual_backup_satisfies_pending_daily_restart(runtime):
+    async def scenario():
+        runtime.schedule_once("restart")
+        runtime.stop = AsyncMock()
+        runtime.snapshot = AsyncMock(return_value="backup.tar.gz")
+        await runtime.execute({"action": "backup"})
+        assert runtime.jobs[0]["state"] == "cancelado"
+        runtime.execute = AsyncMock()
+        await finish_worker(runtime)
+        runtime.execute.assert_not_awaited()
+
+    asyncio.run(scenario())
+
+
+def test_repeated_short_sessions_suspend_recovery_until_manual_start(runtime):
+    async def scenario():
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
+        for _ in range(5):
+            runtime.game_ready = runtime.world_loaded = runtime.transport_ready = False
+            runtime.ready_since = None
+            runtime.process = steam_child(-11, [b"Opened Steam server", b"Loading: Done."])
+            await runtime.read_game(runtime.process)
+        assert runtime.startup_failures == 5
+        assert not runtime.status()["automatic_recovery"]
+        assert runtime.status()["recovery_error"]
+        runtime.next_recovery = 0
+        await runtime.tick()
+        assert runtime.queue.empty()
+        runtime.start = AsyncMock()
+        await runtime.execute({"action": "start"})
+        assert runtime.want_running and runtime.startup_failures == 0
+        assert runtime.recovery_error is None
+
+    asyncio.run(scenario())
+
+
+def test_stable_session_resets_consecutive_crash_counter(runtime):
+    runtime.startup_failures = 4
+    runtime.game_ready = True
+    runtime.ready_since = time.monotonic() - 601
+    runtime.process = steam_child(-11)
+    asyncio.run(runtime.read_game(runtime.process))
+    assert runtime.want_running and runtime.startup_failures == 1
+
+
+@pytest.mark.parametrize("started_before", [False, True])
+def test_daily_maintenance_only_runs_when_schedule_is_crossed(runtime, started_before):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    async def scenario():
+        now = datetime(2026, 11, 13, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        runtime.config.overrides.update({"restart_at": "05:00", "backup_at": "05:00"})
+        runtime.schedule_started = now - timedelta(hours=8 if started_before else 1)
+        runtime.process = SimpleNamespace(returncode=None)
+        runtime.game_ready = True
+        with patch("app.runtime.datetime") as clock:
+            clock.now.return_value = now
+            for _ in range(10):
+                await runtime.tick()
+        assert runtime.queue.qsize() == int(started_before)
+        if started_before:
+            assert runtime.jobs[0]["action"] == "restart"
+
+    asyncio.run(scenario())
+
+
+def test_failed_update_build_is_not_automatically_scheduled_again(runtime):
+    async def scenario():
+        runtime.latest_build = "2"
+        runtime.installed_build = lambda: "1"
+        runtime.execute = AsyncMock(side_effect=OSError("download failed"))
+        runtime.schedule_once("update")
+        await finish_worker(runtime)
+        del runtime.execute
+        runtime.available_build = AsyncMock(return_value="2")
+        await runtime.execute({"action": "check-update"})
+        assert runtime.queue.empty()
+        runtime.available_build.return_value = "3"
+        await runtime.execute({"action": "check-update"})
+        assert runtime.queue.qsize() == 1
+
+    asyncio.run(scenario())
+
+
+def test_already_installed_scheduled_update_does_not_stop_server(runtime):
+    runtime.latest_build = "2"
+    runtime.installed_build = lambda: "2"
+    runtime.stop = AsyncMock()
+    asyncio.run(runtime.execute({"action": "update", "scheduled": True}))
+    runtime.stop.assert_not_awaited()
+
+
+def test_persisted_maintenance_waits_for_game_readiness(runtime):
+    async def scenario():
+        runtime.schedule_once("restart")
+        restored = Runtime(runtime.data, runtime.config)
+        restored.stop = AsyncMock()
+        await finish_worker(restored)
+        assert restored.jobs[0]["state"] == "adiado"
+        restored.stop.assert_not_awaited()
+        restored.process = SimpleNamespace(returncode=None)
+        restored.next_retry = 0
+        await restored.tick()
+        assert restored.queue.empty()
+        restored.game_ready = True
+        await restored.tick()
+        assert restored.queue.qsize() == 1
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_does_not_resurrect_cancelled_maintenance(runtime):
+    async def scenario():
+        runtime.schedule_once("restart")
+        await runtime.execute({"action": "stop"})
+        runtime.worker_task = asyncio.create_task(runtime.worker())
+        await runtime.shutdown()
+        assert runtime.jobs[0]["state"] == "cancelado"
+        assert Runtime(runtime.data, runtime.config).queue.empty()
 
     asyncio.run(scenario())
