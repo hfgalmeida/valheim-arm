@@ -192,5 +192,5 @@ jobs:
             echo 'Tags publicadas:'
             jq -r '.tags[] | "- `" + . + "`"' <<< "$METADATA"
             echo
-            echo 'O preflight FEX passou; a aceitação do Valheim na Oracle continua necessária.'
+            echo 'Preflight FEX e configuração HTTPS validados; o teste real do Valheim deve ser realizado no servidor.'
           } >> "$GITHUB_STEP_SUMMARY"

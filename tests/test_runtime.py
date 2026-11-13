@@ -327,6 +327,62 @@ def test_shutdown_never_schedules_recovery(runtime):
     assert runtime.queue.empty()
 
 
+def test_initial_crashes_retry_quickly_then_back_off(runtime):
+    async def scenario():
+        for expected_delay in (15, 30, 60, 300):
+            runtime.process = SimpleNamespace(returncode=-11, stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
+                                              wait=AsyncMock(return_value=-11))
+            before = time.monotonic()
+            await runtime.read_game(runtime.process)
+            delay = runtime.next_recovery - before
+            assert expected_delay <= delay < expected_delay + 1
+            await runtime.tick()
+            assert runtime.queue.empty()
+        assert runtime.startup_failures == 4
+
+    asyncio.run(scenario())
+
+
+def test_manual_shutdown_does_not_schedule_rapid_startup_retry(runtime):
+    runtime.process = SimpleNamespace(returncode=-11, stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
+                                      wait=AsyncMock(return_value=-11))
+    runtime.closing = True
+    asyncio.run(runtime.read_game(runtime.process))
+    assert runtime.startup_failures == 0
+    assert runtime.next_recovery == 0
+
+
+@pytest.mark.parametrize("crossplay", [True, False])
+def test_server_online_only_after_world_and_backend_are_ready(runtime, crossplay):
+    async def scenario():
+        runtime.process = SimpleNamespace(returncode=None)
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
+        runtime.state = "iniciando"
+        lines = iter([b"Game server connected\n", b"Loading: Done.\n",
+                      b'Session "World" registered with join code 123456\n', b""])
+        observed = []
+
+        async def readline():
+            observed.append(runtime.state)
+            return next(lines)
+
+        runtime.process.stdout = SimpleNamespace(readline=readline)
+        runtime.process.wait = AsyncMock(return_value=0)
+        await runtime.read_game(runtime.process)
+        assert observed[:2] == ["iniciando", "iniciando"]
+        assert observed[2] == ("iniciando" if crossplay else "online")
+        assert observed[3] == "online"
+
+    asyncio.run(scenario())
+
+
+def test_initial_loading_does_not_trigger_maintenance(runtime):
+    runtime.process = SimpleNamespace(returncode=None)
+    assert not runtime.game_ready
+    asyncio.run(runtime.tick())
+    assert runtime.queue.empty()
+
+
 def test_scheduled_failure_is_persisted_and_retried(runtime):
     async def scenario():
         runtime.process = SimpleNamespace(returncode=None)

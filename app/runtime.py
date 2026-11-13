@@ -199,6 +199,10 @@ class Runtime:
         self.reader = None
         self.running = None
         self.join_code = None
+        self.game_ready = False
+        self.world_loaded = False
+        self.transport_ready = False
+        self.startup_failures = 0
         self.state = "parado"
         self.logs = deque(maxlen=500)
         self.jobs = deque()
@@ -396,6 +400,7 @@ class Runtime:
         if self.live:
             return
         self.join_code = None
+        self.game_ready = self.world_loaded = self.transport_ready = False
         if self.current_install() is None:
             await self.install()
         settings = self.config.effective()
@@ -439,9 +444,16 @@ class Runtime:
                     match = re.search(r'\bSession ".*" (?:registered )?with join code ([0-9]{6})(?![0-9])', text)
                     if match:
                         self.join_code = match[1]
+                        self.transport_ready = True
+                elif "Game server connected" in text or "Opened Steam server" in text:
+                    self.transport_ready = True
                 if "World saved" in text:
                     self.last_save = time.monotonic()
-                if "Game server connected" in text and "error" not in text.lower():
+                if "Loading: Done" in text:
+                    self.world_loaded = True
+                if self.world_loaded and self.transport_ready:
+                    self.game_ready = True
+                    self.startup_failures = 0
                     self.state = "online"
                 self.emit(text)
         except Exception as exc:
@@ -454,7 +466,16 @@ class Runtime:
             self.state = "parado" if code in (0, -signal.SIGINT) else "falha"
             self.players.reset()
             self.emit(f"Processo do jogo encerrado: {code}")
-            self.next_recovery = time.monotonic() + 300
+            expected = self.stop_request is not None and self.stop_request[0] is process
+            if not expected and self.want_running and not self.closing:
+                if not self.game_ready:
+                    self.startup_failures += 1
+                    delay = (15, 30, 60)[self.startup_failures - 1] if self.startup_failures <= 3 else 300
+                else:
+                    delay = 300
+                self.next_recovery = time.monotonic() + delay
+                self.emit(f"Recuperação automática: nova tentativa de iniciar em {delay}s")
+            self.game_ready = False
 
     async def stop(self, safe=True):
         process = self.process
@@ -639,7 +660,7 @@ class Runtime:
             self.schedule_once("start")
         settings = self.config.effective()
         now = datetime.now(ZoneInfo(settings.timezone))
-        if self.live:
+        if self.live and self.game_ready:
             # Query first: a newly found update can absorb the queued daily
             # restart/backup before that maintenance operation starts.
             if settings.auto_update and time.monotonic() - self.last_update >= settings.update_interval:

@@ -60,7 +60,7 @@ Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baix
 | Save do mundo | A cada 30 minutos, com backups internos |
 | Backup completo e reinício | Diariamente às 05h; backup também antes de atualizar |
 | Retenção | Sete dias e quatro semanas |
-| Recuperação de falhas | Nova tentativa de iniciar após cinco minutos |
+| Recuperação de falhas | Novas tentativas automáticas, com recuperação rápida na inicialização |
 
 Os horários usam **America/Sao_Paulo**. Manutenções aguardam o servidor ficar vazio e confirmam o salvamento antes de criar backups. Você pode configurar o [envio automático para OneDrive, Dropbox ou Google Drive](docs/REFERENCE.md#nuvem) pelo painel.
 

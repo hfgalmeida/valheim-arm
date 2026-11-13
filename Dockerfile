@@ -27,7 +27,7 @@ RUN python3 /tmp/prepare_guest.py
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    HOME=/data/home \
+    HOME=/data/home FEX_DISKCACHE=0 \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv ca-certificates curl libssl3t64 libstdc++6 tzdata rclone \

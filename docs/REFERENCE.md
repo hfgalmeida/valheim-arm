@@ -66,11 +66,11 @@ CROSSPLAY=true
 
 ### FEX
 
-O cache JIT usa `data/cache` e é separado dos saves. FEX já vem pronto na imagem Docker Hub, em Release ajustado a Neoverse N1, sem interface gráfica, thunks gráficos ou telemetria offline. Nenhuma extensão ARM inexistente é forçada. A instalação apenas baixa essa imagem.
+O cache JIT persistente fica desativado por padrão, seguindo o padrão do FEX usado na imagem. Pode ser habilitado explicitamente com `FEX_DISKCACHE=1` após validar sua carga; quando ativo, usa `data/cache`, separado dos saves. FEX já vem pronto na imagem Docker Hub, em Release ajustado a Neoverse N1, sem interface gráfica, thunks gráficos ou telemetria offline. Nenhuma extensão ARM inexistente é forçada. A instalação apenas baixa essa imagem.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `FEX_DISKCACHE` | 1 | Cache JIT em disco |
+| `FEX_DISKCACHE` | 0 | Cache JIT persistente, opcional |
 | `FEX_DISKCACHEMAXFILESIZE` | 1073741824 | Limite do arquivo principal do cache; índice pode usar espaço adicional |
 | `FEX_MAXINST` | 5000 | Máximo de instruções por bloco |
 | `FEX_MULTIBLOCK` | 1 | Compilação multibloco |
@@ -317,7 +317,7 @@ sudo docker compose exec valheim cat /opt/build-info.json
 sudo df -h ./data
 ```
 
-Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. O supervisor tenta iniciar novamente após cinco minutos quando o processo do jogo cai ou a instalação inicial falha. Uma parada solicitada pelo painel desativa essas tentativas até você iniciar novamente. A recuperação não restaura backups por conta própria; erros persistentes ficam nos logs.
+Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas, depois a cada cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa essas tentativas até você iniciar novamente. A recuperação não restaura backups por conta própria; erros persistentes ficam nos logs.
 
 <a id="publicacao"></a>
 ## Publicar imagem
@@ -380,7 +380,7 @@ A versão do FEX é resolvida antes do build e passada como argumento fixo. Assi
 
 O build complementa o rootfs com as bibliotecas amd64 de atomic, C++ e PulseAudio necessárias ao jogo/PlayFab. O APT nativo usa fontes Ubuntu 24.04 assinadas e uma base de estado isolada para baixar a cadeia de dependências amd64; `dpkg-deb` extrai os arquivos sem executar scripts de instalação x86. Cada pacote, versão, arquitetura e SHA256 aparece em `guest_packages` no `/opt/build-info.json`. A publicação falha se uma biblioteca principal não for x86_64 ou se o carregador não resolver suas dependências pelo FEX. A verificação usa diretamente `ld-linux-x86-64.so.2 --list`, pois `ldd` sob emulação pode acabar listando dependências ARM do próprio emulador.
 
-Enquanto a versão ainda não tiver sido publicada, uma nova tentativa pode incorporar um FEX/rootfs/base atualizado. Após publicar, escolha outro número em `VERSION` para gerar uma nova imagem. Use o digest Docker para identificar exatamente o artefato publicado. O resumo do workflow lista as tags, e os logs de push informam o digest. A imagem é somente `linux/arm64`, ajustada a Neoverse N1.
+Enquanto a versão ainda não tiver sido publicada, uma nova tentativa pode incorporar um FEX/rootfs/base atualizado. Após publicar, escolha outro número em `VERSION` para gerar uma nova imagem. Use o digest Docker para identificar exatamente o artefato publicado. O resumo do workflow lista as tags, e os logs de push informam o digest. A imagem é somente `linux/arm64`, ajustada a Neoverse N1. Antes de publicar, o workflow executa os testes do supervisor, o preflight FEX e a validação da configuração HTTPS. O GitHub Actions não baixa nem inicia o Valheim; inicialização, conexão, salvamento e parada do jogo são validados diretamente no servidor Oracle.
 
 O preflight não instala SteamCMD nem executa o Valheim, e não substitui a aceitação de crossplay, BepInEx ou desempenho na Oracle. Consulte [validação na Oracle](#validacao).
 
@@ -433,7 +433,7 @@ Base `/api/v1`, JSON. A API é acessada pelo mesmo HTTPS do painel. Não publiqu
 
 Restauração exige `{"action":"restore","backup":"NOME.tar.gz","confirm":true}` e jogo parado. Somente arquivos do diretório de backups podem ser selecionados. Não há upload web nem execução de comandos arbitrários. Configurações e listas não podem ser alteradas durante operação em execução.
 
-Operações têm `id`, `action`, `state`, `created` e, quando disponíveis, `result` ou `error`. Estados: `fila`, `executando`, `concluído`, `falha`, `adiado`, `cancelado`. Retornar 202 confirma entrada na fila, não conclusão nem prontidão do jogo. O estado `online` depende da mensagem de conexão emitida pelo jogo.
+Operações têm `id`, `action`, `state`, `created` e, quando disponíveis, `result` ou `error`. Estados: `fila`, `executando`, `concluído`, `falha`, `adiado`, `cancelado`. Retornar 202 confirma entrada na fila, não conclusão nem prontidão do jogo. O estado `online` exige a conclusão do carregamento do mundo (`Loading: Done`) e o backend disponível; em crossplay, exige também um join code de sessão registrado. Manutenções automáticas aguardam essa prontidão antes de consultar atualizações ou agendar paradas.
 
 O estado e os eventos incluem `crossplay` (configuração em execução, ou a configuração efetiva quando parado) e `join_code` (texto de seis dígitos ou `null`). O código é extraído das mensagens de registro/atividade da sessão no log, preservando zeros iniciais; veja um [exemplo do formato do log](https://github.com/husjon/valheim_server_oci_setup#crossplay-console--game-pass). Ele é limpo ao iniciar uma nova execução, encerrar o jogo ou falhar a leitura do log. O painel aguarda o código quando crossplay está ativo e só o exibe dentro da sessão administrativa autenticada.
 
