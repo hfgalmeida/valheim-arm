@@ -253,11 +253,11 @@ Faça commit e push da alteração para a `main`, ou edite o arquivo pela interf
 
 | Disparo | Tags publicadas |
 |---|---|
-| Push na `main` que altera `VERSION` | `<VERSION>`, `latest` e `sha-<commit completo>` |
+| Qualquer push na `main`, se a versão ainda não estiver publicada | `<VERSION>`, `latest` e `sha-<commit completo>` |
 | Execução manual na `main` | `<VERSION>`, `latest` e `sha-<commit completo>` |
 | Execução manual em outra branch | Somente `sha-<commit completo>` |
 
-Commits que não alteram `VERSION` continuam passando pelo workflow `Checks`, mas não iniciam a publicação automática. Pushes de tags Git e pull requests também não publicam imagens. A atualização do número e as mudanças do código podem estar no mesmo commit/PR. A criação inicial de `VERSION` também dispara a publicação ao chegar à `main`.
+Todo push na `main` inicia o workflow de publicação, mesmo sem alterar `VERSION`. Você pode enviar vários commits com o mesmo número enquanto a imagem dessa versão ainda não tiver sido publicada. Quando a publicação for concluída, os próximos builds com esse número serão bloqueados; altere `VERSION` para publicar novamente. Pushes de tags Git e pull requests não publicam imagens. O workflow `Checks` continua validando os commits independentemente da publicação.
 
 Use um número novo para cada versão. O workflow não incrementa o arquivo por conta própria. Antes de compilar, ele consulta a tag exata no Docker Hub: se já existir, encerra com erro e pede para aumentar `VERSION`. A verificação é repetida antes do envio da imagem. Uma execução manual também passa por essa validação, incluindo execuções em outras branches. Falhas de rede, autenticação, limite de consultas ou respostas inesperadas bloqueiam a publicação; somente a confirmação de tag ausente permite continuar. `latest` pode ser atualizada ao publicar uma nova versão. Execuções de publicação são serializadas.
 

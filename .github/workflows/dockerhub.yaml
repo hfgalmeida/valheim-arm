@@ -3,7 +3,6 @@ name: Publish Docker Hub
 on:
   push:
     branches: [main]
-    paths: [VERSION]
   workflow_dispatch:
     inputs:
       fex_version:

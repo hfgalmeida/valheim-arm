@@ -53,6 +53,6 @@ As opções extras, importação de mundos, mods e recuperação estão reunidas
 
 O instalador preserva uma instalação existente e não reinicia um mundo que já esteja rodando. Para retomá-lo após uma falha de instalação, execute novamente na mesma pasta de origem.
 
-Para quem mantém o projeto: altere [VERSION](VERSION) e envie à `main` para publicar a próxima imagem. Veja [publicação](docs/REFERENCE.md#publicacao).
+Para quem mantém o projeto: todo push na `main` tenta publicar a versão de [VERSION](VERSION). Você pode manter o mesmo número até a imagem ser publicada; depois, aumente a versão. Veja [publicação](docs/REFERENCE.md#publicacao).
 
 A validação completa de FEX, crossplay, BepInEx e desempenho na Oracle é acompanhada no [roteiro de aceitação](docs/REFERENCE.md#validacao).
