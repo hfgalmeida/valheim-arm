@@ -9,6 +9,53 @@ import pytest
 from app.runtime import Runtime, public_build
 
 
+def steam_child(code, lines=()):
+    return SimpleNamespace(pid=42, returncode=code,
+        stdout=SimpleNamespace(readline=AsyncMock(side_effect=[*lines, b""])),
+        wait=AsyncMock(return_value=code))
+
+
+def test_steam_self_update_restarts_same_command_immediately(runtime):
+    children = [steam_child(42, [b"Update complete, launching...\n"]),
+                steam_child(0, [b"Success! App '896660' fully installed.\n"])]
+    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=children)) as spawn:
+        output = asyncio.run(runtime.run_steam(["+login", "anonymous", "+quit"]))
+    assert spawn.await_count == 2
+    assert spawn.await_args_list[0] == spawn.await_args_list[1]
+    assert "Success! App '896660' fully installed." in output
+    assert any("42" in line["message"] for line in runtime.logs)
+
+
+def test_steam_repeated_self_update_is_bounded(runtime):
+    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=[steam_child(42) for _ in range(4)])) as spawn:
+        with pytest.raises(RuntimeError, match="42"):
+            asyncio.run(runtime.run_steam(["+quit"]))
+    assert spawn.await_count == 4
+
+
+@pytest.mark.parametrize("code", [1, 8, -11])
+def test_steam_real_failure_is_reported_without_retry(runtime, code):
+    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(return_value=steam_child(code))) as spawn:
+        with pytest.raises(RuntimeError, match=f"saída {code}"):
+            asyncio.run(runtime.run_steam(["+quit"]))
+    assert spawn.await_count == 1
+
+
+def test_steam_timeout_kills_process_after_self_update_restart(runtime):
+    async def blocked():
+        await asyncio.Event().wait()
+
+    child = steam_child(None)
+    child.stdout.readline = blocked
+    child.wait = AsyncMock(return_value=-9)
+    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=[steam_child(42), child])), \
+            patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.signal.SIGKILL", 9, create=True):
+        with pytest.raises(asyncio.TimeoutError):
+            asyncio.run(runtime.run_steam(["+quit"], timeout=0.05))
+    kill.assert_called_once_with(42, 9)
+    child.wait.assert_awaited_once()
+
+
 @pytest.mark.parametrize("crossplay", [True, False])
 def test_crossplay_join_code_from_game_log(runtime, crossplay):
     runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})

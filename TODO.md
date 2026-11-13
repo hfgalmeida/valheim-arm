@@ -36,3 +36,20 @@
 - [x] Instalador interativo com Docker, configuração e inicialização automáticos.
 - [x] README direto para jogadores e referência avançada única.
 - [x] Recuperação automática com intervalo de cinco minutos e respeito à parada manual.
+
+### Melhoria futura: usuários e permissões do painel
+
+- [ ] Adicionar contas individuais com login e senha e perfis de administrador e operador, separados das permissões dos usuários do jogo.
+- [ ] Permitir ao administrador cadastrar e desativar usuários e redefinir suas senhas, preservando o acesso administrativo existente na migração.
+- [ ] Exigir troca da senha temporária no primeiro acesso e após redefinição pelo administrador; bloquear as demais funcionalidades até a troca ser concluída.
+- [ ] Permitir ao operador visualizar estado, métricas e join code e solicitar início, parada e reinício do servidor, mantendo as verificações de zero jogadores para paradas e reinícios.
+- [ ] Restringir ao administrador alterações de mundo, modificadores, mods, nomes, senhas e demais configurações, além do gerenciamento de usuários, backups e envio para a nuvem.
+- [ ] Restringir logs completos e download/restauração de backups ao administrador.
+- [ ] Validar permissões na API e adaptar a interface de acordo com o perfil; ocultar botões não substitui a autorização no servidor.
+- [ ] Invalidar sessões ao desativar uma conta ou redefinir sua senha.
+- [ ] Manter logs persistentes de auditoria das ações dos usuários: início, parada, reinício, atualização, criação/restauração de backups, mudanças de configurações e gerenciamento de contas e permissões.
+- [ ] Registrar em cada ação o usuário responsável, data/hora, operação, recurso afetado e resultado (solicitado, concluído, falha ou cancelado), correlacionando a solicitação ao resultado das tarefas em segundo plano e distinguindo ações automáticas das ações dos usuários.
+- [ ] Registrar quais configurações mudaram e seus valores anteriores/novos, sem gravar senhas, tokens ou outras credenciais; para campos secretos, registrar apenas que foram alterados.
+- [ ] Disponibilizar consulta dos logs de auditoria ao administrador no painel, com filtros por usuário, período e operação e retenção definida para limitar o uso de disco.
+- [ ] Testar os perfis, o bloqueio de acesso direto à API, a troca obrigatória de senha e a migração do acesso administrativo atual.
+- [ ] Testar a persistência e a atribuição dos logs de auditoria, o registro de falhas, as restrições de acesso ao histórico e a ausência de credenciais nos registros.

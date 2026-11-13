@@ -160,3 +160,20 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     assert "compose pull" not in log.read_text()
     assert "set-password" not in log.read_text()
     assert "compose up" not in log.read_text()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Permissões POSIX reais necessárias")
+def test_installation_directories_are_accessible_but_secrets_stay_private(tmp_path):
+    target = tmp_path / "server"
+    docker_dir = target / "docker"
+    docker_dir.mkdir(parents=True)
+    target.chmod(0o700)
+    docker_dir.chmod(0o700)
+    result = shell(STUBS, env={"VALHEIM_INSTALL_DIR": str(target), "COMMAND_LOG": str(tmp_path / "commands")},
+                   input="\n\nsecret-game-password\n")
+    assert result.returncode == 0, result.stderr
+    assert target.stat().st_mode & 0o777 == 0o755
+    assert docker_dir.stat().st_mode & 0o777 == 0o755
+    assert (target / ".env").stat().st_mode & 0o777 == 0o600
+    assert (target / "data").stat().st_mode & 0o777 == 0o700
+    assert (target / "data/config/admin.json").stat().st_mode & 0o777 == 0o600

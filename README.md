@@ -36,10 +36,14 @@ Se o status for `inactive`, o UFW não está filtrando o tráfego. O Docker conf
 
 ```sh
 curl -fL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/install.sh -o install-valheim.sh
-bash install-valheim.sh
+sudo bash install-valheim.sh
 ```
 
 Informe o IP público, o nome do servidor, a senha do jogo e uma senha para o painel. O instalador prepara o Docker quando necessário, baixa as imagens prontas, verifica a plataforma e inicia o servidor. A instalação fica em `./valheim-arm`.
+
+Os contêineres se chamam `valheim-server` (jogo e painel) e `valheim-proxy` (HTTPS). Nos comandos `docker compose`, os serviços continuam sendo `valheim` e `proxy`.
+
+Se uma instalação anterior com `sudo` apresentar `Permission denied` ao entrar na pasta, execute `sudo chmod 755 ~/valheim-arm ~/valheim-arm/docker`. Esse ajuste vale somente para essas duas pastas; mantenha as permissões restritas de `.env` e `data`.
 
 O primeiro download do jogo demora alguns minutos. Para acompanhar:
 

@@ -268,29 +268,36 @@ class Runtime:
         steam = self.data / "steamcmd"
         command = ["FEXInterpreter", "/usr/bin/env", "LD_LIBRARY_PATH=" + str(steam / "linux32"),
                    str(steam / "linux32/steamcmd"), *args]
-        child = await asyncio.create_subprocess_exec(*command, cwd=steam,
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
         lines = []
 
-        async def consume():
-            while line := await child.stdout.readline():
-                text = line.decode(errors="replace").strip()
-                lines.append(text)
-                if len(lines) > 50000:
-                    raise RuntimeError("Saída SteamCMD excessiva")
-                self.emit("SteamCMD: " + text)
-            return await child.wait()
+        async def run():
+            # Valve's steamcmd.sh re-executes on 42 after a self-update. We run
+            # the binary through FEX, so handle that restart here, with a limit.
+            for attempt in range(4):
+                child = await asyncio.create_subprocess_exec(*command, cwd=steam,
+                            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+                try:
+                    while line := await child.stdout.readline():
+                        text = line.decode(errors="replace").strip()
+                        lines.append(text)
+                        if len(lines) > 50000:
+                            raise RuntimeError("Saída SteamCMD excessiva")
+                        self.emit("SteamCMD: " + text)
+                    code = await child.wait()
+                except BaseException:
+                    if child.returncode is None:
+                        os.killpg(child.pid, signal.SIGKILL)
+                        await child.wait()
+                    raise
+                if code == 42 and attempt < 3:
+                    self.emit("SteamCMD solicitou reinício após autoatualização (código 42); executando novamente")
+                    continue
+                if code:
+                    raise RuntimeError(f"SteamCMD falhou (código de saída {code}); consulte os logs e /data/home/Steam/logs/stderr.txt")
+                return "\n".join(lines)
 
-        try:
-            code = await asyncio.wait_for(consume(), timeout)
-        except BaseException:
-            if child.returncode is None:
-                os.killpg(child.pid, signal.SIGKILL)
-                await child.wait()
-            raise
-        if code:
-            raise RuntimeError("SteamCMD falhou; consulte os logs")
-        return "\n".join(lines)
+        # One deadline covers the download and all self-update restarts.
+        return await asyncio.wait_for(run(), timeout)
 
     async def available_build(self):
         output = await self.run_steam(["+login", "anonymous", "+app_info_update", "1", "+app_info_print", "896660", "+quit"], timeout=180)

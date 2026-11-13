@@ -1,5 +1,6 @@
 services:
   valheim:
+    container_name: valheim-server
     image: ${VALHEIM_IMAGE:-hfgalmeida/valheim-arm:latest}
     platform: linux/arm64
     init: true
@@ -61,6 +62,7 @@ services:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
   proxy:
+    container_name: valheim-proxy
     image: caddy:2.10.2-alpine
     platform: linux/arm64
     restart: unless-stopped
