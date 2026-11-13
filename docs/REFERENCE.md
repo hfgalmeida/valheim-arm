@@ -209,6 +209,7 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 | Login sempre recusado | Definir senha pelo comando local; aguardar cinco minutos se houve tentativas excessivas |
 | SteamCMD falha | Saída DNS/HTTPS/Steam, espaço livre, rootfs com loader i386 e log do supervisor |
 | Jogo não inicia | Mensagens do FEX, versão registrada, permissões 10001, arquivo do mundo e plugins |
+| Navegador: `ERR_SSL_PROTOCOL_ERROR` ao acessar pelo IP | O Caddyfile deve conter `default_sni {$SERVER_IP}` no bloco global para selecionar o certificado correto sem SNI atrás do NAT do Docker. Confirme o IP no `.env`, atualize o Caddyfile e recrie somente o proxy com `sudo docker compose up -d --no-deps --force-recreate proxy`. O instalador preserva arquivos existentes, portanto uma nova execução não substitui um Caddyfile antigo. Referência: [Caddy default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni) |
 | SteamCMD: `Missing configuration` no app 896660 | O supervisor conclui a autoatualização separadamente, seleciona Linux e tenta o download até três vezes, renovando apenas `appcache/appinfo.vdf`, com esperas de 10 e 20 segundos. Se persistir, consulte os logs Steam em `data/steamcmd/logs` e `data/home/Steam/logs`; a recuperação geral tenta iniciar novamente após cinco minutos |
 | Tarefa fica adiada | Jogadores presentes, eventos recentes, A2S inacessível ou snapshot Connections ausente/expirado |
 | Crossplay não aparece | Saída PlayFab, log com join code, `crossplay` efetivo e compatibilidade dos mods |
