@@ -41,6 +41,13 @@ class UserList(BaseModel):
     entries: list[str] = Field(max_length=1000)
 
 
+class CloudChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    folder: str = Field(min_length=1, max_length=256)
+    config: str = Field(default="", max_length=65536)
+
+
 LISTS = {"admins": "adminlist.txt", "banned": "bannedlist.txt", "permitted": "permittedlist.txt"}
 
 
@@ -156,6 +163,17 @@ def create_app(data=None, runtime=None, lifecycle=True):
             if item["id"] == job_id:
                 return item
         raise HTTPException(404, "Operação não encontrada")
+
+    @app.get("/api/v1/cloud", dependencies=[Depends(session)])
+    async def cloud_config():
+        return rt.cloud.describe()
+
+    @app.put("/api/v1/cloud", dependencies=[Depends(session)])
+    async def cloud_configure(body: CloudChange):
+        try:
+            return rt.cloud.configure(body.enabled, body.folder, body.config)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     @app.get("/api/v1/backups", dependencies=[Depends(session)])
     async def backups():

@@ -7,7 +7,15 @@ async function api(path,method="GET",body){const headers={"Content-Type":"applic
 function signedOut(){if(events)events.close();events=null;csrf="";$("dashboard").hidden=true;$("logout").hidden=true;$("login").hidden=false;}
 function bytes(v){return v>=1073741824?(v/1073741824).toFixed(1)+" GiB":v>=1048576?(v/1048576).toFixed(1)+" MiB":v>=1024?(v/1024).toFixed(1)+" KiB":Math.round(v)+" B";}
 function chart(id,values,ceiling){const c=$(id),x=c.getContext("2d"),w=c.width,h=c.height;x.clearRect(0,0,w,h);x.strokeStyle="#31443b";x.beginPath();x.moveTo(0,h-1);x.lineTo(w,h-1);x.stroke();if(values.length<2)return;const max=ceiling||Math.max(...values,1);x.strokeStyle="#d3e59a";x.lineWidth=3;x.beginPath();values.forEach((v,i)=>{const a=i/(values.length-1)*w,b=h-6-Math.min(v/max,1)*(h-12);i?x.lineTo(a,b):x.moveTo(a,b);});x.stroke();}
+function cloudStatus(c){
+  const last=c.last_success?" · Último envio: "+new Date(c.last_success*1000).toLocaleString()+" ("+c.last_file+")":"";
+  $("cloud-status").textContent=(c.enabled?(c.uploading?"Enviando":"Ativado")+(c.provider?" · "+c.provider:"")+" · Pendentes: "+c.pending:"Envio desativado")+last+(c.error?" · "+c.error+". Nova tentativa automática em cinco minutos.":"");
+}
+async function loadCloud(){const c=await api("/cloud");$("cloud-enabled").value=String(c.enabled);$("cloud-folder").value=c.folder;$("cloud-config").value="";$("cloud-file").value="";cloudStatus(c);}
 function update(s){
+  if(s.cloud)cloudStatus(s.cloud);
+  $("crossplay-info").hidden=!s.crossplay;
+  $("join-code").textContent=s.join_code||(s.running?"Aguardando código do servidor…":"Disponível ao iniciar o servidor");
   $("status").textContent="Estado: "+s.state;$("players").textContent=s.players.count===null?"?":s.players.count;$("player-reason").textContent=s.players.reason;
   $("versions").textContent="Build instalado: "+(s.installed_build||"—")+" · Disponível: "+(s.available_build||"—");$("pending").textContent=s.pending_config?"Alterações aguardam reinício":"";
   $("logs").textContent=s.logs.map(l=>new Date(l.time*1000).toLocaleTimeString()+"  "+l.message).join("\n");$("jobs").replaceChildren();
@@ -30,7 +38,7 @@ async function loadConfig(){
 }
 async function loadUsers(){const d=await api("/users/"+$("user-kind").value);$("user-entries").value=d.entries.join("\n");}
 async function loadBackups(){const list=await api("/backups");$("backup-list").replaceChildren();if(!list.length){$("backup-list").textContent="Nenhum backup criado ainda.";return;}list.forEach(b=>{const row=document.createElement("div");row.className="backup";const a=document.createElement("a");a.href="/api/v1/backups/"+encodeURIComponent(b.name);a.textContent=b.name+" · "+bytes(b.bytes);row.append(a);const button=document.createElement("button");button.textContent="Restaurar";button.onclick=()=>guard(async()=>{if(!confirm("Restaurar "+b.name+"? Pare o jogo primeiro. Será criado um backup do estado atual."))return;await api("/actions","POST",{action:"restore",backup:b.name,confirm:true});notice("Restauração enviada. Acompanhe em Operações.");});row.append(button);$("backup-list").append(row);});}
-async function signedIn(){$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;await Promise.all([loadConfig(),loadUsers(),loadBackups()]);const state=await api("/state");samples=state.metrics;update(state);if(events)events.close();events=new EventSource("/api/v1/events");events.onmessage=e=>update(JSON.parse(e.data));events.onerror=()=>notice("Conexão interrompida; tentando reconectar ao supervisor…");}
+async function signedIn(){$("login").hidden=true;$("dashboard").hidden=false;$("logout").hidden=false;await Promise.all([loadConfig(),loadUsers(),loadBackups(),loadCloud()]);const state=await api("/state");samples=state.metrics;update(state);if(events)events.close();events=new EventSource("/api/v1/events");events.onmessage=e=>update(JSON.parse(e.data));events.onerror=()=>notice("Conexão interrompida; tentando reconectar ao supervisor…");}
 async function guard(fn){try{await fn();}catch(e){notice(e.message);}}
 $("login-form").onsubmit=e=>{e.preventDefault();guard(async()=>{const r=await api("/login","POST",{password:$("password").value});$("password").value="";csrf=r.csrf;notice("");await signedIn();});};
 $("logout").onclick=()=>guard(async()=>{await api("/logout","POST",{});signedOut();});
@@ -38,3 +46,7 @@ $("actions").onclick=e=>{const action=e.target.dataset.action;if(!action)return;
 $("config-form").onsubmit=e=>{e.preventDefault();guard(async()=>{const changes={};for(const [key,old]of Object.entries(currentConfig.values)){if(key==="server_port")continue;const value=$("setting-"+key).value;if(key==="server_password"&&!value)continue;const parsed=typeof old==="boolean"?value==="true":typeof old==="number"?Number(value):value;if(parsed!==old)changes[key]=parsed;}const world="world_name"in changes;if(world&&!confirm("Selecionar/criar o mundo “"+changes.world_name+"”? O mundo anterior será preservado."))return;await api("/config","PATCH",{changes,confirm_world:world});await loadConfig();notice("Configuração salva. Alterações do jogo serão aplicadas na próxima inicialização.");});};
 $("user-kind").onchange=()=>guard(loadUsers);$("users-form").onsubmit=e=>{e.preventDefault();guard(async()=>{const kind=$("user-kind").value;if(kind==="permitted"&&$("user-entries").value.trim()&&!confirm("Restringir o acesso somente aos IDs permitidos?"))return;await api("/users/"+kind,"PUT",{entries:$("user-entries").value.split("\n")});notice("Lista salva. O jogo recarrega as listas; se necessário, reinicie com segurança.");});};
 $("refresh-backups").onclick=()=>guard(loadBackups);guard(async()=>{try{csrf=(await api("/session")).csrf;await signedIn();}catch(e){signedOut();}});
+
+$("cloud-form").onsubmit=e=>{e.preventDefault();guard(async()=>{await api("/cloud","PUT",{enabled:$("cloud-enabled").value==="true",folder:$("cloud-folder").value,config:$("cloud-config").value});await loadCloud();notice("Envio na nuvem salvo. Novos backups serão enviados automaticamente quando ativado.");});};
+
+$("cloud-file").onchange=()=>guard(async()=>{const f=$("cloud-file").files[0];if(!f)return;if(f.size>65536)throw new Error("Arquivo de conexão muito grande (máximo 64 KiB)");$("cloud-config").value=await f.text();});

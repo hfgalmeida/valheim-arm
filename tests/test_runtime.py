@@ -9,6 +9,59 @@ import pytest
 from app.runtime import Runtime, public_build
 
 
+@pytest.mark.parametrize("crossplay", [True, False])
+def test_crossplay_join_code_from_game_log(runtime, crossplay):
+    runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
+    lines = iter([
+        b'Session "World" registered with join code 012345\n',
+        b'Session "World" with join code 987654 and IP 1.2.3.4:2456 is active with 0 player(s)\n',
+        b'Session "World" registered with join code 1234567\n',
+        b'Session "World" registered with join code \n',
+        b'Unrelated build number 123456\n',
+        b'',
+    ])
+    observed = []
+
+    async def readline():
+        observed.append(runtime.status()["join_code"])
+        return next(lines)
+
+    process = SimpleNamespace(returncode=None, stdout=SimpleNamespace(readline=readline), wait=AsyncMock(return_value=0))
+    runtime.process = process
+    asyncio.run(runtime.read_game(process))
+    assert observed == ([None, "012345", "987654", "987654", "987654", "987654"] if crossplay else [None] * 6)
+    assert runtime.join_code is None
+
+
+def test_join_code_uses_running_config_and_is_hidden_when_offline(runtime):
+    runtime.running = runtime.config.effective().model_copy(update={"crossplay": True})
+    runtime.process = SimpleNamespace(returncode=None)
+    runtime.join_code = "012345"
+    assert runtime.config.effective().crossplay is False
+    assert runtime.status()["crossplay"] is True
+    assert runtime.status()["join_code"] == "012345"
+    runtime.process.returncode = 1
+    assert runtime.status()["join_code"] is None
+    assert runtime.status()["crossplay"] is False
+
+
+def test_join_code_cleared_before_restart_attempt(runtime):
+    runtime.join_code = "012345"
+    runtime.current_install = lambda: None
+    runtime.install = AsyncMock(side_effect=RuntimeError("offline"))
+    with pytest.raises(RuntimeError, match="offline"):
+        asyncio.run(runtime.start())
+    assert runtime.join_code is None
+
+
+def test_join_code_cleared_on_log_failure(runtime):
+    runtime.join_code = "012345"
+    process = SimpleNamespace(stdout=SimpleNamespace(readline=AsyncMock(side_effect=OSError("broken pipe"))),
+                              wait=AsyncMock(return_value=1))
+    asyncio.run(runtime.read_game(process))
+    assert runtime.join_code is None
+
+
 def test_public_branch_not_first():
     output = 'noise "896660" { "depots" { "branches" { "beta" { "buildid" "999" } "public" { "buildid" "123" } } } } noise'
     assert public_build(output) == "123"

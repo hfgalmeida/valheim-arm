@@ -28,6 +28,45 @@ def test_ip_validation(ip, valid):
     assert (shell('valid_ipv4 "$1"', ip).returncode == 0) == valid
 
 
+@pytest.mark.parametrize("version,suite", [("24.04", "noble"), ("26.04", "resolute")])
+def test_ubuntu_lts_repository_selection(version, suite):
+    result = shell('ubuntu_suite ubuntu "$1"', version)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == suite
+
+
+@pytest.mark.parametrize("distribution,version", [("debian", "26.04"), ("ubuntu", "22.04"),
+    ("ubuntu", "26.10"), ("ubuntu", ""), ("linuxmint", "24.04")])
+def test_unsupported_host_fails_before_installation(distribution, version):
+    assert shell('ubuntu_suite "$1" "$2"', distribution, version).returncode != 0
+
+
+@pytest.mark.parametrize("version,suite", [("24.04", "noble"), ("26.04", "resolute")])
+def test_docker_install_uses_matching_repository_without_touching_host(tmp_path, version, suite):
+    script = r'''
+DOCKER_SUITE="$(ubuntu_suite ubuntu "$1")"
+command() { if [[ "$*" == '-v docker' ]]; then return 1; fi; builtin command "$@"; }
+dpkg-query() { return 1; }
+apt-get() { printf '%s\n' "$*" >> "$PACKAGE_LOG"; }
+install() { :; }
+curl() { :; }
+chmod() { :; }
+tee() { cat > "$REPOSITORY_FILE"; }
+systemctl() { :; }
+docker() { return 0; }
+prepare_docker
+'''
+    repository = tmp_path / "docker.sources"
+    packages = tmp_path / "packages.log"
+    result = shell(script, version, env={"REPOSITORY_FILE": str(repository), "PACKAGE_LOG": str(packages)})
+    assert result.returncode == 0, result.stderr
+    source = repository.read_text()
+    assert "Suites: " + suite + "\n" in source
+    assert "Architectures: arm64\n" in source
+    assert "URIs: https://download.docker.com/linux/ubuntu\n" in source
+    assert "install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin" in packages.read_text()
+
+
 def test_config_escaping_does_not_execute_shell(tmp_path):
     password = "secret $USER # spaces 'quotes' \\ tail $(touch NEVER)"
     result = shell('env_value SERVER_PASSWORD "$TEST_PASSWORD"', env={"TEST_PASSWORD": password})

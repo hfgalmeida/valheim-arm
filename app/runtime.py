@@ -19,6 +19,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .backups import Backups, digest
+from .cloud import Cloud
 from .config import ConfigStore, atomic_json
 from .players import Players, query_steam
 
@@ -54,7 +55,7 @@ def public_build(output):
 
 def preflight(data: Path):
     if platform.system() != "Linux" or platform.machine() not in ("aarch64", "arm64"):
-        raise RuntimeError("Execute em Ubuntu 24.04 ARM64 na instância Oracle")
+        raise RuntimeError("Execute a imagem em um host Linux ARM64 na instância Oracle")
     kernel = tuple(map(int, platform.release().split("-")[0].split(".")[:2]))
     if kernel < (5, 15) or os.sysconf("SC_PAGE_SIZE") != 4096:
         raise RuntimeError("A plataforma de referência exige kernel >=5.15 e páginas de 4 KiB")
@@ -155,10 +156,13 @@ class Runtime:
             (data / directory).mkdir(parents=True, exist_ok=True)
         self.config = config or ConfigStore(data)
         self.backups = Backups(data)
+        self.cloud = Cloud(data, self.backups)
+        self.cloud_task = None
         self.players = Players()
         self.process = None
         self.reader = None
         self.running = None
+        self.join_code = None
         self.state = "parado"
         self.logs = deque(maxlen=500)
         self.jobs = deque()
@@ -212,12 +216,14 @@ class Runtime:
         log.info("%s", message[:4000])
 
     def status(self):
+        crossplay = (self.running if self.live and self.running else self.config.effective()).crossplay
         return {"state": self.state, "running": self.live, "players": self.players.status() if self.live else {"count": 0, "reason": "Servidor parado"},
+                "crossplay": crossplay, "join_code": self.join_code if self.live and crossplay else None,
                 "pending_config": self.running is not None and self.running != self.config.effective(),
                 "installed_build": self.installed_build(), "available_build": self.latest_build,
                 "maintenance_persistence_error": self.persistence_error,
                 "automatic_recovery": self.want_running and not self.closing,
-                "jobs": list(self.jobs), "logs": list(self.logs)}
+                "cloud": self.cloud.describe(), "jobs": list(self.jobs), "logs": list(self.logs)}
 
     def submit(self, action, backup=None):
         if action not in ("start", "stop", "restart", "update", "backup", "restore"):
@@ -254,6 +260,7 @@ class Runtime:
         await asyncio.to_thread(preflight, self.data)
         self.worker_task = asyncio.create_task(self.worker())
         self.scheduler_task = asyncio.create_task(self.scheduler())
+        self.cloud_task = asyncio.create_task(self.cloud.run())
         self.submit("start")
 
     async def run_steam(self, args, timeout=1800):
@@ -316,6 +323,7 @@ class Runtime:
     async def start(self):
         if self.live:
             return
+        self.join_code = None
         if self.current_install() is None:
             await self.install()
         settings = self.config.effective()
@@ -348,6 +356,10 @@ class Runtime:
             while line := await process.stdout.readline():
                 text = line.decode(errors="replace").strip()
                 self.players.consume(text)
+                if self.running and self.running.crossplay:
+                    match = re.search(r'\bSession ".*" (?:registered )?with join code ([0-9]{6})(?![0-9])', text)
+                    if match:
+                        self.join_code = match[1]
                 if "World saved" in text:
                     self.last_save = time.monotonic()
                 if "Game server connected" in text and "error" not in text.lower():
@@ -355,8 +367,10 @@ class Runtime:
                 self.emit(text)
         except Exception as exc:
             self.players.reset()
+            self.join_code = None
             self.emit("Leitura do log falhou: " + str(exc))
         finally:
+            self.join_code = None
             code = await process.wait()
             self.state = "parado" if code == 0 else "falha"
             self.players.reset()
@@ -406,9 +420,10 @@ class Runtime:
         if not self.clean_stop:
             raise RuntimeError("Backup cancelado: último encerramento não foi confirmado como limpo")
         name = await asyncio.to_thread(self.backups.create, reason, self.running or self.config.effective(), self.installed_build())
+        self.cloud.wake.set()
         settings = self.config.effective()
         if reason != "pre-restore":
-            await asyncio.to_thread(self.backups.prune, settings.retain_daily, settings.retain_weekly)
+            await asyncio.to_thread(self.backups.prune, settings.retain_daily, settings.retain_weekly, set(self.cloud.pending()))
         return name
 
     async def execute(self, job):
@@ -533,6 +548,9 @@ class Runtime:
 
     async def shutdown(self):
         self.closing = True
+        if self.cloud_task:
+            self.cloud_task.cancel()
+            await asyncio.gather(self.cloud_task, return_exceptions=True)
         if self.scheduler_task:
             self.scheduler_task.cancel()
             await asyncio.gather(self.scheduler_task, return_exceptions=True)

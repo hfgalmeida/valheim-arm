@@ -25,6 +25,27 @@ def test_auth_csrf_and_password_rotation(runtime, monkeypatch):
     assert client.get("/api/v1/state").status_code == 401
 
 
+def test_cloud_settings_require_auth_csrf_and_never_return_tokens(runtime, monkeypatch):
+    client = client_fixture(runtime, monkeypatch)
+    body = {"enabled": True, "folder": "Valheim/backups", "config": '[account]\ntype=dropbox\ntoken={"access_token":"secret-access","refresh_token":"secret-refresh"}'}
+    assert client.put("/api/v1/cloud", json=body, headers={"X-CSRF-Token": "wrong"}).status_code == 403
+    response = client.put("/api/v1/cloud", json=body)
+    assert response.status_code == 200
+    assert response.json()["provider"] == "Dropbox"
+    for path in ("/api/v1/cloud", "/api/v1/state"):
+        response = client.get(path)
+        assert "secret-" not in response.text
+    bad = client.put("/api/v1/cloud", json=body | {"config": "secret-access"})
+    assert bad.status_code == 422
+    assert "secret-access" not in bad.text
+    bad = client.put("/api/v1/cloud", json=body | {"config": "secret-access" * 7000})
+    assert bad.status_code == 422
+    assert "secret-access" not in bad.text
+    client.cookies.clear()
+    assert client.get("/api/v1/cloud").status_code == 401
+    assert client.put("/api/v1/cloud", json=body).status_code == 401
+
+
 def test_config_secrets_and_world_confirmation(runtime, monkeypatch):
     client = client_fixture(runtime, monkeypatch)
     assert "game-password" not in client.get("/api/v1/config").text

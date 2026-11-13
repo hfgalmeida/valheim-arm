@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instalação interativa para Ubuntu 24.04 ARM64. Não compila o jogo nem o FEX.
+# Instalação interativa para Ubuntu 24.04/26.04 ARM64. Não compila o jogo nem o FEX.
 set -Eeuo pipefail
 set +x
 
@@ -7,6 +7,7 @@ SOURCE_URL="${VALHEIM_SOURCE_URL:-https://raw.githubusercontent.com/hfgalmeida/v
 INSTALL_DIR="${VALHEIM_INSTALL_DIR:-$PWD/valheim-arm}"
 ROOT=()
 DOCKER=(docker)
+DOCKER_SUITE=''
 
 die() { printf '\nErro: %s\n' "$*" >&2; exit 1; }
 log() { printf '\n%s\n' "$*"; }
@@ -30,6 +31,14 @@ env_value() {
     printf '%s="%s"\n' "$1" "$value"
 }
 
+ubuntu_suite() {
+    case "$1:$2" in
+        ubuntu:24.04) printf 'noble\n' ;;
+        ubuntu:26.04) printf 'resolute\n' ;;
+        *) die 'A instalação automática suporta Ubuntu 24.04 e 26.04 LTS.' ;;
+    esac
+}
+
 prepare_docker() {
     if ! command -v docker >/dev/null 2>&1; then
         log 'Instalando Docker e Docker Compose pelo repositório oficial…'
@@ -46,7 +55,7 @@ prepare_docker() {
             https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
         "${ROOT[@]}" chmod a+r /etc/apt/keyrings/docker.asc
         printf '%s\n' 'Types: deb' 'URIs: https://download.docker.com/linux/ubuntu' \
-            'Suites: noble' 'Components: stable' 'Architectures: arm64' \
+            "Suites: $DOCKER_SUITE" 'Components: stable' 'Architectures: arm64' \
             'Signed-By: /etc/apt/keyrings/docker.asc' |
             "${ROOT[@]}" tee /etc/apt/sources.list.d/docker.sources >/dev/null
         "${ROOT[@]}" apt-get update
@@ -109,10 +118,10 @@ create_config() {
 }
 
 check_platform() {
-    [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || die 'Use a instância Ubuntu 24.04 ARM64.'
+    [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || die 'Use uma instância Ubuntu 24.04 ou 26.04 LTS ARM64.'
     # shellcheck source=/dev/null
     . /etc/os-release
-    [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 24.04 ]] || die 'A instalação automática suporta Ubuntu 24.04.'
+    DOCKER_SUITE="$(ubuntu_suite "${ID:-}" "${VERSION_ID:-}")"
     [[ "$(getconf PAGESIZE)" == 4096 ]] || die 'Esta imagem exige páginas de memória de 4 KiB.'
 }
 

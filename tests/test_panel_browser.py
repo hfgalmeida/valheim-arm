@@ -19,7 +19,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
               "memory_limit": 10 * 1024**3, "network_in_bps": 2048, "network_out_bps": 4096,
               "disk_used": 8 * 1024**3, "disk_total": 50 * 1024**3, "scope": "contêiner (cgroup v2)"}
     state = runtime.status()
-    state.update(state="online", running=True, players={"count": 2, "reason": "snapshot do jogo"},
+    state.update(state="online", running=True, crossplay=True, join_code="012345", players={"count": 2, "reason": "snapshot do jogo"},
                  installed_build="123456", available_build="123456",
                  metrics=[metric | {"time": metric["time"] - (29-i)*5, "cpu_percent": 50+30*math.sin(i/4)} for i in range(30)])
 
@@ -46,6 +46,10 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                 value = runtime.config.describe()
             elif endpoint == "/state":
                 value = state
+            elif endpoint == "/cloud":
+                if method == "PUT":
+                    runtime.cloud.configure(payload["enabled"], payload["folder"], payload.get("config", ""))
+                value = runtime.cloud.describe()
             elif endpoint == "/backups":
                 value = [{"name": "20261113T050000000000Z.tar.gz", "bytes": 12345}]
             elif endpoint.startswith("/users/"):
@@ -87,6 +91,26 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.wait_for_function("document.querySelector('#notice').textContent.includes('Operação enviada')")
         assert requests[-1] == ("/actions", {"action": "backup"})
         assert page.locator("#players").inner_text() == "2"
+        page.locator("#cloud-enabled").select_option("true")
+        page.locator("#cloud-folder").fill("Valheim/teste")
+        page.locator("#cloud-file").set_input_files({"name": "valheim-cloud.conf", "mimeType": "text/plain",
+            "buffer": b'[account]\ntype=dropbox\ntoken={"access_token":"secret","refresh_token":"refresh"}'})
+        page.wait_for_function("document.querySelector('#cloud-config').value.includes('refresh_token')")
+        page.get_by_role("button", name="Salvar envio na nuvem", exact=True).click()
+        page.wait_for_function("document.querySelector('#notice').textContent.includes('Envio na nuvem salvo')")
+        assert runtime.cloud.describe()["enabled"]
+        assert page.locator("#cloud-config").input_value() == ""
+        assert page.locator("#cloud-file").input_value() == ""
+        assert "Dropbox" in page.locator("#cloud-status").inner_text()
+        assert page.locator("#crossplay-info").is_visible()
+        assert page.locator("#join-code").inner_text() == "012345"
+        page.evaluate("s => update(s)", state | {"join_code": None})
+        assert "Aguardando" in page.locator("#join-code").inner_text()
+        page.evaluate("s => update(s)", state | {"join_code": None, "running": False})
+        assert "Disponível ao iniciar" in page.locator("#join-code").inner_text()
+        page.evaluate("s => update(s)", state | {"crossplay": False, "join_code": None})
+        assert page.locator("#crossplay-info").is_hidden()
+        page.evaluate("s => update(s)", state)
         assert page.locator("#backup-list a").count() == 1
         artifact = Path(__file__).resolve().parents[1] / ".artifacts/panel.png"
         artifact.parent.mkdir(exist_ok=True)

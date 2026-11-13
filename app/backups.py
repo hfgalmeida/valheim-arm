@@ -131,7 +131,7 @@ class Backups:
                 raise
         return manifest
 
-    def prune(self, daily, weekly):
+    def prune(self, daily, weekly, protected=()):
         groups, keep = set(), set()
         valid = []
         for item in self.list():
@@ -155,6 +155,6 @@ class Backups:
         if valid:
             keep.add(valid[0])
         for path in valid:
-            if path not in keep:
+            if path not in keep and path.name not in protected:
                 path.unlink()
                 path.with_suffix(path.suffix + ".sha256").unlink(missing_ok=True)

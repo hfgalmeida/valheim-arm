@@ -1,4 +1,6 @@
 .env
+valheim-cloud.conf
+rclone.conf
 data/
 __pycache__/
 .pytest_cache/

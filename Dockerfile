@@ -21,7 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 
     HOME=/data/home \
     PATH=/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv ca-certificates curl libssl3t64 libstdc++6 tzdata \
+    python3 python3-venv ca-certificates curl libssl3t64 libstdc++6 tzdata rclone \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 valheim \
     && useradd --uid 10001 --gid 10001 --home-dir /data/home valheim \

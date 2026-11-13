@@ -1,5 +1,7 @@
 .git
 .env
+valheim-cloud.conf
+rclone.conf
 data
 .venv
 __pycache__

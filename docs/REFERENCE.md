@@ -112,7 +112,23 @@ Backups nativos permanecem habilitados durante o jogo. Arquivos completos são c
 
 Arquivos completos contêm saves, listas, ajustes do painel e configurações de mods, com manifesto e hashes SHA256. A senha administrativa não é exportada. Ajustes podem incluir a senha do jogo: trate os arquivos como privados. A retenção mantém representantes de sete dias e quatro semanas, além do mais recente, podendo descartar backups intermediários do mesmo dia.
 
-Baixe um `.tar.gz` pelo painel para guardar uma cópia fora da instância. Backups no mesmo volume não protegem contra perda desse disco. A primeira versão não inclui envio para Object Storage.
+Baixe um `.tar.gz` pelo painel ou ative o envio automático para a nuvem descrito abaixo. Backups no mesmo volume não protegem contra perda desse disco.
+
+<a id="nuvem"></a>
+### Envio automático para OneDrive, Dropbox ou Google Drive
+
+A configuração é opcional e feita em **Backup na nuvem**, no painel. A imagem já inclui o rclone; no computador do administrador ele é usado apenas para autorizar a conta uma vez. Esse procedimento segue a [configuração remota do rclone](https://rclone.org/remote_setup/#configuring-by-copying-the-config-file).
+
+1. No seu computador Windows ou Linux, [baixe o rclone](https://rclone.org/downloads/) e execute `rclone config --config ./valheim-cloud.conf` na pasta em que deseja guardar a conexão. No PowerShell, use `./rclone.exe` no lugar de `rclone` se o executável estiver na pasta atual e não estiver no PATH.
+2. Escolha **New remote** (`n`), dê um nome e selecione **OneDrive**, **Dropbox** ou **Google Drive**. Siga a autorização no navegador, escolha a unidade quando solicitado e confirme a conexão. Use a configuração padrão, sem opções avançadas nem conta de serviço. Crie somente uma conexão nesse arquivo.
+3. No painel, em **Backup na nuvem**, importe o arquivo `valheim-cloud.conf` ou cole seu conteúdo. Informe a pasta de destino, por exemplo `Valheim/backups`, selecione **Ativado** e clique em **Salvar envio na nuvem**. Para usar outra conta ou pasta, altere esses mesmos campos; deixe a conexão vazia para manter a conta atual.
+4. Crie um backup pelo painel ou aguarde o próximo backup agendado. O status mostra envios pendentes, o último arquivo enviado e eventuais falhas. Não é necessário reiniciar o jogo para configurar a nuvem.
+
+São enviados o backup completo `.tar.gz` e seu `.sha256`, usando [`rclone copyto`](https://rclone.org/commands/rclone_copyto/). O envio começa após a conclusão do arquivo local e roda em paralelo ao jogo. Cada arquivo só é registrado como enviado depois das duas cópias; interrupções e falhas são tentadas novamente automaticamente a cada cinco minutos, inclusive após reiniciar o contêiner. Arquivos anteriores à primeira ativação não são enviados. Ao reativar, os arquivos ainda disponíveis desde a primeira ativação são considerados novamente.
+
+Enquanto o envio está ativo, arquivos pendentes não são apagados pela retenção local e podem ocupar espaço além do limite habitual. Desativar o envio pausa a fila e permite a retenção local normal. Ao trocar a conta ou a pasta, os pendentes vão para o destino atual; os arquivos já enviados não são reenviados. A cópia na nuvem não recebe exclusões automáticas: acompanhe a quota e remova arquivos antigos no provedor quando necessário.
+
+A conexão contém credenciais da conta: guarde o arquivo local em lugar privado e não o publique no Git. No servidor, tokens ficam em `data/cloud`, com acesso restrito ao usuário do contêiner, fora dos backups; o rclone pode renovar os tokens durante o envio. A API nunca devolve a conexão salva. Se a autorização for revogada ou expirar sem renovação, autorize novamente e importe a conexão no painel. Para restaurar uma cópia da nuvem, baixe o arquivo e siga o procedimento de importação abaixo.
 
 Para restaurar: pare o jogo pelo painel, selecione um arquivo, confirme a restauração e acompanhe a operação. Um backup prévio é criado. A restauração substitui o diretório de saves, incluindo listas; configurações do supervisor e mods arquivadas são preservadas para recuperação manual, mas não são reaplicadas automaticamente. Selecione no painel o mundo indicado pelo resultado e inicie o jogo. Para importar um backup baixado anteriormente, envie o `.tar.gz` por SCP para `data/backups`, preserve seu nome original, gere o sidecar com `sha256sum ARQUIVO.tar.gz | cut -d ' ' -f 1 > ARQUIVO.tar.gz.sha256` e ajuste proprietário para `10001:10001`.
 
@@ -307,7 +323,9 @@ Base `/api/v1`, JSON. A API é acessada pelo mesmo HTTPS do painel. Não publiqu
 |---|---|
 | GET `/session` | Recupera token CSRF da sessão atual |
 | POST `/logout` | Invalida sessão |
-| GET `/state` | Estado do jogo, contagem e motivo, builds, operações, últimos 500 logs, histórico de até 720 métricas e proveniência da imagem |
+| GET `/state` | Estado do jogo, contagem e motivo, crossplay e código de entrada, builds, operações, últimos 500 logs, histórico de até 720 métricas e proveniência da imagem |
+| GET `/cloud` | Configuração pública e status do envio, sem tokens: `enabled`, `configured`, `provider`, `folder`, `pending`, `uploading`, `last_success`, `last_file`, `error` |
+| PUT `/cloud` | `{"enabled":true,"folder":"Valheim/backups","config":"..."}`; `config` vazio mantém a conexão salva. Exige sessão e CSRF; recusa alterações durante um envio |
 | GET `/events` | SSE a cada cinco segundos, com estado, operações, logs e métrica mais recente; termina ao expirar a sessão |
 | GET `/config` | `values`, `sources`, `pending`, opções de modificadores; senha do jogo sempre vazia |
 | PATCH `/config` | `{"changes":{"crossplay":true},"reset":[],"confirm_world":false}`; trocar o mundo exige confirmação |
@@ -321,6 +339,10 @@ Base `/api/v1`, JSON. A API é acessada pelo mesmo HTTPS do painel. Não publiqu
 Restauração exige `{"action":"restore","backup":"NOME.tar.gz","confirm":true}` e jogo parado. Somente arquivos do diretório de backups podem ser selecionados. Não há upload web nem execução de comandos arbitrários. Configurações e listas não podem ser alteradas durante operação em execução.
 
 Operações têm `id`, `action`, `state`, `created` e, quando disponíveis, `result` ou `error`. Estados: `fila`, `executando`, `concluído`, `falha`, `adiado`, `cancelado`. Retornar 202 confirma entrada na fila, não conclusão nem prontidão do jogo. O estado `online` depende da mensagem de conexão emitida pelo jogo.
+
+O estado e os eventos incluem `crossplay` (configuração em execução, ou a configuração efetiva quando parado) e `join_code` (texto de seis dígitos ou `null`). O código é extraído das mensagens de registro/atividade da sessão no log, preservando zeros iniciais; veja um [exemplo do formato do log](https://github.com/husjon/valheim_server_oci_setup#crossplay-console--game-pass). Ele é limpo ao iniciar uma nova execução, encerrar o jogo ou falhar a leitura do log. O painel aguarda o código quando crossplay está ativo e só o exibe dentro da sessão administrativa autenticada.
+
+O campo `cloud` de `/state` e dos eventos contém o mesmo status público de GET `/cloud`, permitindo acompanhar os envios sem recarregar o painel.
 
 HTTP 401 indica sessão ausente/expirada ou login recusado; 403 indica origem/CSRF incorretos; 404, recurso ausente; 409, conflito/fila cheia; 422, configuração inválida ou confirmação ausente. Erros de validação não retornam o valor de senha enviado.
 
@@ -408,10 +430,10 @@ No Windows com Edge instalado, use `$env:RUN_BROWSER_TESTS='1'` e `$env:BROWSER_
 
 ## Instalação e migração
 
-O instalador suporta Ubuntu 24.04 ARM64, usa o repositório oficial Docker quando necessário e grava a instalação em `./valheim-arm`. Para escolher outra pasta, execute `VALHEIM_INSTALL_DIR=/caminho/servidor bash install-valheim.sh`. O IP sugerido é obtido por HTTPS em api.ipify.org e pode ser alterado no prompt. As portas da OCI e do firewall local precisam estar liberadas antes de jogar; o instalador não altera regras da nuvem.
+O instalador aceita Ubuntu 24.04 e 26.04 LTS ARM64 com páginas de 4 KiB, usa o repositório oficial Docker correspondente ao host (`noble` ou `resolute`) quando necessário e grava a instalação em `./valheim-arm`. Para escolher outra pasta, execute `VALHEIM_INSTALL_DIR=/caminho/servidor bash install-valheim.sh`. O IP sugerido é obtido por HTTPS em api.ipify.org e pode ser alterado no prompt. As portas da OCI e do firewall local precisam estar liberadas antes de jogar; o instalador não altera regras da nuvem.
 
 Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, Caddyfile, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
 
 O `.env.example` contém somente o essencial. Todas as opções avançadas continuam disponíveis no `compose.yaml` e nas tabelas acima. A imagem padrão é pública, `hfgalmeida/valheim-arm:latest`, e não exige login. Modificadores, crossplay, horários, usuários e backups podem ser administrados pelo painel. Alterações do jogo ficam pendentes até uma reinicialização segura; ajustes de horário são lidos pelo agendador.
 
-O preflight é executado automaticamente na inicialização. Se houver erro de permissão em `data`, confirme o proprietário UID/GID 10001. Se Docker existente não tiver Compose ou houver pacotes conflitantes, siga a [instalação oficial Docker](https://docs.docker.com/engine/install/ubuntu/) e execute o instalador novamente. O instalador não remove engines existentes.
+A imagem continua baseada em Ubuntu 24.04, independentemente da versão do host. A aceitação completa na Oracle permanece pendente; a inclusão de Ubuntu 26.04 no instalador não substitui esse teste real. O preflight é executado automaticamente na inicialização. Se houver erro de permissão em `data`, confirme o proprietário UID/GID 10001. Se Docker existente não tiver Compose ou houver pacotes conflitantes, siga a [instalação oficial Docker](https://docs.docker.com/engine/install/ubuntu/) e execute o instalador novamente. O instalador não remove engines existentes.

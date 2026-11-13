@@ -2,7 +2,7 @@
 
 Seu mundo Valheim na Oracle ARM, com instalação pelo Docker Hub e manutenção automática.
 
-**Precisa de:** Ubuntu 24.04 ARM64, 2 OCPUs, 12 GB de RAM, aproximadamente 30 GB livres e acesso sudo. A imagem pública é `hfgalmeida/valheim-arm:latest`.
+**Precisa de:** Ubuntu 24.04 ou 26.04 LTS ARM64, páginas de memória de 4 KiB, 2 OCPUs, 12 GB de RAM, aproximadamente 30 GB livres e acesso sudo. A imagem pública é `hfgalmeida/valheim-arm:latest`.
 
 ## Instalar
 
@@ -65,9 +65,11 @@ Os horários usam **America/Sao_Paulo**. Manutenções que param o jogo aguardam
 
 Os saves ficam em `valheim-arm/data`. Baixe uma cópia dos backups pelo painel para guardá-la fora da instância.
 
+Quer automatizar essa cópia? No painel, **Backup na nuvem** permite enviar os novos backups para **OneDrive, Dropbox ou Google Drive**. Autorize sua conta uma vez no computador e importe a conexão no painel; veja [como conectar](docs/REFERENCE.md#nuvem).
+
 ## Painel
 
-Acesse **https://SEU_IP** e entre com a senha administrativa definida durante a instalação. Lá você pode mudar configurações, habilitar crossplay, administrar usuários e baixar/restaurar backups.
+Acesse **https://SEU_IP** e entre com a senha administrativa definida durante a instalação. Lá você pode mudar configurações, habilitar crossplay, administrar usuários e baixar/restaurar backups. Com crossplay ativo, o código de entrada aparece no topo do painel assim que o jogo registra a sessão. Compartilhe esse código e a senha do jogo com os jogadores; após reiniciar, consulte o código novamente.
 
 O HTTPS por IP usa um certificado local. Baixe e importe o certificado para confiar nele no navegador. Isso é opcional para começar a jogar.
 
