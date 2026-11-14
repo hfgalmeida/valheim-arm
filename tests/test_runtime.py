@@ -218,7 +218,7 @@ def test_final_connection_cancels_and_resumes(runtime):
 def test_failed_update_restarts_previous_install(runtime):
     runtime.process = SimpleNamespace(returncode=None)
 
-    async def stop():
+    async def stop(safe=True):
         runtime.process.returncode = 0
 
     runtime.stop = AsyncMock(side_effect=stop)
@@ -422,7 +422,7 @@ def test_scheduled_failure_is_persisted_and_retried(runtime):
 def test_shutdown_does_not_restart_during_snapshot_failure(runtime):
     runtime.process = SimpleNamespace(returncode=None)
 
-    async def stop():
+    async def stop(safe=True):
         runtime.process.returncode = 0
 
     runtime.stop = AsyncMock(side_effect=stop)
@@ -702,7 +702,7 @@ def test_failed_maintenance_after_stop_is_never_replayed(runtime, action):
     async def scenario():
         runtime.process = SimpleNamespace(returncode=None)
 
-        async def stop():
+        async def stop(safe=True):
             runtime.process.returncode = 0
 
         async def start():
@@ -951,7 +951,7 @@ def test_steam_guard_explains_refusal_without_sending_signals(runtime, count, me
     runtime.players.empty_since -= 121
     with patch("app.runtime.query_steam", return_value=count), patch("app.runtime.os.killpg", create=True) as kill:
         with pytest.raises(MaintenanceDeferred, match=message):
-            asyncio.run(runtime.execute({"action": "stop"}))
+            asyncio.run(runtime.stop())
     kill.assert_not_called()
     assert runtime.want_running
 
@@ -962,7 +962,7 @@ def test_signalled_manual_stop_does_not_auto_restart_after_failure(runtime, exit
         runtime.process = SimpleNamespace(returncode=None)
         runtime.schedule_once("restart")
 
-        async def stop():
+        async def stop(safe=True):
             runtime.stop_request = (runtime.process, time.monotonic())
             if exited:
                 runtime.process.returncode = 0
@@ -980,5 +980,53 @@ def test_signalled_manual_stop_does_not_auto_restart_after_failure(runtime, exit
         await runtime.tick()
         assert runtime.queue.empty()
         assert not runtime.status()["automatic_recovery"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("action", ["stop", "restart", "update", "backup"])
+def test_manual_actions_signal_immediately_with_players_and_no_steam_query(runtime, action):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
+        runtime.clean_stop = False
+        runtime.players.consume("Connections 3 ZDOS:1")
+        runtime.snapshot = AsyncMock(return_value="saved.tar.gz")
+        runtime.install = AsyncMock()
+        runtime.start = AsyncMock()
+
+        async def finish_game():
+            runtime.last_save = time.monotonic()
+            runtime.process.returncode = 0
+
+        runtime.reader = finish_game()
+        with patch("app.runtime.query_steam", side_effect=AssertionError("manual operation must not query Steam")) as query, \
+                patch("app.runtime.os.killpg", create=True) as kill:
+            await runtime.execute({"action": action})
+        query.assert_not_called()
+        kill.assert_called_once_with(42, signal.SIGINT)
+        assert runtime.clean_stop
+        assert runtime.snapshot.await_count == int(action != "stop")
+        assert runtime.start.await_count == int(action != "stop")
+        assert runtime.install.await_count == int(action == "update")
+        if action == "stop":
+            assert not runtime.want_running
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("action", ["restart", "backup", "update"])
+def test_automatic_maintenance_keeps_waiting_for_connected_players(runtime, action):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.game_ready = True
+        runtime.running = runtime.config.effective()
+        runtime.players.consume("Connections 3 ZDOS:1")
+        runtime.schedule_once(action)
+        with patch("app.runtime.os.killpg", create=True) as kill:
+            await finish_worker(runtime)
+        assert runtime.jobs[0]["state"] == "adiado"
+        kill.assert_not_called()
+        assert runtime.live
 
     asyncio.run(scenario())

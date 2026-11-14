@@ -62,7 +62,7 @@ Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baix
 | Retenção | Sete dias e quatro semanas |
 | Recuperação de falhas | Novas tentativas automáticas, com recuperação rápida na inicialização |
 
-Os horários usam **America/Sao_Paulo**. Manutenções aguardam o servidor ficar vazio e confirmam o salvamento antes de criar backups. Você pode configurar o [envio automático para OneDrive, Dropbox ou Google Drive](docs/REFERENCE.md#nuvem) pelo painel.
+Os horários usam **America/Sao_Paulo**. Manutenções automáticas aguardam o servidor ficar vazio e confirmam o salvamento antes de criar backups. Você pode configurar o [envio automático para OneDrive, Dropbox ou Google Drive](docs/REFERENCE.md#nuvem) pelo painel.
 
 Os dados ficam em `valheim-arm/data`. Guarde também uma cópia dos backups fora da instância.
 

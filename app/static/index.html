@@ -13,7 +13,7 @@
 <button type="button" role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false" tabindex="-1">Atividade</button>
 </div>
 <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0"><nav id="actions" aria-label="Controle do servidor"><button data-action="start">Iniciar</button><button data-action="stop">Parar</button><button data-action="restart">Reiniciar</button><button data-action="update">Atualizar jogo</button><button data-action="backup">Criar backup</button></nav>
-<p class="muted">Paradas aguardam dois minutos com zero jogadores confirmado. Tarefas agendadas são adiadas automaticamente; operações manuais recusadas podem ser solicitadas novamente.</p>
+<p class="muted">Ações do painel solicitam a parada imediatamente e podem desconectar jogadores. O jogo salva antes de encerrar; apenas as tarefas automáticas aguardam o servidor vazio.</p>
 <section class="metrics" aria-label="Recursos em tempo real">
 <article class="card"><span>CPU · 100% por núcleo</span><strong id="cpu">—</strong><canvas id="cpu-chart" width="600" height="150" aria-label="Histórico de CPU"></canvas></article>
 <article class="card"><span>Memória do contêiner</span><strong id="memory">—</strong><canvas id="memory-chart" width="600" height="150" aria-label="Histórico de memória"></canvas></article>

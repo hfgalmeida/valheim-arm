@@ -190,7 +190,7 @@ Se mudar o IP, atualize `SERVER_IP` no `.env` e execute `sudo docker compose up 
 <a id="backups"></a>
 ## Backups e mods
 
-Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo). Se houver jogadores continuamente, os arquivos completos serão adiados; os backups nativos continuam funcionando.
+Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo). Se houver jogadores continuamente, os backups completos automáticos serão adiados; os backups nativos continuam funcionando.
 
 Arquivos completos contêm saves, listas, ajustes do painel e configurações de mods, com manifesto e hashes SHA256. A senha administrativa não é exportada. Ajustes podem incluir a senha do jogo: trate os arquivos como privados. A retenção mantém representantes de sete dias e quatro semanas, além do mais recente, podendo descartar backups intermediários do mesmo dia.
 
@@ -286,7 +286,7 @@ sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
 
 ### Parada do contêiner e reinícios
 
-O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações do painel e as manutenções agendadas continuam exigindo zero jogadores confirmado por dois minutos, com confirmação A2S no modo Steam e uma verificação final das conexões.
+O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações manuais do painel solicitam a parada imediatamente, mesmo com jogadores conectados ou consulta Steam indisponível. A fila continua serializada e aguarda uma operação já em execução terminar. Parar, reiniciar, atualizar e criar backup manualmente dispensam a espera de dois minutos e as verificações de jogadores/A2S, mas preservam o encerramento gracioso e a confirmação de salvamento antes de backups ou atualizações. Somente as manutenções automáticas exigem zero jogadores confirmado por dois minutos, confirmação A2S no modo Steam e uma verificação final das conexões.
 
 O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo) antes de marcar a parada como limpa.
 
@@ -324,7 +324,7 @@ sudo docker compose exec valheim cat /opt/build-info.json
 sudo df -h ./data
 ```
 
-Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização. Se o SIGINT já foi enviado, essa intenção de parar permanece mesmo quando há timeout ou falta a confirmação de salvamento. Uma recusa anterior ao sinal, como consulta Steam indisponível ou jogadores detectados, mantém o jogo em execução.
+Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização. Se o SIGINT já foi enviado, essa intenção de parar permanece mesmo quando há timeout ou falta a confirmação de salvamento. As verificações de jogadores e Steam/A2S aplicam-se somente às tarefas automáticas.
 
 <a id="publicacao"></a>
 ## Publicar imagem
@@ -475,7 +475,7 @@ Interrompa a aceitação se qualquer combinação exigida não funcionar. Não s
 - [ ] Alterar nome, senha e modificadores; confirmar indicação pendente, aplicação após reinício e origem dos valores. Usar “Usar Compose”, recriar o contêiner e confirmar precedência/persistência.
 - [ ] Trocar mundo com confirmação e voltar ao anterior; verificar que os saves originais permanecem.
 - [ ] Editar administradores, banidos e permitidos e conferir comportamento no jogo.
-- [ ] Solicitar atualização/reinício com jogadores conectados: a operação manual deve recusar. Agendar tarefa e confirmar adiamento sem desconexão.
+- [ ] Solicitar atualização/reinício pelo painel com jogadores conectados: confirmar parada imediata com salvamento e desconexão. Agendar tarefa automática e confirmar adiamento sem desconexão.
 - [ ] Sair do jogo, aguardar snapshot completo e dois minutos vazios; confirmar execução da tarefa adiada, save e retorno do jogo.
 - [ ] Tentar conectar durante a verificação final, em Steam e crossplay; verificar cancelamento caso o evento já tenha sido processado e comportamento de suspensão/retomada do grupo FEX.
 - [ ] Simular contagem desconhecida e consulta A2S indisponível; confirmar que nenhum SIGINT é enviado automaticamente.

@@ -641,7 +641,9 @@ class Runtime:
             raise MaintenanceDeferred("Aguardando o jogo ficar pronto antes da manutenção")
         was_running = self.live
         try:
-            await self.stop()
+            # Explicit administrator actions bypass admission/idle checks only.
+            # Exit and completed-save confirmation remain mandatory.
+            await self.stop(safe=bool(job.get("scheduled")))
         except MaintenanceDeferred:
             raise
         except Exception:
