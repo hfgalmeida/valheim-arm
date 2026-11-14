@@ -70,10 +70,11 @@
 
 - [x] Diagnóstico do painel: distinguir conexão com supervisor, jogo iniciando, pronto, parado, parando, em recuperação ou com falha; mostrar prazo da recuperação e última falha da sessão com horário.
 - [x] Atualizador no host para imagem Docker (FEX e painel), com backup, parada limpa, verificação de inicialização e retorno à imagem anterior; versão instalada e atualização pública no painel.
-- [ ] Validar na Oracle restauração completa de backups no formato atual de saves.
+- [x] Validar na Oracle restauração dos arquivos no formato atual: parada limpa, backup preservado fora da retenção, restauração de 9 arquivos de saves com hashes idênticos, remoção de arquivo adicional e retorno do mundo ao estado online (14/11/2026).
+- [x] Confirmar pelo cliente do jogo a entrada e o estado visual do mundo após a restauração validada em 14/11/2026: administrador conectou e confirmou que o mundo está correto.
 - [x] Alertas opcionais no Discord para recuperação suspensa, falha de backup/envio à nuvem e pouco espaço em disco, com teste no painel e aviso de normalização.
 - [ ] Persistir a intenção de parada pelo painel e definir seu comportamento após reiniciar a instância.
-- [ ] Diagnóstico BepInEx: versão, plugins detectados e erros de carregamento.
+- [x] Diagnóstico BepInEx por sessão: versão, tentativas de carregamento dos plugins, conclusão do carregador, falhas/dependências e DLLs alteradas aguardando reinício; compatibilidade real continua pendente.
 - [ ] Histórico de manutenção com início, término, duração e origem (administrador, agendamento ou recuperação).
 - [ ] Concluir validação de desempenho no Ampere A1, plugins BepInEx e contagem de jogadores.
 

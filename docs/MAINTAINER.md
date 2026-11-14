@@ -318,3 +318,15 @@ Para apenas verificar, use `black --check` e `prettier --check` nos mesmos camin
 `update-server.py` usa apenas Python 3 e Docker Compose no host, sem acesso ao socket pelo painel. O instalador distribui esse arquivo junto ao Compose. A imagem inclui `VERSION` em `/opt/valheim/VERSION`; a consulta pública compara tags semânticas cujo digest ARM64 corresponde a `latest` no Docker Hub, a cada seis horas. Não basta alterar o arquivo do GitHub para anunciar uma imagem publicada.
 
 Os testes em `tests/test_host_update.py` simulam comandos Docker para validar ordem das operações, falha de backup, preflight, recusa sem espaço e retorno à imagem anterior; em Linux também exercitam backup offline e bloqueio do volume. A validação real da troca e do retorno deve ser realizada na Oracle. O backup anterior à troca usa as APIs de backup da imagem instalada; mantenha compatibilidade com esse caminho nas próximas versões. Retorno de imagem não reverte saves, configurações nem atualizações dos binários do jogo.
+
+### Resultado da validação de restauração — 14/11/2026
+
+Executada na instância Oracle de testes com o jogo existente: parada graciosa e ausência do marcador de saída incompleta; criação e validação de backup, com cópia preservada em `data/restore-validation/20261114T143729Z`; inclusão de um arquivo de teste adicional; backup pré-restauração; restauração pelas APIs `Backups.restore`; comparação dos hashes e do conjunto completo dos 9 arquivos de saves. Todos corresponderam ao backup e o arquivo adicional foi removido.
+
+O jogo foi iniciado novamente e atingiu `online`, após carregar os saves DB2/chunks e registrar o transporte crossplay. O relatório está no diretório preservado, em `report.json`. O administrador conectou pelo cliente do jogo e confirmou que o mundo restaurado está correto, concluindo a validação de restauração desta execução. Esta execução validou a restauração no backend e a inicialização real, sem exercitar o botão de restauração no navegador, download pela nuvem ou o atualizador de imagens.
+
+### Diagnóstico BepInEx
+
+`app/mod_diagnostics.py` lê apenas evidências do stdout da execução atual, já submetidas à ocultação de senhas do supervisor. Mantém até 200 identidades de plugins e 50 avisos/erros distintos, sem executar DLLs. O snapshot de até 2.000 DLLs usa inode, tamanho e mtime no início do processo; alterações aparecem na consulta autenticada de plugins. Erros de inventário não bloqueiam a inicialização do jogo. Não há associação presumida entre nome de assembly e nome de plugin.
+
+O parser usa os formatos do [Chainloader BepInEx 5](https://github.com/BepInEx/BepInEx/blob/v5-lts/BepInEx/Bootstrap/Chainloader.cs). O evento Loading precede a tentativa; erros de dependência ou carregamento e a conclusão do carregador são registrados separadamente. Erros emitidos por outras fontes após detectar BepInEx são exibidos sem atribuir a causa ao plugin. A compatibilidade real ainda exige validação na Oracle.

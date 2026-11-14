@@ -142,7 +142,65 @@ async function loadAlerts() {
   $("alerts-url").value = "";
   alertStatus(a);
 }
+function modDiagnostics(d) {
+  const states = {
+    disabled: "BepInEx desativado nesta sessão.",
+    awaiting_start: "Aguardando início do jogo com BepInEx.",
+    stopped: "Jogo parado. Exibindo a última sessão deste supervisor.",
+    complete: "Carregador BepInEx concluído; confira os avisos e erros abaixo.",
+    loading: "BepInEx detectado; carregamento em andamento.",
+    unconfirmed: "BepInEx habilitado, mas ainda sem confirmação nos logs.",
+  };
+  $("mod-session-status").textContent = states[d.state] || "Estado desconhecido.";
+  $("mod-session-version").textContent =
+    "Versão detectada: " +
+    (d.version || "não identificada nos logs") +
+    (d.started
+      ? " · Sessão iniciada em " +
+        new Date(d.started * 1000).toLocaleString("pt-BR", {
+          timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+        })
+      : "");
+  $("mod-session-pending").textContent =
+    (d.pending_config ? "Alteração de ativação do BepInEx aguarda novo início do jogo. " : "") +
+    (d.scan_error || "");
+  const plugins = $("mod-session-plugins");
+  plugins.replaceChildren();
+  for (const plugin of d.plugins) {
+    const item = document.createElement("li");
+    item.textContent =
+      plugin.name +
+      " · " +
+      plugin.version +
+      " · " +
+      (plugin.state === "failed"
+        ? "Falha ou carregamento ignorado"
+        : d.complete
+          ? "Tentativa registrada; carregador concluído"
+          : "Carregamento iniciado");
+    plugins.append(item);
+  }
+  if (!d.plugins.length) {
+    const item = document.createElement("li");
+    item.textContent = "Nenhum plugin identificado nos logs desta sessão.";
+    plugins.append(item);
+  }
+  const issues = $("mod-session-issues");
+  issues.replaceChildren();
+  for (const issue of d.issues) {
+    const item = document.createElement("li");
+    item.textContent =
+      (issue.level === "warning" ? "Aviso" : "Erro") + " · " + issue.source + ": " + issue.message;
+    issues.append(item);
+  }
+  if (!d.issues.length) {
+    const item = document.createElement("li");
+    item.textContent = "Nenhum aviso ou erro capturado no diagnóstico.";
+    issues.append(item);
+  }
+}
 function update(s) {
+  if (s.mods) modDiagnostics(s.mods);
   if (s.alerts) alertStatus(s.alerts);
   if (s.cloud) cloudStatus(s.cloud);
   $("crossplay-info").hidden = !s.crossplay;
@@ -818,6 +876,7 @@ $("previous-mod-config").onclick = () =>
 
 async function loadPlugins() {
   const data = await api("/plugins");
+  if (data.diagnostics) modDiagnostics(data.diagnostics);
   $("plugin-list").replaceChildren();
   if (!data.files.length) {
     $("plugin-list").textContent = "Nenhuma DLL instalada ainda.";
@@ -826,7 +885,19 @@ async function loadPlugins() {
     const row = document.createElement("div");
     row.className = "plugin-entry";
     const label = document.createElement("span");
-    label.textContent = file.name + " · " + bytes(file.bytes);
+    const sessionStates = {
+      awaiting_start: "Aguarda início do jogo",
+      pending_restart: "Alterado após o último início; aguarda reinício",
+      present_at_start: "Presente no início; confira o carregamento acima",
+      last_session: "Presente na última sessão",
+      unknown: "Comparação com a sessão indisponível",
+    };
+    label.textContent =
+      file.name +
+      " · " +
+      bytes(file.bytes) +
+      " · " +
+      (sessionStates[file.session_state] || "Carregamento não confirmado");
     row.append(label);
     if (file.previous_available && file.revision) {
       const restore = document.createElement("button");

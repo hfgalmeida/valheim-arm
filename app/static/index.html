@@ -242,6 +242,24 @@
           </section>
         </div>
         <div role="tabpanel" id="panel-mods" aria-labelledby="tab-mods" tabindex="0" hidden>
+          <section class="card" aria-labelledby="mod-diagnostics-title">
+            <h2 id="mod-diagnostics-title">Diagnóstico dos mods</h2>
+            <p id="mod-session-status" role="status" aria-live="polite">
+              Aguardando informações do supervisor…
+            </p>
+            <p id="mod-session-version"></p>
+            <p id="mod-session-pending" class="muted"></p>
+            <h3>Plugins informados pelo carregador</h3>
+            <ul id="mod-session-plugins"></ul>
+            <h3>Avisos e erros registrados</h3>
+            <ul id="mod-session-issues"></ul>
+            <p class="muted">
+              As informações são da sessão atual ou da última execução deste supervisor. Uma DLL
+              instalada não comprova que o plugin carregou. “Loading” registra uma tentativa; a
+              conclusão do carregador e a ausência de erro não garantem compatibilidade ou
+              funcionamento no jogo.
+            </p>
+          </section>
           <section class="card">
             <h2>BepInEx</h2>
             <p class="muted">

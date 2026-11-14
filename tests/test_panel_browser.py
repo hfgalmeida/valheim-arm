@@ -47,6 +47,21 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         crossplay=True,
         join_code="012345",
         players={"count": 2, "reason": "snapshot do jogo"},
+        mods={
+            "state": "complete",
+            "version": "5.4.23",
+            "started": None,
+            "pending_config": False,
+            "scan_error": None,
+            "plugins": [{"name": "Useful Plugin", "version": "1.2.3", "state": "loading_reported"}],
+            "issues": [
+                {
+                    "level": "error",
+                    "source": "BepInEx",
+                    "message": "Could not load <unsafe> because it has missing dependencies",
+                }
+            ],
+        },
         image_version={
             "installed": "0.14.0",
             "available": "0.15.0",
@@ -262,6 +277,11 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         )
         assert runtime.config.effective().restart_at == "04:00"
         page.get_by_role("tab", name="Mods", exact=True).click()
+        assert "Carregador BepInEx concluído" in page.locator("#mod-session-status").inner_text()
+        assert "Useful Plugin · 1.2.3" in page.locator("#mod-session-plugins").inner_text()
+        assert "<unsafe>" in page.locator("#mod-session-issues").inner_text()
+        assert page.locator("#mod-session-issues unsafe").count() == 0
+
         page.locator("#plugin-file").set_input_files(
             {"name": "test.dll", "mimeType": "application/octet-stream", "buffer": dll()}
         )

@@ -19,6 +19,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .image_version import ImageVersion
+from .mod_diagnostics import ModDiagnostics
 from .alerts import Alerts
 from .backups import Backups, digest
 from .cloud import Cloud
@@ -261,6 +262,7 @@ class Runtime:
         self.cloud_task = None
         self.file_access = FileAccess(data)
         self.access_task = None
+        self.mod_diagnostics = ModDiagnostics(data)
         self.players = Players()
         self.player_directory = PlayerDirectory(data / "config/known-players.json")
         self.process = None
@@ -387,6 +389,7 @@ class Runtime:
         ).crossplay
         return {
             "diagnostics": self.diagnostics(),
+            "mods": self.mod_diagnostics.describe(self.live, self.config.effective().bepinex),
             "state": self.state,
             "running": self.live,
             "players": (
@@ -663,6 +666,7 @@ class Runtime:
         self.running = settings
         self.clean_stop = False
         atomic_json(self.clean_marker, {"started": time.time(), "world": settings.world_name})
+        await asyncio.to_thread(self.mod_diagnostics.begin, settings.bepinex)
         self.process = await asyncio.create_subprocess_exec(
             "FEXInterpreter",
             "/usr/bin/env",
@@ -701,6 +705,7 @@ class Runtime:
                     self.ready_since = time.monotonic()
                     self.state = "online"
                 self.emit(text)
+                self.mod_diagnostics.consume(self.logs[-1]["message"])
         except Exception as exc:
             self.players.reset()
             self.join_code = None

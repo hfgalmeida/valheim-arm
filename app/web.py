@@ -223,7 +223,15 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.get("/api/v1/plugins", dependencies=[Depends(session)])
     async def list_plugins():
         try:
-            return {"files": plugins.list()}
+            files = await asyncio.to_thread(plugins.list)
+            for file in files:
+                file["session_state"] = rt.mod_diagnostics.file_state(
+                    plugins.root / file["name"], rt.live
+                )
+            return {
+                "files": files,
+                "diagnostics": rt.mod_diagnostics.describe(rt.live, rt.config.effective().bepinex),
+            }
         except (OSError, ValueError) as exc:
             config_error(exc)
 

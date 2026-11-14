@@ -749,3 +749,13 @@ button:disabled {
   gap: 12px;
   margin-top: 24px;
 }
+
+#mod-session-plugins,
+#mod-session-issues {
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+#mod-session-issues li {
+  margin-bottom: 10px;
+  color: var(--muted);
+}

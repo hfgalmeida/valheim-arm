@@ -237,6 +237,10 @@ sha256sum BepInExPack_Valheim.zip
 
 No PowerShell: `Get-FileHash .\BepInExPack_Valheim.zip -Algorithm SHA256`.
 
+Em **Mods → Diagnóstico dos mods**, consulte a versão do BepInEx detectada nos logs, a conclusão do carregador, nomes/versões dos plugins e avisos de dependências ou erros de carga. O diagnóstico acompanha a sessão atual; com o jogo parado, mantém a última execução do supervisor. Reiniciar o contêiner limpa esse histórico e a próxima execução começa um diagnóstico novo. Logs antigos em disco não são usados para confirmar a sessão atual.
+
+A lista de DLLs distingue arquivos presentes no início de arquivos novos ou alterados aguardando reinício. Clique em **Atualizar plugins** após alterações pelo SSH. Os nomes dos plugins nos logs não são necessariamente os nomes das DLLs, portanto as listas são separadas. Uma tentativa de carga ou a conclusão do carregador não comprova funcionamento do plugin: valide sua compatibilidade entrando no jogo. Se o BepInEx estiver habilitado sem confirmação nos logs, confira se o pacote está correto e se a saída de console do BepInEx está ativada.
+
 Na aba **Mods → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; mantenha o pacote configurado acima.
 
 Para atualizar uma DLL, use o mesmo nome e confirme a substituição. A versão anterior fica preservada; **Restaurar anterior** permite voltar pelo painel, também com o jogo parado. A lista informa arquivos instalados, não comprova que o plugin carregou ou é compatível. Confira os logs depois de iniciar.
