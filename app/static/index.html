@@ -45,6 +45,7 @@
               <p id="last-failure" hidden></p>
             </div>
             <p id="versions"></p>
+            <p id="image-version"></p>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
             </p>
@@ -454,6 +455,26 @@
         </div>
       </div>
     </main>
+    <dialog
+      id="action-confirmation"
+      aria-labelledby="action-confirm-title"
+      aria-describedby="action-confirm-description action-confirm-warning"
+    >
+      <form method="dialog">
+        <span class="eyebrow">CONTROLE DO SERVIDOR</span>
+        <h2 id="action-confirm-title"></h2>
+        <p id="action-confirm-description"></p>
+        <p id="action-confirm-warning" class="confirmation-warning">
+          A operação começa assim que o supervisor processar a solicitação, sem aguardar o servidor
+          ficar vazio. Jogadores conectados podem ser desconectados. O jogo terá tempo para salvar
+          antes de encerrar.
+        </p>
+        <div class="confirmation-actions">
+          <button value="cancel" autofocus>Cancelar</button>
+          <button value="confirm" id="action-confirm-submit" class="primary"></button>
+        </div>
+      </form>
+    </dialog>
     <footer>Valheim ARM · Administração local · FEX Emu</footer>
   </body>
 </html>

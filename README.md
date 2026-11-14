@@ -69,3 +69,11 @@ Saves, configurações editáveis, mods e backups ficam em `valheim-arm/data`, c
 Configurações avançadas, certificado, importação de mundos, mods e administração estão na [referência](docs/REFERENCE.md).
 
 Para desenvolver ou publicar imagens, consulte o [guia do mantenedor](docs/MAINTAINER.md).
+
+Para atualizar o painel e o FEX, na pasta da instalação:
+
+```bash
+sudo python3 update-server.py
+```
+
+O comando interrompe jogadores, faz backup e verifica a nova imagem. Consulte [atualização da imagem](docs/REFERENCE.md#atualizacao-da-imagem) para retorno à versão anterior.

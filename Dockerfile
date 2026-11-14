@@ -46,6 +46,7 @@ RUN ldconfig \
 WORKDIR /opt/valheim
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY VERSION ./VERSION
 COPY app ./app
 USER 10001:10001
 EXPOSE 8080 2456/udp 2457/udp

@@ -188,6 +188,18 @@ function update(s) {
     (s.installed_build || "—") +
     " · Disponível: " +
     (s.available_build || "—");
+  if (s.image_version) {
+    const version = s.image_version;
+    $("image-version").textContent =
+      "Imagem: " +
+      (version.installed || "não identificada") +
+      (version.update_available
+        ? " · Nova versão pública: " +
+          version.available +
+          ". Atualize pelo SSH: sudo python3 update-server.py"
+        : "") +
+      (version.error ? " · " + version.error : "");
+  }
   $("pending").textContent = s.pending_config ? "Alterações aguardam reinício" : "";
   $("logs").textContent = s.logs
     .map((l) => new Date(l.time * 1000).toLocaleTimeString() + "  " + l.message)
@@ -517,19 +529,62 @@ $("logout").onclick = () =>
     await api("/logout", "POST", {});
     signedOut();
   });
-$("actions").onclick = (e) => {
-  const action = e.target.dataset.action;
-  if (!action) return;
+const actionConfirmations = {
+  stop: {
+    title: "Parar o servidor?",
+    label: "Parar servidor",
+    description: "O jogo será encerrado e permanecerá parado até uma nova solicitação de início.",
+  },
+  restart: {
+    title: "Reiniciar o servidor?",
+    label: "Reiniciar servidor",
+    description:
+      "O jogo será encerrado e iniciado novamente, aplicando as configurações pendentes.",
+  },
+  update: {
+    title: "Atualizar o jogo?",
+    label: "Atualizar jogo",
+    description:
+      "O supervisor verificará e instalará a atualização do jogo. A operação pode exigir a parada e a inicialização do servidor.",
+  },
+  backup: {
+    title: "Criar backup agora?",
+    label: "Criar backup",
+    description:
+      "Para criar uma cópia consistente do mundo, o jogo será parado. Se estava em execução, será iniciado novamente após o backup.",
+  },
+};
+function confirmServerAction(action) {
+  const info = actionConfirmations[action];
+  if (!info) return Promise.resolve(true);
+  const dialog = $("action-confirmation");
+  $("action-confirm-title").textContent = info.title;
+  $("action-confirm-description").textContent = info.description;
+  $("action-confirm-submit").textContent = info.label;
+  dialog.returnValue = "cancel";
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {
+      once: true,
+    });
+    dialog.showModal();
+  });
+}
+let actionPending = false;
+$("actions").onclick = (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button || actionPending) return;
+  const action = button.dataset.action;
+  actionPending = true;
   guard(async () => {
-    if (
-      action === "stop" &&
-      !confirm(
-        "Parar o servidor agora? Jogadores conectados serão desconectados. O jogo terá tempo para salvar.",
-      )
-    )
-      return;
-    await api("/actions", "POST", { action });
-    notice("Operação enviada. Acompanhe o resultado na aba Atividade.");
+    try {
+      if (!(await confirmServerAction(action))) return;
+      document.querySelectorAll("#actions button").forEach((item) => (item.disabled = true));
+      await api("/actions", "POST", { action });
+      notice("Operação enviada. Acompanhe o resultado na aba Atividade.");
+    } finally {
+      actionPending = false;
+      document.querySelectorAll("#actions button").forEach((item) => (item.disabled = false));
+    }
   });
 };
 for (const [formId, group] of [

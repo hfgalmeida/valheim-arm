@@ -69,7 +69,7 @@
 ### Melhorias de operação e diagnóstico
 
 - [x] Diagnóstico do painel: distinguir conexão com supervisor, jogo iniciando, pronto, parado, parando, em recuperação ou com falha; mostrar prazo da recuperação e última falha da sessão com horário.
-- [ ] Facilitar atualização da imagem Docker (FEX e painel), preservando dados e permitindo retorno à imagem anterior.
+- [x] Atualizador no host para imagem Docker (FEX e painel), com backup, parada limpa, verificação de inicialização e retorno à imagem anterior; versão instalada e atualização pública no painel.
 - [ ] Validar na Oracle restauração completa de backups no formato atual de saves.
 - [x] Alertas opcionais no Discord para recuperação suspensa, falha de backup/envio à nuvem e pouco espaço em disco, com teste no painel e aviso de normalização.
 - [ ] Persistir a intenção de parada pelo painel e definir seu comportamento após reiniciar a instância.

@@ -10,3 +10,6 @@ __pycache__/
 .artifacts/
 
 .ruff_cache/
+
+.image-update.json
+.image-update.lock

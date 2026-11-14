@@ -344,3 +344,35 @@ Os avisos cobrem falha na criação de backups, falha de envio à nuvem, suspens
 Cada categoria avisa uma vez ao entrar em falha e uma vez ao normalizar, com intervalo mínimo de cinco minutos. Entregas malsucedidas são tentadas novamente após cinco minutos. O estado é preservado em `data/config/alert-state.json`; o webhook fica protegido em `data/config/alerts.json`, fora dos saves, backups e arquivos compartilhados. Mensagens não contêm senhas, tokens ou logs. A situação dos alertas e erros de entrega aparecem no painel. Uma interrupção da instância ou da rede pode impedir qualquer envio; este recurso não substitui monitoramento externo.
 
 Detalhes do protocolo: [webhooks do Discord](https://docs.discord.com/developers/resources/webhook#execute-webhook).
+
+<a id="atualizacao-da-imagem"></a>
+## Atualização da imagem Docker
+
+O jogo é atualizado pela rotina automática; painel e FEX são atualizados pelo host. Na pasta que contém `.env`, `compose.yaml` e `update-server.py`, execute:
+
+```bash
+sudo python3 update-server.py
+```
+
+Em instalações anteriores sem o script, baixe-o uma vez na pasta da instalação:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/update-server.py -o update-server.py
+```
+
+O atualizador baixa e executa o preflight da nova imagem antes da parada. Depois encerra o jogo, exige a confirmação de saída limpa, gera um backup em `data/backups` e recria os dois contêineres com a nova imagem. Jogadores podem ser desconectados. O volume de dados e os certificados são preservados; o Compose não é substituído.
+
+A validação aguarda o jogo informar estado online por 30 segundos e valida a configuração do proxy, com prazo padrão de 15 minutos. Não equivale a testar uma conexão de jogador. Falhas após a troca tentam retornar à imagem anterior; os saves não são revertidos automaticamente. Consulte os logs se o retorno também falhar.
+
+```bash
+# Voltar à imagem anterior preservada localmente
+sudo python3 update-server.py --rollback
+# Instalar uma versão específica
+sudo python3 update-server.py --image hfgalmeida/valheim-arm:0.14.0
+# Ampliar o prazo para mundos grandes (30 minutos)
+sudo python3 update-server.py --timeout 1800
+```
+
+A imagem aplicada fica fixada em `VALHEIM_IMAGE` no `.env` usando uma tag local. O próximo comando de atualização consulta novamente `hfgalmeida/valheim-arm:latest`. Não execute `docker compose`, o instalador ou outro atualizador simultaneamente. Não remova as imagens locais `valheim-arm-local:*` enquanto precisar do retorno. Se o host reiniciar durante a troca, execute `--rollback` antes de tentar novamente.
+
+O painel consulta a versão pública ARM64 do Docker Hub a cada seis horas e exibe a versão instalada. A indicação se refere à imagem oficial `hfgalmeida/valheim-arm`; imagens personalizadas devem ser atualizadas com `--image`. Uma falha de consulta não interrompe o jogo. O painel não recebe acesso ao Docker do host.

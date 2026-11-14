@@ -47,6 +47,12 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         crossplay=True,
         join_code="012345",
         players={"count": 2, "reason": "snapshot do jogo"},
+        image_version={
+            "installed": "0.14.0",
+            "available": "0.15.0",
+            "update_available": True,
+            "error": None,
+        },
         installed_build="123456",
         available_build="123456",
         jobs=[
@@ -177,6 +183,31 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.get_by_role("button", name="Entrar", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
         page.evaluate("document.fonts.ready")
+        assert "Nova versão pública: 0.15.0" in page.locator("#image-version").inner_text()
+        assert "sudo python3 update-server.py" in page.locator("#image-version").inner_text()
+        # No disruptive action is submitted before explicit HTML confirmation.
+        for action in ("restart", "stop", "update", "backup"):
+            before = len(requests)
+            trigger = page.locator(f'#actions button[data-action="{action}"]')
+            trigger.click()
+            dialog = page.get_by_role("dialog")
+            assert dialog.is_visible()
+            assert "Jogadores conectados" in dialog.inner_text()
+            assert page.evaluate("document.activeElement.textContent.trim()") == "Cancelar"
+            assert len(requests) == before
+            dialog.get_by_role("button", name="Cancelar", exact=True).click()
+            assert not dialog.is_visible()
+            assert len(requests) == before
+            assert trigger.evaluate("element => element === document.activeElement")
+            trigger.click()
+            page.keyboard.press("Escape")
+            assert not dialog.is_visible()
+            assert len(requests) == before
+            trigger.click()
+            page.locator("#action-confirm-submit").click()
+            page.wait_for_function("!actionPending")
+            assert requests[before:] == [("/actions", {"action": action})]
+
         assert page.evaluate(
             "document.fonts.check('600 24px Cinzel') && document.fonts.check('400 14px Manrope')"
         )
@@ -273,6 +304,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert plugin_config.read_text() == "Enabled = true"
         page.get_by_role("tab", name="Visão geral", exact=True).click()
         page.get_by_role("button", name="Criar backup", exact=True).click()
+        page.locator("#action-confirm-submit").click()
         page.wait_for_function(
             "document.querySelector('#notice').textContent.includes('Operação enviada')"
         )

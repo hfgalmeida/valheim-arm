@@ -312,3 +312,9 @@ Para apenas verificar, use `black --check` e `prettier --check` nos mesmos camin
 `prepare-access --access-uid UID` é executado automaticamente pelo instalador em um contêiner temporário root, com apenas CHOWN/FOWNER/DAC_OVERRIDE adicionadas para preparar ACLs e propriedade dos diretórios. O serviço normal permanece UID 10001, sem essas capabilities. O perfil privado `data/config/file-access.json` registra o UID SSH obtido de SUDO_UID.
 
 `app/file_access.py` sincroniza ACLs a cada 30 segundos em saves/backups/mods e overrides.json; data/config e data recebem somente travessia/listagem. Credenciais e diretórios internos ficam fora da varredura. Defaults ajudam arquivos novos; a sincronização corrige máscaras 0600 de gravações atômicas. O cache por inode/modo/ctime evita regravar ACLs inalteradas. Falhas são registradas sem parar o supervisor. Os testes Linux exercitam setfacl real, inclusive substituição por arquivo privado.
+
+### Atualizador de imagem no host
+
+`update-server.py` usa apenas Python 3 e Docker Compose no host, sem acesso ao socket pelo painel. O instalador distribui esse arquivo junto ao Compose. A imagem inclui `VERSION` em `/opt/valheim/VERSION`; a consulta pública compara tags semânticas cujo digest ARM64 corresponde a `latest` no Docker Hub, a cada seis horas. Não basta alterar o arquivo do GitHub para anunciar uma imagem publicada.
+
+Os testes em `tests/test_host_update.py` simulam comandos Docker para validar ordem das operações, falha de backup, preflight, recusa sem espaço e retorno à imagem anterior; em Linux também exercitam backup offline e bloqueio do volume. A validação real da troca e do retorno deve ser realizada na Oracle. O backup anterior à troca usa as APIs de backup da imagem instalada; mantenha compatibilidade com esse caminho nas próximas versões. Retorno de imagem não reverte saves, configurações nem atualizações dos binários do jogo.

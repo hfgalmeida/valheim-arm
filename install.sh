@@ -169,6 +169,7 @@ main() {
     INSTALL_DIR="$PWD"
     log "Preparando Valheim em $INSTALL_DIR"
     fetch_if_missing compose.yaml compose.yaml
+    fetch_if_missing update-server.py update-server.py
     SERVER_ADDRESS='IP configurado no .env'
     if [[ -f .env ]]; then
         log 'Configuração existente preservada.'
@@ -178,7 +179,13 @@ main() {
     "${ROOT[@]}" install -d -o 10001 -g 10001 -m 0700 data
     "${DOCKER[@]}" compose config --quiet
     log 'Baixando a imagem pública e preparando o acesso aos dados…'
-    "${DOCKER[@]}" compose pull valheim
+    local configured_image
+    configured_image="$("${DOCKER[@]}" compose config --images | head -n 1)"
+    if [[ "$configured_image" == valheim-arm-local:* ]]; then
+        "${DOCKER[@]}" image inspect "$configured_image" >/dev/null
+    else
+        "${DOCKER[@]}" compose pull valheim
+    fi
     local access_uid="${SUDO_UID:-$(id -u)}"
     if [[ "$access_uid" =~ ^[0-9]+$ ]] && (( access_uid > 0 )); then
         "${DOCKER[@]}" compose run --rm --no-deps --user 0:0 \

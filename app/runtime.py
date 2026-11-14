@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .image_version import ImageVersion
 from .alerts import Alerts
 from .backups import Backups, digest
 from .cloud import Cloud
@@ -253,6 +254,8 @@ class Runtime:
         self.config = config or ConfigStore(data)
         self.backups = Backups(data)
         self.cloud = Cloud(data, self.backups)
+        self.image_version = ImageVersion()
+        self.image_version_task = None
         self.alerts = Alerts(data)
         self.alert_task = None
         self.cloud_task = None
@@ -397,6 +400,7 @@ class Runtime:
             "maintenance_persistence_error": self.persistence_error,
             "automatic_recovery": self.want_running and not self.closing,
             "recovery_error": self.recovery_error,
+            "image_version": self.image_version.describe(),
             "alerts": self.alerts.describe(),
             "cloud": self.cloud.describe(),
             "jobs": list(self.jobs),
@@ -484,6 +488,7 @@ class Runtime:
         await asyncio.to_thread(preflight, self.data)
         self.worker_task = asyncio.create_task(self.worker())
         self.scheduler_task = asyncio.create_task(self.scheduler())
+        self.image_version_task = asyncio.create_task(self.image_version.run())
         self.alert_task = asyncio.create_task(self.alerts.run(self))
         self.cloud_task = asyncio.create_task(self.cloud.run())
         self.access_task = asyncio.create_task(self.file_access.run())
@@ -1079,6 +1084,9 @@ class Runtime:
         self.emit(
             "Desligamento do contêiner solicitado; suspendendo tarefas e preparando parada do jogo"
         )
+        if self.image_version_task:
+            self.image_version_task.cancel()
+            await asyncio.gather(self.image_version_task, return_exceptions=True)
         if self.alert_task:
             self.alert_task.cancel()
             await asyncio.gather(self.alert_task, return_exceptions=True)
