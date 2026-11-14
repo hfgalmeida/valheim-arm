@@ -56,7 +56,7 @@ Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baix
 
 | Tarefa | Padrão |
 |---|---|
-| Atualizações do jogo | Verificação a cada 30 minutos |
+| Atualizações do jogo | Uma vez ao dia, junto ao reinício diário |
 | Save do mundo | A cada 30 minutos, com backups internos |
 | Backup completo e reinício | Diariamente às 05h; backup também antes de atualizar |
 | Retenção | Sete dias e quatro semanas |

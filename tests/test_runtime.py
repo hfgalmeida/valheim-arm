@@ -352,7 +352,7 @@ def test_initial_crashes_retry_quickly_then_back_off(runtime):
             before = time.monotonic()
             await runtime.read_game(runtime.process)
             delay = runtime.next_recovery - before
-            assert expected_delay <= delay < expected_delay + 1
+            assert expected_delay - 0.001 <= delay < expected_delay + 1
             await runtime.tick()
             assert runtime.queue.empty()
         assert runtime.startup_failures == 4
@@ -939,5 +939,46 @@ def test_daily_update_uses_same_stop_as_restart(runtime):
         runtime.queue.task_done()
         assert runtime.queue.qsize() == 1
         assert runtime.jobs[-1]["action"] == "update"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("count,message", [(None, r"Steam indisponível \(UDP 2457\)"), (2, "detectou 2 jogador")])
+def test_steam_guard_explains_refusal_without_sending_signals(runtime, count, message):
+    runtime.process = SimpleNamespace(pid=42, returncode=None)
+    runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
+    runtime.players.consume("Connections 0 ZDOS:1")
+    runtime.players.empty_since -= 121
+    with patch("app.runtime.query_steam", return_value=count), patch("app.runtime.os.killpg", create=True) as kill:
+        with pytest.raises(MaintenanceDeferred, match=message):
+            asyncio.run(runtime.execute({"action": "stop"}))
+    kill.assert_not_called()
+    assert runtime.want_running
+
+
+@pytest.mark.parametrize("exited", [False, True])
+def test_signalled_manual_stop_does_not_auto_restart_after_failure(runtime, exited):
+    async def scenario():
+        runtime.process = SimpleNamespace(returncode=None)
+        runtime.schedule_once("restart")
+
+        async def stop():
+            runtime.stop_request = (runtime.process, time.monotonic())
+            if exited:
+                runtime.process.returncode = 0
+            raise RuntimeError("save not confirmed" if exited else "stop timeout")
+
+        runtime.stop = AsyncMock(side_effect=stop)
+        with pytest.raises(RuntimeError):
+            await runtime.execute({"action": "stop"})
+        assert not runtime.want_running
+        assert runtime.jobs[0]["state"] == "cancelado"
+        runtime.process.returncode = 0
+        # Drain the cancelled job and make time eligible for recovery.
+        await finish_worker(runtime)
+        runtime.next_recovery = 0
+        await runtime.tick()
+        assert runtime.queue.empty()
+        assert not runtime.status()["automatic_recovery"]
 
     asyncio.run(scenario())

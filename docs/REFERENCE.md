@@ -324,7 +324,7 @@ sudo docker compose exec valheim cat /opt/build-info.json
 sudo df -h ./data
 ```
 
-Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização.
+Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização. Se o SIGINT já foi enviado, essa intenção de parar permanece mesmo quando há timeout ou falta a confirmação de salvamento. Uma recusa anterior ao sinal, como consulta Steam indisponível ou jogadores detectados, mantém o jogo em execução.
 
 <a id="publicacao"></a>
 ## Publicar imagem
@@ -459,7 +459,7 @@ Execute em Ubuntu 24.04 ARM64, 2 OCPUs/12 GB, começando em um mundo descartáve
 
 ### Etapa 1 — prova funcional obrigatória
 
-- [ ] Configurar `VALHEIM_IMAGE` com a imagem publicada, executar `docker compose pull` e `preflight`, sem compilar na instância nem instalar binfmt, privilégios adicionais, FUSE ou outro emulador. Registrar também o digest da imagem baixada.
+- [ ] Configurar `VALHEIM_IMAGE` com a imagem publicada, executar `docker compose pull valheim` e `preflight`, sem compilar na instância nem instalar binfmt, privilégios adicionais, FUSE ou outro emulador. Registrar também o digest da imagem baixada.
 - [ ] Configurar senha administrativa, iniciar vanilla, observar conexão e entrar com cliente Steam.
 - [ ] Identificar `Connections N ZDOS:` nos logs; confirmar estado desconhecido antes do primeiro snapshot e durante conexões/desconexões.
 - [ ] Habilitar crossplay, reiniciar e entrar por join code com cliente compatível de outra plataforma. Confirmar que eventos PlayFab invalidam a contagem até o próximo snapshot. Guardar amostras anonimizadas para atualizar os testes.
@@ -538,7 +538,7 @@ Se o UFW estiver ativo, o instalador acrescenta permissões de entrada para UDP 
 
 Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
 
-Os dois serviços usam a mesma imagem publicada: o serviço `valheim` executa o supervisor e o serviço `proxy` executa o Caddy incluído na imagem. A configuração do proxy é interna; atualizações chegam pela imagem.
+O download usa `sudo docker compose pull valheim` uma única vez para os dois serviços. Os dois serviços usam a mesma imagem publicada: o serviço `valheim` executa o supervisor e o serviço `proxy` executa o Caddy incluído na imagem. A configuração do proxy é interna; atualizações chegam pela imagem.
 
 O `.env.example` contém somente o essencial. Todas as opções avançadas continuam disponíveis no `compose.yaml` e nas tabelas acima. A imagem padrão é pública, `hfgalmeida/valheim-arm:latest`, e não exige login. Modificadores, crossplay, horários, usuários e backups podem ser administrados pelo painel. Alterações do jogo ficam pendentes até uma reinicialização segura; ajustes de horário são lidos pelo agendador.
 

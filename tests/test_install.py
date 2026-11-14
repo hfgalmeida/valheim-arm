@@ -190,7 +190,7 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     original = (target / ".env").read_bytes()
     assert b'WORLD_NAME="Dedicated"' in original
     original_compose = (target / "compose.yaml").read_bytes()
-    assert "compose pull" in log.read_text()
+    assert log.read_text().splitlines().count("compose pull valheim") == 1
     assert "compose run --rm --no-deps valheim preflight" in log.read_text()
     assert "compose up -d --no-build" in log.read_text()
     log.write_text("")

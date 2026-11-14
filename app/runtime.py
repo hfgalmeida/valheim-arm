@@ -531,8 +531,10 @@ class Runtime:
                     raise MaintenanceDeferred("Aguardando zero jogadores confirmado por dois minutos")
                 if not self.running.crossplay:
                     count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
+                    if count is None:
+                        raise MaintenanceDeferred(f"Consulta Steam indisponível (UDP {self.running.server_port + 1}); parada não solicitada ao jogo. Confira os logs ou solicite a parada pelo Docker")
                     if count != 0:
-                        raise MaintenanceDeferred("Consulta Steam divergente ou indisponível")
+                        raise MaintenanceDeferred(f"Consulta Steam detectou {count} jogador(es), em divergência com o log; parada não solicitada ao jogo")
             pid = process.pid
             if safe:
                 # Scheduled/panel operations still freeze admissions and drain
@@ -645,7 +647,11 @@ class Runtime:
         except Exception:
             # A failed save/stop must never replay the whole maintenance job.
             # If the process has exited, recover the game independently.
-            if was_running and not self.live:
+            if action == "stop" and self.stop_request is not None and self.stop_request[0] is self.process:
+                # Once a manual stop was actually signalled, keep that intent
+                # even if exit/save confirmation fails. Never turn it into a start.
+                self.disable_recovery()
+            elif was_running and not self.live:
                 self.next_recovery = time.monotonic() + 300
             raise
         if action == "stop":

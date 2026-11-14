@@ -183,7 +183,8 @@ main() {
         return
     fi
     log 'Baixando as imagens públicas e verificando a plataforma…'
-    "${DOCKER[@]}" compose pull
+    # Both services share this image; request its download only once.
+    "${DOCKER[@]}" compose pull valheim
     "${DOCKER[@]}" compose run --rm --no-deps valheim preflight
     if ! "${ROOT[@]}" test -f data/config/admin.json; then
         log 'Defina agora a senha do painel (diferente da senha do jogo).'
