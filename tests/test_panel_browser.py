@@ -64,7 +64,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         else:
             file = static / ("index.html" if path == "/" else path.lstrip("/"))
             if file.exists():
-                request.fulfill(path=str(file), content_type="text/html" if file.suffix == ".html" else "text/css" if file.suffix == ".css" else "text/javascript")
+                request.fulfill(path=str(file), content_type="text/html" if file.suffix == ".html" else "text/css" if file.suffix == ".css" else "font/ttf" if file.suffix == ".ttf" else "text/javascript")
             else:
                 request.fulfill(status=404)
 
@@ -82,6 +82,9 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.locator("#password").fill("admin-test-password")
         page.get_by_role("button", name="Entrar", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
+        page.evaluate("document.fonts.ready")
+        assert page.evaluate("document.fonts.check('600 24px Cinzel') && document.fonts.check('400 14px Manrope')")
+        assert page.get_by_role("heading", name="Rotina automática", include_hidden=True).count() == 1
         assert page.get_by_role("tab").count() == 5
         assert page.get_by_role("tabpanel").count() == 1
         assert page.get_by_role("tab", name="Visão geral", exact=True).get_attribute("aria-selected") == "true"

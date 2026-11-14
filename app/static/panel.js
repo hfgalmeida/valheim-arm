@@ -28,6 +28,8 @@ function update(s){
 async function loadConfig(){
   currentConfig=await api("/config");$("settings").replaceChildren();$("server-name").textContent=currentConfig.values.server_name;
   for(const [key,value]of Object.entries(currentConfig.values)){
+    const heading={server_name:"Mundo e acesso",preset:"Regras de jogo",save_interval:"Salvamento",timezone:"Rotina automática",bepinex:"Mods"}[key];
+    if(heading){const title=document.createElement("h3");title.className="settings-heading";title.textContent=heading;$("settings").append(title);}
     const row=document.createElement("div");row.className="setting";const label=document.createElement("label");label.textContent=labels[key]||key;
     let input;const options=key.startsWith("modifier_")?currentConfig.modifiers[key.slice(9)]:key==="preset"?["","normal","casual","easy","hard","hardcore","immersive","hammer"]:typeof value==="boolean"?["true","false"]:null;
     if(options){input=document.createElement("select");options.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v===""?"Padrão do mundo/preset":v==="true"?"Sim":v==="false"?"Não":v;input.append(o);});input.value=String(value);}
