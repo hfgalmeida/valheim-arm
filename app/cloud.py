@@ -1,4 +1,5 @@
 """Optional cloud exports. Credentials live outside the directories we archive."""
+
 import asyncio
 import configparser
 import io
@@ -36,12 +37,18 @@ def connection(text):
         if set(values) - allowed:
             raise ValueError
         token = json.loads(values["token"])
-        if not isinstance(token, dict) or not token.get("access_token") or not token.get("refresh_token"):
+        if (
+            not isinstance(token, dict)
+            or not token.get("access_token")
+            or not token.get("refresh_token")
+        ):
             raise ValueError
         if provider == "onedrive" and not values.get("drive_id"):
             raise ValueError
     except (configparser.Error, KeyError, ValueError, TypeError):
-        raise ValueError("Importe uma única conexão rclone autorizada de OneDrive, Dropbox ou Google Drive, sem opções avançadas") from None
+        raise ValueError(
+            "Importe uma única conexão rclone autorizada de OneDrive, Dropbox ou Google Drive, sem opções avançadas"
+        ) from None
     result = configparser.ConfigParser(interpolation=None)
     result["cloud"] = values
     output = io.StringIO()
@@ -57,20 +64,31 @@ class Cloud:
         self.receipts_path = self.root / "exports.json"
         self.settings, self.receipts = {}, {}
         try:
-            self.settings = json.loads(self.config_path.read_text()) if self.config_path.exists() else {}
-            self.receipts = json.loads(self.receipts_path.read_text()) if self.receipts_path.exists() else {}
+            self.settings = (
+                json.loads(self.config_path.read_text()) if self.config_path.exists() else {}
+            )
+            self.receipts = (
+                json.loads(self.receipts_path.read_text()) if self.receipts_path.exists() else {}
+            )
             if not isinstance(self.settings, dict) or not isinstance(self.receipts, dict):
                 raise ValueError
-            if self.settings.get("enabled") and (not isinstance(self.settings.get("since"), (int, float))
-                                                or self.settings.get("provider") not in PROVIDERS):
+            if self.settings.get("enabled") and (
+                not isinstance(self.settings.get("since"), (int, float))
+                or self.settings.get("provider") not in PROVIDERS
+            ):
                 raise ValueError
         except (OSError, ValueError):
-            self.settings = {"enabled": False, "error": "Estado da exportação inválido; reconfigure a nuvem no painel"}
+            self.settings = {
+                "enabled": False,
+                "error": "Estado da exportação inválido; reconfigure a nuvem no painel",
+            }
             self.receipts = {}
         filename = self.settings.get("connection", "rclone.conf")
         if not isinstance(filename, str) or not re.fullmatch(r"rclone[\w.-]*\.conf", filename):
             filename = "rclone.conf"
-            self.settings.update(enabled=False, error="Conexão inválida; reconfigure a nuvem no painel")
+            self.settings.update(
+                enabled=False, error="Conexão inválida; reconfigure a nuvem no painel"
+            )
         self.remote_path = self.root / filename
         self.backups = backups
         self.busy = False
@@ -84,9 +102,12 @@ class Cloud:
         pending = []
         for path in sorted(self.backups.root.glob("*.tar.gz")):
             try:
-                if (not path.is_symlink() and path.stat().st_mtime >= since
-                        and path.name not in self.receipts
-                        and path.with_suffix(path.suffix + ".sha256").is_file()):
+                if (
+                    not path.is_symlink()
+                    and path.stat().st_mtime >= since
+                    and path.name not in self.receipts
+                    and path.with_suffix(path.suffix + ".sha256").is_file()
+                ):
                     pending.append(path.name)
             except FileNotFoundError:
                 # Local retention runs in a thread and may remove older files.
@@ -94,22 +115,30 @@ class Cloud:
         return pending
 
     def describe(self):
-        return {"enabled": self.settings.get("enabled", False),
-                "configured": self.remote_path.is_file(),
-                "provider": PROVIDERS.get(self.settings.get("provider"), ""),
-                "folder": self.settings.get("folder", "Valheim/backups"),
-                "pending": len(self.pending()), "uploading": self.busy,
-                "last_success": self.settings.get("last_success"),
-                "last_file": self.settings.get("last_file"),
-                "error": self.settings.get("error")}
+        return {
+            "enabled": self.settings.get("enabled", False),
+            "configured": self.remote_path.is_file(),
+            "provider": PROVIDERS.get(self.settings.get("provider"), ""),
+            "folder": self.settings.get("folder", "Valheim/backups"),
+            "pending": len(self.pending()),
+            "uploading": self.busy,
+            "last_success": self.settings.get("last_success"),
+            "last_file": self.settings.get("last_file"),
+            "error": self.settings.get("error"),
+        }
 
     def configure(self, enabled, folder, config=""):
         if self.busy:
             raise ValueError("Aguarde o envio em andamento antes de alterar a conexão")
         folder = folder.strip()
         path = PurePosixPath(folder)
-        if (not folder or path.is_absolute() or any(p in (".", "..", "") for p in folder.split("/"))
-                or any(c in folder for c in "\\:\r\n\0") or any(ord(c) < 32 for c in folder)):
+        if (
+            not folder
+            or path.is_absolute()
+            or any(p in (".", "..", "") for p in folder.split("/"))
+            or any(c in folder for c in "\\:\r\n\0")
+            or any(ord(c) < 32 for c in folder)
+        ):
             raise ValueError("Informe uma pasta relativa, como Valheim/backups")
         settings = self.settings | {"enabled": enabled, "folder": folder, "error": None}
         replacement = None
@@ -151,12 +180,34 @@ class Cloud:
 
     async def copy(self, source, target):
         # Never inherit RCLONE_* overrides or expose provider errors/tokens to logs.
-        env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "SystemRoot", "SSL_CERT_FILE", "SSL_CERT_DIR"}}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k in {"PATH", "HOME", "SystemRoot", "SSL_CERT_FILE", "SSL_CERT_DIR"}
+        }
         child = await asyncio.create_subprocess_exec(
-            "rclone", "copyto", str(source), target, "--config", str(self.remote_path),
-            "--retries", "2", "--low-level-retries", "2", "--contimeout", "15s",
-            "--timeout", "60s", "--stats", "0", "--log-level", "ERROR",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, env=env)
+            "rclone",
+            "copyto",
+            str(source),
+            target,
+            "--config",
+            str(self.remote_path),
+            "--retries",
+            "2",
+            "--low-level-retries",
+            "2",
+            "--contimeout",
+            "15s",
+            "--timeout",
+            "60s",
+            "--stats",
+            "0",
+            "--log-level",
+            "ERROR",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            env=env,
+        )
         try:
             code = await asyncio.wait_for(child.wait(), timeout=300)
         except BaseException:
@@ -165,7 +216,9 @@ class Cloud:
             await child.wait()
             raise
         if code:
-            raise RuntimeError("Envio falhou. Verifique a conexão, as permissões e o espaço na nuvem")
+            raise RuntimeError(
+                "Envio falhou. Verifique a conexão, as permissões e o espaço na nuvem"
+            )
 
     async def upload_one(self):
         pending = self.pending()
@@ -176,13 +229,22 @@ class Cloud:
         try:
             source = self.backups.resolve(name)
             checksum = source.with_suffix(source.suffix + ".sha256")
-            if checksum.is_symlink() or await asyncio.to_thread(digest, source) != checksum.read_text().strip():
+            if (
+                checksum.is_symlink()
+                or await asyncio.to_thread(digest, source) != checksum.read_text().strip()
+            ):
                 raise RuntimeError("Checksum local inválido; exportação suspensa para este arquivo")
             target = "cloud:" + self.settings["folder"] + "/" + name
             await self.copy(source, target)
             await self.copy(checksum, target + ".sha256")
             now = time.time()
-            receipts = self.receipts | {name: {"time": now, "provider": self.settings["provider"], "folder": self.settings["folder"]}}
+            receipts = self.receipts | {
+                name: {
+                    "time": now,
+                    "provider": self.settings["provider"],
+                    "folder": self.settings["folder"],
+                }
+            }
             atomic_json(self.receipts_path, receipts)
             self.receipts = receipts
             self.settings.update(last_success=now, last_file=name, error=None)
@@ -192,7 +254,11 @@ class Cloud:
             raise
         except Exception as exc:
             # Only our fixed messages are safe; subprocess exceptions may contain paths.
-            self.settings["error"] = str(exc) if type(exc) is RuntimeError else "Não foi possível exportar o backup; verifique a conexão e o armazenamento local"
+            self.settings["error"] = (
+                str(exc)
+                if type(exc) is RuntimeError
+                else "Não foi possível exportar o backup; verifique a conexão e o armazenamento local"
+            )
             self.next_attempt = time.monotonic() + 300
             atomic_json(self.config_path, self.settings)
             return False

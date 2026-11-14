@@ -1,21 +1,25 @@
-# Referência avançada
+# Referência do servidor
 
-Para instalar e jogar, siga apenas o [README](../README.md). Aqui ficam opções extras, recuperação e informações para mantenedores.
+Para instalar e jogar, siga o [README](../README.md). Esta referência reúne configurações e comandos para administrar sua instância. Desenvolvimento, publicação, API e testes estão no [guia do mantenedor](MAINTAINER.md).
+
+Execute os comandos do servidor na pasta da instalação: `cd ~/valheim-arm`. Ajuste esse caminho se escolheu outra pasta.
 
 - [Configuração](#configuracao)
 - [Rede e firewall](#rede)
 - [Painel e certificado](#painel)
-- [Backups e mods](#backups)
-- [Atualização da imagem e recuperação](#operacao)
-- [Publicar imagem](#publicacao)
-- [API](#api)
-- [Validação na Oracle](#validacao)
-- [Desenvolvimento](#desenvolvimento)
+- [Jogadores e permissões](#jogadores)
+- [Backups e restauração](#backups)
+- [Backup na nuvem](#nuvem)
+- [Mods BepInEx](#mods)
+- [Operação e atualização](#operacao)
+- [Diagnóstico](#diagnostico)
 
 <a id="configuracao"></a>
 ## Configuração
 
-Os nomes abaixo são variáveis do Compose e do `.env`. Configurações do jogo/supervisor usam os mesmos nomes em minúsculas na API. `VALHEIM_IMAGE`, `SERVER_IP` e opções `FEX_*` pertencem à implantação e não são editáveis pelo painel. O painel salva seus ajustes em `data/config/overrides.json`, com precedência sobre o Compose. Não edite esse arquivo enquanto o supervisor estiver rodando.
+Prefira a aba **Configuração** do painel. Ajustes do painel prevalecem sobre o `.env`; **Usar Compose** remove essa substituição. Alterações do jogo são aplicadas na próxima inicialização; horários são lidos pelo agendador. Trocar o nome do mundo seleciona ou cria outro save, preservando o anterior.
+
+Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose up -d`. Isso pode recriar os contêineres; faça um backup e solicite a parada pelo painel antes. `VALHEIM_IMAGE`, `SERVER_IP` e opções `FEX_*` são configurados somente pelo `.env`.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
@@ -37,11 +41,11 @@ Os nomes abaixo são variáveis do Compose e do `.env`. Configurações do jogo/
 | `BEPINEX` | false | Injeção do pack Linux, com plugins locais |
 | `BEPINEX_URL` / `BEPINEX_SHA256` | vazios | URL HTTPS e hash obrigatório quando habilitado |
 
-`SERVER_PORT=2456` é fixado no Compose e não editável pelo painel. Para mudá-lo, altere o ambiente do serviço, o mapeamento UDP das duas portas consecutivas e as regras de rede. O proxy usa 443/TCP. A API 8080 é somente interna.
+A porta do jogo é fixada em 2456 no Compose, com UDP 2456–2457 publicado. O painel usa TCP 443; a API 8080 não é publicada.
 
-### Modificadores
+### Modificadores do mundo
 
-Cada variável é independente, e um valor vazio deixa de enviar o argumento. Quando há preset, os modificadores vêm depois dele na linha de comando.
+Valor vazio usa o padrão do mundo. Os modificadores individuais prevalecem sobre `PRESET`.
 
 | Variável | Valores além de vazio |
 |---|---|
@@ -51,9 +55,7 @@ Cada variável é independente, e um valor vazio deixa de enviar o argumento. Qu
 | `MODIFIER_RAIDS` | none, muchless, less, more, muchmore |
 | `MODIFIER_PORTALS` | casual, hard, veryhard |
 
-As variáveis booleanas `KEY_NOBUILDCOST`, `KEY_PLAYEREVENTS`, `KEY_PASSIVEMOBS` e `KEY_NOMAP` enviam `-setkey` quando verdadeiras. Não são comandos de remoção das chaves já existentes. O comportamento deriva da [interface oficial do Valheim](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/); após atualização do jogo, confirme se novas opções foram adicionadas antes de expandir o formulário.
-
-Exemplo:
+As opções `KEY_NOBUILDCOST`, `KEY_PLAYEREVENTS`, `KEY_PASSIVEMOBS` e `KEY_NOMAP` aceitam `true` ou `false`. Desativar uma opção deixa de enviá-la ao jogo; não remove uma chave já gravada no save.
 
 ```dotenv
 PRESET=hard
@@ -63,9 +65,10 @@ KEY_NOMAP=true
 CROSSPLAY=true
 ```
 
-### FEX
+<a id="fex"></a>
+### FEX: opções avançadas
 
-O cache JIT persistente fica desativado por padrão, seguindo o padrão do FEX usado na imagem. Pode ser habilitado explicitamente com `FEX_DISKCACHE=1` após validar sua carga; quando ativo, usa `data/cache`, separado dos saves. FEX já vem pronto na imagem Docker Hub, em Release ajustado a Neoverse N1, sem interface gráfica, thunks gráficos ou telemetria offline. Nenhuma extensão ARM inexistente é forçada. A instalação apenas baixa essa imagem.
+Mantenha os padrões até medir sua carga. O cache persistente fica desativado; quando habilitado, usa `data/cache`. Alterações exigem recriar o contêiner. A versão do FEX é definida pela imagem baixada.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
@@ -75,28 +78,22 @@ O cache JIT persistente fica desativado por padrão, seguindo o padrão do FEX u
 | `FEX_MULTIBLOCK` | 1 | Compilação multibloco |
 | `FEX_TSOENABLED` | 1 | Preserva ordenação de memória x86 |
 
-São opções avançadas documentadas pelo [FEX](https://wiki.fex-emu.com/index.php/Development%3AConfiguring_FEX). Altere uma por vez e compare o mesmo mundo/carga. Desativar TSO ou alterar os blocos pode prejudicar correção e estabilidade; não é adotado como otimização padrão. As medições de desempenho na instância de referência ainda precisam ser registradas conforme [validação na Oracle](#validacao).
-
-Alterações FEX no `.env` exigem recriar o contêiner, preferencialmente após parada segura pelo painel. Para voltar aos padrões, restaure os valores de `.env.example`. Para limpar o cache, pare o serviço e mova `data/cache` para uma pasta de diagnóstico; crie novamente a pasta com proprietário 10001. Não altere o diretório de saves.
-
-A versão do emulador é selecionada pela imagem em `VALHEIM_IMAGE`. `FEX_VERSION` e `BUILD_JOBS` ficam restritos à construção pelo mantenedor/CI e não fazem parte do `.env` da instalação. A publicação da imagem está documentada em [publicação](#publicacao).
+Alterar blocos ou desativar TSO pode comprometer a estabilidade. Consulte a [configuração do FEX](https://wiki.fex-emu.com/index.php/Development%3AConfiguring_FEX).
 
 <a id="rede"></a>
 ## Rede e firewall
 
-Na OCI, abra **Compute → Instances → sua instância**. Na VNIC principal, abra a **Subnet**, depois **Security Lists** e use **Add Ingress Rules** na lista associada à sub-rede.
+Na OCI: **Compute → Instances → sua instância → VNIC → Subnet → Security Lists → Add Ingress Rules**. Se usar NSG, confira também suas regras.
 
-| Uso | Protocolo | Porta de destino | Origem (CIDR) |
-|---|---|---|---|
-| Jogo | UDP | `2456-2457` | `0.0.0.0/0` |
-| Painel | TCP | `443` | `0.0.0.0/0` |
-| SSH/SCP | TCP | `22` por padrão | Preserve a regra SSH existente |
+| Uso | Protocolo / destino | Origem |
+|---|---|---|
+| Jogo | UDP 2456–2457 | `0.0.0.0/0` |
+| Painel | TCP 443 | `0.0.0.0/0` |
+| SSH/SCP | TCP 22 | Preserve a regra existente |
 
-Use porta de origem **All** e deixe **Stateless** desmarcado. Se usar NSG, confira as regras aplicáveis à VNIC. Veja as [regras de segurança da OCI](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/securityrules.htm).
+Use porta de origem **All** e regra **stateful**. `0.0.0.0/0` permite acessar o painel de qualquer rede, sem cadastrar o IP do seu computador; a administração exige senha. `SERVER_IP` é o IP público da Oracle.
 
-Com `0.0.0.0/0`, a tela de login do painel fica acessível de qualquer rede e o acesso administrativo exige a senha do painel. Para restringir o acesso por rede, opcionalmente substitua essa origem pelo IP público do administrador seguido de `/32`. O `SERVER_IP` solicitado na instalação é sempre o IP público da instância Oracle.
-
-O instalador libera UDP 2456–2457 e TCP 443 quando o UFW está ativo, sem alterar SSH ou habilitar/desabilitar o firewall. Para administrar essas permissões manualmente:
+O instalador libera as portas quando o UFW está ativo. Para configurar manualmente:
 
 ```sh
 sudo ufw allow 2456:2457/udp
@@ -104,46 +101,46 @@ sudo ufw allow 443/tcp
 sudo ufw status verbose
 ```
 
-O Docker normalmente publica as portas antes das regras do UFW. Use a OCI para restringir o acesso ao painel e confira regras adicionais de encaminhamento, `DOCKER-USER`, firewalld ou nftables. Consulte [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+A publicação do Docker pode passar antes do UFW. Para restringir o painel por rede, limite a origem na OCI; confira outros firewalls locais se existirem. [Docker e UFW](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
 
 <a id="painel"></a>
 ## Painel e certificado
 
-O painel organiza as funções em cinco abas: **Visão geral** (controles e métricas), **Configuração** (mundo, manutenção e mods), **Jogadores** (listas de acesso), **Backups** (arquivos e envio à nuvem) e **Atividade** (operações e logs). Estado, jogadores conectados e código de crossplay permanecem no topo. As abas também aceitam as setas do teclado, Home e End.
+Acesse **https://SEU_IP**. As abas são **Visão geral**, **Configuração**, **Jogadores**, **Backups** e **Atividade**. Ações manuais solicitam a parada imediatamente, mesmo com jogadores conectados, e aguardam o jogo salvar e encerrar.
 
-O endereço é `https://SEU_IP`. O Caddy e sua configuração HTTPS acompanham a imagem publicada; o Compose inicia o proxy com o IP definido em `SERVER_IP`. A seleção do certificado para acesso por IP já vem configurada. Os dados da autoridade certificadora ficam no volume persistente `caddy_data`, preservando a confiança instalada durante atualizações normais. Consulte o [HTTPS local do Caddy](https://caddyserver.com/docs/automatic-https#local-https).
-
-<a id="certificado"></a>
-### Confiar no certificado do painel
-
-O certificado local precisa ser confiado uma vez no computador usado para acessar o painel. Siga o procedimento do seu sistema abaixo. Instale somente o certificado público `root.crt`; a chave privada permanece no servidor.
-
-**1. Prepare o certificado no servidor**, pela sessão SSH, depois de iniciar a instalação:
+Para redefinir a senha administrativa:
 
 ```sh
-cd ~/valheim-arm
+sudo docker compose exec valheim python -m app.cli set-password
+```
+
+A troca invalida as sessões atuais. Se o IP da instância mudar, atualize `SERVER_IP` no `.env` e execute `sudo docker compose up -d`.
+
+<a id="certificado"></a>
+### Confiar no certificado: uma vez por computador
+
+**No servidor**, exporte o certificado público e confira sua impressão digital:
+
+```sh
 sudo docker compose cp proxy:/data/caddy/pki/authorities/local/root.crt ./valheim-root.crt
 sudo chmod 644 valheim-root.crt
 openssl x509 -in valheim-root.crt -noout -fingerprint -sha256
 ```
 
-Copie somente esse certificado público. Nos exemplos abaixo, substitua `SEU_IP` pelo IP da Oracle e o caminho `oracle.key` pela chave privada que você usa no SSH. Os comandos seguintes são executados **no seu computador**, onde está o navegador. O usuário padrão do Ubuntu na OCI é `ubuntu`; ajuste o usuário e `/home/ubuntu/valheim-arm` se sua instalação usar outros caminhos.
+Nos comandos abaixo, substitua `SEU_IP` pelo IP da Oracle e ajuste a chave SSH, o usuário e a pasta da instalação. Copie somente o certificado público; a chave da autoridade permanece no servidor.
 
-**2. No Windows 10/11:** o SCP vem no **OpenSSH Client**. Confira no PowerShell com `Get-Command scp`. Se não estiver instalado, abra o **PowerShell como administrador** e execute:
+#### Windows 10/11 — no computador do navegador
+
+Se `Get-Command scp` não encontrar o SCP, instale o cliente em um PowerShell **como administrador**:
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 ```
 
-Depois, no PowerShell do seu usuário, baixe o arquivo para Downloads:
+No PowerShell do usuário que usa o navegador, baixe o certificado e compare o SHA256 com o exibido no servidor:
 
 ```powershell
 scp -i "$env:USERPROFILE\.ssh\oracle.key" ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt "$env:USERPROFILE\Downloads\valheim-root.crt"
-```
-
-Confira a impressão digital SHA256 do certificado baixado e compare com a mostrada no servidor. O campo `Thumbprint` usual do Windows usa SHA1 e não serve para essa comparação:
-
-```powershell
 $rootCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new("$env:USERPROFILE\Downloads\valheim-root.crt")
 $sha256 = [System.Security.Cryptography.SHA256]::Create()
 [BitConverter]::ToString($sha256.ComputeHash($rootCert.RawData)).Replace("-", ":")
@@ -151,15 +148,13 @@ $sha256.Dispose()
 $rootCert.Dispose()
 ```
 
-Se forem iguais, confie no certificado apenas para seu usuário Windows:
+Se as impressões forem iguais, importe para seu usuário e reabra o navegador:
 
 ```powershell
 Import-Certificate -FilePath "$env:USERPROFILE\Downloads\valheim-root.crt" -CertStoreLocation Cert:\CurrentUser\Root
 ```
 
-Execute a importação no PowerShell do mesmo usuário que abre o navegador. Feche e reabra o navegador. Se ele usar um repositório próprio de certificados, importe também nas suas autoridades confiáveis. A instalação do cliente segue o [guia OpenSSH da Microsoft](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
-
-**3. No Linux (Ubuntu/Debian):** instale o cliente OpenSSH e baixe para a pasta atual:
+#### Linux Ubuntu/Debian — no computador do navegador
 
 ```sh
 sudo apt-get update
@@ -168,378 +163,174 @@ scp -i ~/.ssh/oracle.key ubuntu@SEU_IP:/home/ubuntu/valheim-arm/valheim-root.crt
 openssl x509 -in valheim-root.crt -noout -fingerprint -sha256
 ```
 
-Compare a impressão digital com a exibida no servidor. Se forem iguais, adicione à lista de autoridades confiáveis do sistema:
+Se o SHA256 coincidir com o servidor:
 
 ```sh
 sudo cp valheim-root.crt /usr/local/share/ca-certificates/valheim-root.crt
 sudo update-ca-certificates
 ```
 
-Se o navegador usar uma lista própria de certificados, importe também `valheim-root.crt` nas suas autoridades confiáveis.
+Se o navegador usar um repositório próprio de certificados, importe também nas autoridades confiáveis dele. A confiança é preservada enquanto o volume `caddy_data` for mantido.
 
-Entre com a senha definida no servidor. Para trocá-la:
+<a id="jogadores"></a>
+## Jogadores e permissões
 
-```sh
-sudo docker compose exec valheim python -m app.cli set-password
-```
+Na aba **Jogadores**, escolha **Administradores**, **Banidos** ou **Permitidos**. Selecione um ID conhecido ou informe um ID, clique em **Adicionar à lista** e **Salvar lista**. Há remoção por botão e edição em lote. **Atualizar jogadores** renova as sugestões sem descartar sua edição.
 
-A troca invalida as sessões existentes. Sessões expiram em oito horas e também desaparecem ao reiniciar o supervisor. Depois de cinco tentativas de login em cinco minutos, novas tentativas ficam bloqueadas até a janela expirar. O proxy compartilha o limite entre os clientes.
+As sugestões incluem IDs Steam identificados no log e IDs já cadastrados. Esse histórico não representa jogadores online. Para outras plataformas, cole o ID completo exibido no F2 ou no log, preservando maiúsculas e minúsculas. Não use join code, ZDOID ou identificador de conexão PlayFab. [IDs no Valheim](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/).
 
-Se mudar o IP, atualize `SERVER_IP` no `.env` e execute `sudo docker compose up -d`. O Caddy emitirá um certificado para o novo IP usando a mesma autoridade persistente.
+Preencher **Permitidos** restringe o acesso aos IDs dessa lista. Essas permissões são do jogo; não criam contas no painel web.
 
 <a id="backups"></a>
-## Backups e mods
+## Backups e restauração
 
-Backups nativos permanecem habilitados durante o jogo. Arquivos completos são criados diariamente, antes de atualizações e sob solicitação, sempre após parada limpa com confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo). Se houver jogadores continuamente, os backups completos automáticos serão adiados; os backups nativos continuam funcionando.
+Na aba **Visão geral**, **Criar backup** solicita o salvamento e a parada do jogo, cria o arquivo e volta a iniciá-lo se estava rodando. Baixe os arquivos na aba **Backups**. Os backups diários automáticos aguardam o servidor vazio.
 
-Arquivos completos contêm saves, listas, ajustes do painel e configurações de mods, com manifesto e hashes SHA256. A senha administrativa não é exportada. Ajustes podem incluir a senha do jogo: trate os arquivos como privados. A retenção mantém representantes de sete dias e quatro semanas, além do mais recente, podendo descartar backups intermediários do mesmo dia.
+Os arquivos incluem toda a árvore de saves — também os chunks —, listas, ajustes do painel e configurações de mods. Não incluem a senha administrativa nem as credenciais da nuvem; podem incluir a senha do jogo. Mantenha uma cópia fora da instância.
 
-O Valheim 1.0 introduziu um [sistema de saves dividido em chunks](https://steamcommunity.com/app/892970/announcements/). O backup do projeto copia todos os arquivos de `data/saves` recursivamente, sem filtrar extensões, preservando as pastas completas dos mundos, os chunks e os backups nativos. A restauração recria essa árvore inteira, substituindo a anterior para evitar sobras de saves diferentes. O envio para a nuvem usa o mesmo arquivo completo. Os testes incluem uma árvore sintética do formato novo; a validação de salvar, restaurar e carregar um mundo real na Oracle permanece pendente.
+Para restaurar, pare o jogo pelo painel, escolha um arquivo em **Backups** e confirme **Restaurar**. Um backup prévio é criado. A restauração substitui os saves e listas; ajustes do painel e mods não são reaplicados automaticamente. Confira o mundo selecionado antes de iniciar.
 
-Baixe um `.tar.gz` pelo painel ou ative o envio automático para a nuvem descrito abaixo. Backups no mesmo volume não protegem contra perda desse disco.
+### Importar um backup do projeto
+
+No seu computador, envie um `.tar.gz` criado por este projeto:
+
+```sh
+scp -i ~/.ssh/oracle.key NOME.tar.gz ubuntu@SEU_IP:/tmp/NOME.tar.gz
+```
+
+No servidor, instale o arquivo e gere seu checksum. Substitua `NOME.tar.gz` pelo nome original:
+
+```sh
+sudo install -d -o 10001 -g 10001 -m 0700 data/backups
+sudo install -o 10001 -g 10001 -m 0600 /tmp/NOME.tar.gz data/backups/NOME.tar.gz
+sudo sha256sum data/backups/NOME.tar.gz | cut -d ' ' -f 1 | sudo tee data/backups/NOME.tar.gz.sha256 >/dev/null
+sudo chown 10001:10001 data/backups/NOME.tar.gz.sha256
+```
+
+Atualize a lista de backups no painel e restaure. Esse procedimento exige o formato de backup do projeto, não um `.zip` ou arquivos avulsos do mundo. Se o mundo não iniciar, consulte a [recuperação avançada](MAINTAINER.md#recuperacao-avancada).
 
 <a id="nuvem"></a>
-### Envio automático para OneDrive, Dropbox ou Google Drive
+## Backup na nuvem
 
-A configuração é opcional e feita em **Backup na nuvem**, no painel. A imagem já inclui o rclone; no computador do administrador ele é usado apenas para autorizar a conta uma vez. Esse procedimento segue a [configuração remota do rclone](https://rclone.org/remote_setup/#configuring-by-copying-the-config-file).
+1. No seu computador, [instale o rclone](https://rclone.org/downloads/) e execute:
 
-1. No seu computador Windows ou Linux, [baixe o rclone](https://rclone.org/downloads/) e execute `rclone config --config ./valheim-cloud.conf` na pasta em que deseja guardar a conexão. No PowerShell, use `./rclone.exe` no lugar de `rclone` se o executável estiver na pasta atual e não estiver no PATH.
-2. Escolha **New remote** (`n`), dê um nome e selecione **OneDrive**, **Dropbox** ou **Google Drive**. Siga a autorização no navegador, escolha a unidade quando solicitado e confirme a conexão. Use a configuração padrão, sem opções avançadas nem conta de serviço. Crie somente uma conexão nesse arquivo.
-3. No painel, em **Backup na nuvem**, importe o arquivo `valheim-cloud.conf` ou cole seu conteúdo. Informe a pasta de destino, por exemplo `Valheim/backups`, selecione **Ativado** e clique em **Salvar envio na nuvem**. Para usar outra conta ou pasta, altere esses mesmos campos; deixe a conexão vazia para manter a conta atual.
-4. Crie um backup pelo painel ou aguarde o próximo backup agendado. O status mostra envios pendentes, o último arquivo enviado e eventuais falhas. Não é necessário reiniciar o jogo para configurar a nuvem.
+   ```sh
+   rclone config --config ./valheim-cloud.conf
+   ```
 
-São enviados o backup completo `.tar.gz` e seu `.sha256`, usando [`rclone copyto`](https://rclone.org/commands/rclone_copyto/). O envio começa após a conclusão do arquivo local e roda em paralelo ao jogo. Cada arquivo só é registrado como enviado depois das duas cópias; interrupções e falhas são tentadas novamente automaticamente a cada cinco minutos, inclusive após reiniciar o contêiner. Arquivos anteriores à primeira ativação não são enviados. Ao reativar, os arquivos ainda disponíveis desde a primeira ativação são considerados novamente.
+   No Windows, use `./rclone.exe` se estiver na pasta atual. Crie apenas uma conexão OAuth padrão para **OneDrive**, **Dropbox** ou **Google Drive** e autorize pelo navegador.
+2. Na aba **Backups → Backup na nuvem**, importe `valheim-cloud.conf`, informe uma pasta como `Valheim/backups`, ative o envio e salve. Para manter a conta ao trocar a pasta, deixe a conexão vazia.
+3. Crie um backup ou aguarde o próximo automático. O painel mostra pendências, último envio e erros. Não é necessário reiniciar o jogo para configurar.
 
-Enquanto o envio está ativo, arquivos pendentes não são apagados pela retenção local e podem ocupar espaço além do limite habitual. Desativar o envio pausa a fila e permite a retenção local normal. Ao trocar a conta ou a pasta, os pendentes vão para o destino atual; os arquivos já enviados não são reenviados. A cópia na nuvem não recebe exclusões automáticas: acompanhe a quota e remova arquivos antigos no provedor quando necessário.
+São enviados o `.tar.gz` e seu `.sha256`. Falhas são tentadas novamente a cada cinco minutos; os pendentes são preservados pela retenção local enquanto o envio estiver ativado. Trocar conta/pasta muda o destino dos pendentes; arquivos já enviados não são reenviados. A nuvem não tem exclusão automática.
 
-A conexão contém credenciais da conta: guarde o arquivo local em lugar privado e não o publique no Git. No servidor, tokens ficam em `data/cloud`, com acesso restrito ao usuário do contêiner, fora dos backups; o rclone pode renovar os tokens durante o envio. A API nunca devolve a conexão salva. Se a autorização for revogada ou expirar sem renovação, autorize novamente e importe a conexão no painel. Para restaurar uma cópia da nuvem, baixe o arquivo e siga o procedimento de importação abaixo.
+O arquivo de conexão contém credenciais: guarde-o em privado. Se a autorização expirar, autorize novamente e reimporte. Para restaurar da nuvem, baixe o backup e siga a importação acima.
 
-Para restaurar: pare o jogo pelo painel, selecione um arquivo, confirme a restauração e acompanhe a operação. Um backup prévio é criado. A restauração substitui o diretório de saves, incluindo listas; configurações do supervisor e mods arquivadas são preservadas para recuperação manual, mas não são reaplicadas automaticamente. Selecione no painel o mundo indicado pelo resultado e inicie o jogo. Para importar um backup baixado anteriormente, envie o `.tar.gz` por SCP para `data/backups`, preserve seu nome original, gere o sidecar com `sha256sum ARQUIVO.tar.gz | cut -d ' ' -f 1 > ARQUIVO.tar.gz.sha256` e ajuste proprietário para `10001:10001`.
+<a id="mods"></a>
+## Mods BepInEx
 
-Para importar um mundo do PC: pare o jogo e copie para `data/saves/worlds_local/` a pasta inteira do mundo no formato novo, preservando todos os arquivos internos. Para um mundo no formato antigo, copie o par `.db` e `.fwl` correspondente. Ajuste o proprietário de todos os arquivos importados para `10001:10001` e selecione em `WORLD_NAME` o nome do mundo (o nome da pasta no formato novo ou o nome sem extensão no antigo). Não renomeie nem selecione arquivos isolados de um save dividido em chunks. Preserve uma cópia externa dos arquivos originais.
+Na aba **Configuração**, defina `BEPINEX=true`, `BEPINEX_URL` e `BEPINEX_SHA256` de um **BepInExPack_Valheim Linux** confiável, contendo `libdoorstop.so` e `BepInEx/core`. Para calcular o hash do pacote baixado:
 
-Para BepInEx, obtenha um **BepInExPack_Valheim Linux** de fonte confiável, calcule seu SHA256 e configure `BEPINEX=true`, `BEPINEX_URL=https://...` e `BEPINEX_SHA256=...`. O pacote deve conter `libdoorstop.so` junto de `BepInEx/core`. As opções podem ser definidas no painel. Plugins ficam em `data/mods/BepInEx/plugins`, configurações em `data/mods/BepInEx/config` e patchers em `data/mods/BepInEx/patchers`. Copie-os com o jogo parado e proprietário `10001:10001`. O [BepInEx](https://docs.bepinex.dev/articles/user_guide/installation/) deve corresponder ao jogo Linux x86_64 e ao runtime esperado pelos plugins. Não há atualização automática de mods. Clientes de console não instalam plugins; use mods compatíveis com clientes vanilla ao habilitar crossplay.
+```sh
+sha256sum BepInExPack_Valheim.zip
+```
+
+No PowerShell: `Get-FileHash .\BepInExPack_Valheim.zip -Algorithm SHA256`.
+
+Na aba **Configuração → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; mantenha o pacote configurado acima.
+
+Para atualizar uma DLL, use o mesmo nome e confirme a substituição. A versão anterior fica preservada; **Restaurar anterior** permite voltar pelo painel, também com o jogo parado. A lista informa arquivos instalados, não comprova que o plugin carregou ou é compatível. Confira os logs depois de iniciar.
+
+Configurações ficam em `data/mods/BepInEx/config`. Para editá-las, use **Configuração → Arquivos dos plugins**: atualize a lista, selecione o arquivo, altere o texto e clique em **Salvar arquivo** com o jogo parado. Inicie novamente para aplicar. Os arquivos aparecem depois que o plugin os gerar, normalmente na primeira inicialização.
+
+O editor aceita arquivos existentes `.cfg`, `.ini`, `.json`, `.yaml`, `.yml`, `.toml`, `.txt` e `.xml`, em UTF-8, de até 32 KiB, inclusive em subpastas. Antes de salvar, mantém uma cópia anterior; **Carregar versão anterior** a coloca no editor para você conferir e salvar. Se outro processo já alterou o arquivo, atualize antes de tentar novamente. A sintaxe e as opções continuam sendo específicas do plugin. O envio aceita DLLs individuais. Pacotes ZIP, dependências nativas, arquivos auxiliares e configurações fora da pasta padrão ainda exigem instalação pelo SSH.
+
+ Inicie pelo painel e confira o carregamento nos logs. Mods não são atualizados automaticamente. Para desativar a injeção, salve `BEPINEX=false` e reinicie; arquivos são preservados. No crossplay com consoles, escolha plugins compatíveis com clientes sem mods. A compatibilidade deste projeto com BepInEx ainda está [em validação](MAINTAINER.md#validacao).
 
 <a id="operacao"></a>
-## Atualização da imagem e recuperação
+## Operação e atualização
 
-### Atualizar jogo, FEX e mods
+### Comandos do dia a dia
 
-A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT` (05:00 por padrão), usando o fuso `TIMEZONE`. Se o reinício estiver desativado, usa `BACKUP_AT`; se ambos estiverem desativados, usa 05:00. A consulta precede a manutenção, permitindo atualizar, fazer backup e reiniciar com uma única parada. A data da consulta é persistida para evitar repetições ao recriar o contêiner. A atualização manual pelo painel continua disponível.
+| Ação | Comando |
+|---|---|
+| Iniciar os serviços | `sudo docker compose up -d` |
+| Ver estado | `sudo docker compose ps` |
+| Acompanhar o jogo | `sudo docker compose logs -f valheim` |
+| Reiniciar o contêiner do servidor | `sudo docker compose restart valheim` |
+| Parar os serviços | `sudo docker compose stop` |
+| Remover os contêineres preservando os dados | `sudo docker compose down` |
 
-Atualizações automáticas do **jogo** passam pela fila, aguardam zero jogadores, encerram graciosamente, criam backup e usam SteamCMD para instalar em uma pasta nova. O ponteiro `data/current` só muda após confirmação de sucesso. Uma falha de download preserva a instalação anterior; quando aplicável, o supervisor volta a iniciá-la. São mantidas duas instalações para recuperação.
+Para parar ou reiniciar só o jogo, use o painel. Comandos Docker podem deixar o painel temporariamente indisponível. Aguarde a saída graciosa, que pode levar alguns minutos. Não use `down -v`: ele também remove os volumes dos certificados.
 
-Uma instalação que baixa corretamente mas falha ao executar permanece disponível para diagnóstico. A ativação não é um teste de conexão real. Verifique o log após cada atualização, especialmente com mods. Não há atualização automática do BepInEx/plugins.
+### Rotina automática
 
-Para atualizar **FEX e o painel**, use uma nova imagem do Docker Hub. Primeiro crie um backup, solicite parada segura pelo painel e confirme que terminou. Execute na pasta da instalação:
+A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT`. Se estiver desativado, usa `BACKUP_AT`; com ambos desativados, usa 05:00. Horários usam `TIMEZONE`. Backup e reinício coincidentes são combinados; uma atualização disponível aproveita a mesma parada.
+
+Manutenções automáticas aguardam dois minutos de zero jogadores confirmado; no modo Steam, exigem também A2S. Informações desconhecidas adiam a tarefa. As ações manuais do painel dispensam essas verificações, preservando a confirmação de salvamento. A aba **Atividade** mostra o resultado.
+
+Depois de cinco falhas consecutivas, a recuperação automática fica suspensa; corrija a causa e use **Iniciar**. Uma parada manual não é desfeita pela recuperação automática. Não há restauração automática de backups.
+
+### Atualizar a imagem
+
+Crie um backup e solicite parada pelo painel. Depois:
 
 ```sh
 sudo docker compose stop valheim
 sudo docker compose pull valheim
 sudo docker compose run --rm --no-deps valheim preflight
 sudo docker compose up -d --no-build
-sudo docker compose exec valheim cat /opt/build-info.json
 ```
 
-`VALHEIM_IMAGE` no `.env` seleciona a imagem: use `hfgalmeida/valheim-arm:latest`, uma tag publicada como `:1.0.0` ou um digest `hfgalmeida/valheim-arm@sha256:...` para fixar exatamente o artefato. Ao escolher outra referência, salve `.env` antes do `pull`. Se o download ou preflight falhar, não avance para o `up`; confira o erro e volte à referência anterior se necessário. Os volumes de saves, configurações e backups são preservados.
+Os dois serviços usam a mesma imagem; um único `pull valheim` atualiza o conteúdo disponível para ambos. Saves, configurações e certificados permanecem. Se o preflight falhar, não avance para o `up`.
 
-O `pull` só obtém uma versão nova do FEX quando o mantenedor já publicou outra imagem. `FEX_VERSION` e `BUILD_JOBS` são opções de construção usadas no CI, não configurações da instalação. Para atualizar o Caddy, planeje uma janela para o painel, execute `sudo docker compose pull proxy` e `sudo docker compose up -d --no-build proxy`; a autoridade HTTPS permanece no volume persistente.
+`VALHEIM_IMAGE` no `.env` aceita `hfgalmeida/valheim-arm:latest`, uma tag publicada ou digest. Para voltar a uma imagem anterior, ajuste essa referência e repita os comandos. Trocar a imagem atualiza supervisor, FEX e Caddy; as atualizações do Valheim são gerenciadas separadamente pelo supervisor.
 
-Para reverter **a imagem do supervisor/FEX**, pare o serviço, ajuste `VALHEIM_IMAGE` para a tag/digest anterior, execute `pull`, preflight e `up -d --no-build`. Preserve previamente um backup e confira compatibilidade dos dados. Isso não reverte automaticamente a instalação Valheim em `data/installs` nem os saves; o rollback do jogo é descrito abaixo.
+### Dados e instalação existente
 
-Para atualizar BepInEx, faça backup, pare o jogo, altere URL e SHA256 do pack, mantenha os plugins/configurações persistentes e reinicie. Verifique a compatibilidade dos plugins com a versão do jogo. Para desativar a injeção, salve `bepinex=false` no painel e reinicie; as pastas são preservadas. Alguns mods alteram saves e podem exigir seus próprios procedimentos de remoção.
-
-### Rollback de instalação
-
-Se uma atualização mudar o formato do save, uma versão antiga do jogo pode não conseguir carregá-lo. Preserve os arquivos atuais e escolha um backup criado **antes** da atualização.
-
-1. Solicite parada pelo painel. Se o jogo já falhou, pare o serviço Docker e mantenha-o parado durante a recuperação.
-2. Liste `data/installs` e identifique a instalação anterior pela data e pelo arquivo `steamapps/appmanifest_896660.acf`.
-3. Com o serviço parado, ajuste `data/current` para a instalação anterior. Use o procedimento dentro do contêiner de manutenção, que conhece os caminhos internos `/data`. Substitua `IDENTIFICADOR` pela pasta confirmada no passo anterior:
-
-```sh
-sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
- 'from pathlib import Path; p=Path("/data/installs/IDENTIFICADOR"); assert p.is_dir() and not p.is_symlink(); n=Path("/data/.rollback-current"); n.symlink_to(p); n.replace("/data/current")'
-```
-
-Antes, inspecione um eventual `.rollback-current` deixado por uma tentativa anterior e remova somente esse link temporário, se necessário.
-
-4. Se precisar recuperar os saves offline, veja o procedimento abaixo; depois inicie o serviço e confirme versão, mundo e conexão.
-
-### Queda de energia ou parada incompleta
-
-O supervisor deixa `data/config/game-active.json` enquanto o jogo estiver ativo e só remove o marcador após confirmar save e saída limpa. Se houver timeout de 150 segundos ou o jogo terminar sem confirmação final de salvamento, backup/atualização são cancelados. Os saves anteriores não são sobrescritos pela manutenção.
-
-Primeiro confira logs e espaço em disco. Se o mundo ainda iniciar, inicie o jogo e solicite uma parada limpa antes de retomar a manutenção. Caso precise restaurar sem conseguir iniciar o mundo:
-
-1. Pare o serviço e guarde uma cópia externa de `data/saves`, `data/config` e `data/backups`.
-2. Use um contêiner de manutenção, mantendo o supervisor parado, para validar e restaurar um arquivo. O método abaixo verifica o sidecar SHA256, os caminhos e o manifesto antes de substituir saves:
-
-```sh
-sudo docker compose stop valheim
-sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
- 'from pathlib import Path; from app.backups import Backups; print(Backups(Path("/data")).restore("NOME.tar.gz"))'
-```
-
-3. Após preservar o estado anterior e concluir a restauração, arquive o marcador de encerramento incompleto (renomeie `data/config/game-active.json` para `game-active.recovered.json`). Não remova o marcador só para contornar uma falha sem conferir os saves.
-4. Selecione o mundo correto nas configurações e inicie com `sudo docker compose up -d`. O painel pode estar indisponível enquanto somente o serviço do jogo estiver parado; ajustes offline devem ser feitos com o supervisor parado e JSON válido.
-
-### Parada do contêiner e reinícios
-
-O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações manuais do painel solicitam a parada imediatamente, mesmo com jogadores conectados ou consulta Steam indisponível. A fila continua serializada e aguarda uma operação já em execução terminar. Parar, reiniciar, atualizar e criar backup manualmente dispensam a espera de dois minutos e as verificações de jogadores/A2S, mas preservam o encerramento gracioso e a confirmação de salvamento antes de backups ou atualizações. Somente as manutenções automáticas exigem zero jogadores confirmado por dois minutos, confirmação A2S no modo Steam e uma verificação final das conexões.
-
-O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo) antes de marcar a parada como limpa.
-
-Uma operação que já escreve saves ou backups tem até 120 segundos para concluir antes do cancelamento da tarefa; consultas de metadados da Steam são canceladas diretamente. O Compose mantém `stop_grace_period: 6m` para acomodar o encerramento HTTP, a operação e a saída do jogo. Portanto, alguns minutos de espera no `down` podem ser normais. Acompanhe em outra sessão com `sudo docker logs -f valheim-server`; evite encurtar o prazo com `down --timeout` durante um salvamento.
-
-Sem confirmação de saída e salvamento, o supervisor mantém o marcador de encerramento incompleto e não cria um backup que poderia ser inconsistente. Manutenções não enviam SIGKILL ao jogo; se o processo não encerrar dentro do prazo do contêiner, o Docker pode terminar forçadamente os processos restantes. Uma vez iniciado o desligamento, tarefas e a recuperação automática não voltam a iniciar o jogo. Uma nova inicialização do contêiner inicia o servidor novamente.
-
-Somente impedimentos de segurança anteriores ao SIGINT (jogo ainda carregando, jogadores presentes ou contagem indisponível) e falhas de persistência anteriores à execução adiam automaticamente uma manutenção. Erros de salvamento, backup, atualização ou retorno do jogo encerram a tarefa com falha; a operação inteira não é repetida. Se necessário, a recuperação do jogo ocorre separadamente. Uma versão cuja atualização falhou não provoca novas paradas automáticas no mesmo supervisor: tente novamente pelo painel ou aguarde outra versão disponível.
-
-Os horários diários passam a valer a partir da inicialização do supervisor: instalar ou recriar o contêiner depois do horário não dispara imediatamente um reinício retroativo. Tarefas apenas aguardando na fila são preservadas e aguardam o jogo ficar pronto; uma manutenção interrompida durante a execução é registrada como falha, pois não é seguro repetir efeitos já realizados. Cliques repetidos na mesma operação pendente compartilham a tarefa existente; uma manutenção manual concluída cancela tarefas automáticas equivalentes ainda pendentes.
-
-### Diagnóstico
-
-| Sintoma | Verificação |
+| Local | Conteúdo |
 |---|---|
-| Sem acesso ao painel | IP no `.env`, `docker compose ps`, log do proxy, NSG/Security List e cadeia DOCKER-USER |
-| Certificado não confiável | Importar a CA desta instalação via SSH; confirmar IP e impressão digital |
-| Login sempre recusado | Definir senha pelo comando local; aguardar cinco minutos se houve tentativas excessivas |
-| SteamCMD falha | Saída DNS/HTTPS/Steam, espaço livre, rootfs com loader i386 e log do supervisor |
-| Jogo não inicia | Mensagens do FEX, versão registrada, permissões 10001, arquivo do mundo e plugins |
-| Tarefa fica adiada | Jogadores presentes, eventos recentes, A2S inacessível ou snapshot Connections ausente/expirado |
-| Crossplay não aparece | Saída PlayFab, log com join code, `crossplay` efetivo e compatibilidade dos mods |
-| Backup não restaura | Checksum lateral, integridade do tar.gz, espaço livre e jogo parado |
-| Painel mostra CPU limitada ao supervisor | cgroup v2 indisponível; habilitar o ambiente de referência em vez de interpretar esse valor como consumo do jogo |
+| `data/saves` | Mundos e listas de acesso |
+| `data/backups` | Backups completos e checksums |
+| `data/config` | Ajustes do painel, autenticação e histórico de IDs |
+| `data/mods/BepInEx` | Plugins e configurações |
+| `data/cloud` | Conexão e estado dos envios para nuvem |
+| Volume `caddy_data` | Autoridade e certificados HTTPS |
 
-Comandos úteis:
+Para outra pasta de instalação: `sudo env VALHEIM_INSTALL_DIR=/caminho/servidor bash install-valheim.sh`. Reexecutar o instalador preserva `.env`, Compose, senhas e dados existentes e não reinicia um servidor já rodando. Os arquivos de `data` usados pelo serviço devem pertencer ao UID/GID `10001:10001`.
+
+### Acesso automático aos arquivos
+
+O instalador identifica o usuário SSH que executou `sudo bash install-valheim.sh` e prepara seu acesso sem comandos extras de permissão. Você pode entrar em `data`, editar ou baixar **saves**, **backups**, **mods**, configurações dos plugins e o arquivo `data/config/overrides.json`. Pare o jogo antes de alterar saves ou mods diretamente.
+
+O supervisor sincroniza as permissões automaticamente a cada 30 segundos, inclusive após arquivos serem recriados como privados ou restaurados. Um arquivo novo pode levar até esse prazo para ficar acessível. O proprietário do serviço continua sendo UID/GID 10001; autenticação do painel, tokens de nuvem e arquivos internos não recebem essa liberação.
+
+As permissões são preparadas para o usuário que chamou sudo. Uma instalação feita diretamente como root não identifica automaticamente outro usuário SSH. Para aplicar a melhoria a uma instalação existente, use o instalador atualizado pelo usuário SSH; ele preserva arquivos e um jogo já em execução. A sincronização contínua exige a imagem atualizada do supervisor.
+
+### Persistência ao remover os contêineres
+
+Todo o diretório `data` é montado do host em `/data` (`./data:/data`). Remover os contêineres, executar `docker compose down` ou trocar a imagem não remove esses arquivos. Ao reinstalar, use a mesma pasta da instalação ou indique-a por `VALHEIM_INSTALL_DIR`.
+
+Essa persistência não cobre apagar manualmente a pasta `data`, o disco ou a instância Oracle junto com seu armazenamento. Para esse cenário, configure o backup externo na nuvem. Os certificados HTTPS ficam nos volumes `caddy_data` e `caddy_config`; não use `down -v` se quiser preservá-los.
+
+<a id="diagnostico"></a>
+## Diagnóstico
 
 ```sh
-sudo docker compose ps
 sudo docker compose logs --tail=200 valheim
 sudo docker compose logs --tail=100 proxy
-sudo docker stats --no-stream
-sudo docker compose exec valheim python -m app.cli preflight
-sudo docker compose exec valheim cat /opt/build-info.json
+sudo docker stats --no-stream valheim-server valheim-proxy
 sudo df -h ./data
 ```
 
-Não publique `.env`, `data/config/overrides.json` ou backups em tickets. Logs removem as senhas conhecidas do jogo, mas ainda podem conter IDs dos jogadores e join codes. Se o jogo encerrar antes de ficar pronto, o supervisor tenta iniciar novamente após 15, 30 e 60 segundos nas três primeiras falhas; a tentativa seguinte espera cinco minutos. Falhas no download/instalação e quedas após o jogo ficar pronto usam cinco minutos. Após cinco falhas consecutivas, a recuperação fica suspensa e o log informa o motivo; use **Iniciar** para liberar novas tentativas após verificar o erro. Uma sessão pronta por pelo menos dez minutos zera a sequência de falhas. As tentativas reutilizam o mundo atual, sem restaurar backups ou apagar saves. Uma parada solicitada pelo painel desativa a recuperação e cancela manutenções automáticas pendentes até uma nova inicialização. Se o SIGINT já foi enviado, essa intenção de parar permanece mesmo quando há timeout ou falta a confirmação de salvamento. As verificações de jogadores e Steam/A2S aplicam-se somente às tarefas automáticas.
-
-<a id="publicacao"></a>
-## Publicar imagem
-
-O workflow `.github/workflows/dockerhub.yaml` testa o supervisor, constrói a imagem em um runner **ARM64 nativo**, executa o preflight do FEX e publica a mesma imagem testada no Docker Hub. Não usa QEMU nem outro emulador para construir a imagem.
-
-Este guia é para o mantenedor que publica a imagem. Para instalar o servidor, siga o [README](../README.md): somente Docker Compose e arquivos de configuração são necessários na Oracle. A compilação fica no GitHub Actions.
-
-O repositório GitHub [hfgalmeida/valheim-arm](https://github.com/hfgalmeida/valheim-arm) é público: os arquivos de instalação e o código podem ser baixados sem autenticação GitHub. A visibilidade da imagem Docker é uma configuração própria do Docker Hub. Para distribuir a instalação sem exigir login na Oracle, publique a imagem em um repositório Docker Hub público.
-
-### Configuração deste repositório
-
-Configurações de um projeto não são copiadas automaticamente para outro. Secrets e variables de repositório precisam existir em **hfgalmeida/valheim-arm**. Se forem de uma organização, conceda acesso a este repositório na política desses secrets/variables. Secrets vinculados a um Environment não são lidos por este workflow, que não seleciona Environment.
-
-No GitHub, abra **Settings → Secrets and variables → Actions** neste repositório:
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| Variable | `DOCKERHUB_USERNAME` | Seu usuário real no Docker Hub; não precisa ser igual ao GitHub |
-| Secret | `DOCKERHUB_TOKEN` | Token Docker Hub com permissão de leitura e escrita no repositório de destino |
-| Variable opcional | `DOCKERHUB_IMAGE` | Sobrescreve o destino padrão, por exemplo `suaorganizacao/valheim-arm`; sem registry ou tag |
-
-Se `DOCKERHUB_IMAGE` estiver ausente, o workflow usa `GITHUB_REPOSITORY` em minúsculas: proprietário e nome do repositório GitHub. Neste projeto, o destino é automaticamente `hfgalmeida/valheim-arm`; não é necessário configurar o nome da imagem. `DOCKERHUB_USERNAME` é usado somente para autenticação no Docker Hub, e a conta deve ter permissão para publicar nesse destino. O workflow também aceita `DOCKERHUB_USERNAME` como secret para aproveitar esse padrão quando já utilizado em outros projetos.
-
-Crie o repositório `valheim-arm` no namespace desejado no Docker Hub e selecione **Public** para permitir downloads públicos. Se ele já existir, abra **My Hub → Repositories → valheim-arm → Settings → Visibility settings → Make public** e confirme o nome, conforme o [guia de visibilidade Docker Hub](https://docs.docker.com/docker-hub/repos/manage/access/). Essa alteração é feita no Docker Hub; o workflow não muda a visibilidade do repositório.
-
-Crie ou reutilize um token com permissão de escrita nesse destino e salve-o como `DOCKERHUB_TOKEN` nos secrets do GitHub Actions. A publicação exige autenticação mesmo para uma imagem pública. Tokens pessoais usam as permissões dos repositórios acessíveis pela conta; tokens de organização podem precisar de autorização específica para o destino. Não cadastre o token no código, no `.env` da Oracle ou nos logs.
-
-Confirme que GitHub Actions está habilitado e que a política do repositório permite as actions `actions/*` e `docker/*`. O workflow usa o runner padrão ARM64 `ubuntu-24.04-arm`, disponível gratuitamente para repositórios públicos segundo a [documentação do GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). Mantenha esse runner ARM64, pois o Dockerfile exige compilação nativa.
-
-Fontes: [secrets do GitHub Actions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets), [autenticação e publicação Docker](https://docs.docker.com/build/ci/github-actions/push-multi-registries/), [runners GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-
-### Disparos e tags
-
-O arquivo [VERSION](../VERSION) na raiz do repositório define a versão da imagem. Ele começa em `0.1.0` e deve conter somente um número no formato `X.Y.Z`, sem prefixo `v` e sem zeros à esquerda. Essa é a versão deste projeto/imagem, independente das versões do Valheim e do FEX.
-
-Para publicar a próxima versão, altere **apenas esse arquivo**:
-
-```text
-0.1.1
-```
-
-Faça commit e push da alteração para a `main`, ou edite o arquivo pela interface do GitHub e mescle o PR. O Actions lê o número, executa os testes, constrói e verifica a imagem ARM64, e publica `0.1.1`, `latest` e a tag do commit. Não é preciso criar tag Git, GitHub Release, token GitHub adicional ou usar Conventional Commits.
-
-| Disparo | Tags publicadas |
+| Situação | Verificação |
 |---|---|
-| Qualquer push na `main`, se a versão ainda não estiver publicada | `<VERSION>`, `latest` e `sha-<commit completo>` |
-| Execução manual na `main` | `<VERSION>`, `latest` e `sha-<commit completo>` |
-| Execução manual em outra branch | Somente `sha-<commit completo>` |
+| Painel inacessível | `SERVER_IP`, estado dos serviços, regras OCI e log do proxy |
+| Certificado não confiável | Importar a CA desta instalação no computador do navegador |
+| Senha do painel recusada | Redefinir com `set-password`; após tentativas repetidas, aguardar cinco minutos |
+| Jogo não inicia | Espaço, permissões de `data`, logs do jogo e plugins instalados |
+| Tarefa automática adiada | Contagem desconhecida, jogadores presentes ou consulta Steam indisponível |
+| Sem join code | Confirmar crossplay ativo, prontidão do jogo e log PlayFab |
+| Restauração falha | Jogo parado, espaço livre e integridade do backup/checksum |
 
-Todo push na `main` inicia o workflow de publicação, mesmo sem alterar `VERSION`. Você pode enviar vários commits com o mesmo número enquanto a imagem dessa versão ainda não tiver sido publicada. Quando a publicação for concluída, os próximos builds com esse número serão bloqueados; altere `VERSION` para publicar novamente. Pushes de tags Git e pull requests não publicam imagens. O workflow `Checks` continua validando os commits independentemente da publicação.
-
-Use um número novo para cada versão. O workflow não incrementa o arquivo por conta própria. Antes de compilar, ele consulta a tag exata no Docker Hub: se já existir, encerra com erro e pede para aumentar `VERSION`. A verificação é repetida antes do envio da imagem. Uma execução manual também passa por essa validação, incluindo execuções em outras branches. Falhas de rede, autenticação, limite de consultas ou respostas inesperadas bloqueiam a publicação; somente a confirmação de tag ausente permite continuar. `latest` pode ser atualizada ao publicar uma nova versão. Execuções de publicação são serializadas.
-
-As duas consultas usam `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` já configurados no Actions para obter autorização no registry, inclusive na primeira publicação. O token é passado por variável de ambiente e não aparece nos argumentos do comando. Se ocorrer HTTP 401/403, confirme que o usuário é o Docker ID, que o token está válido com leitura/escrita e que `DOCKERHUB_IMAGE` aponta para um namespace em que essa conta pode publicar. Esses erros não são tratados como tag disponível. O download público na Oracle continua dispensando login.
-
-Após enviar os arquivos ao GitHub e cadastrar as credenciais, abra **Actions → Publish Docker Hub → Run workflow**. O formulário permite `fex_version=latest` ou uma tag estável como `FEX-2611`. Pushes automáticos usam a última release estável.
-
-A versão do FEX é resolvida antes do build e passada como argumento fixo. Assim, o cache não esconde uma release nova do emulador. A tag FEX aparece nos labels da imagem e sua proveniência completa em `/opt/build-info.json`. O cache de construção é armazenado no GitHub Actions.
-
-O build complementa o rootfs com as bibliotecas amd64 de atomic, C++ e PulseAudio necessárias ao jogo/PlayFab. O APT nativo usa fontes Ubuntu 24.04 assinadas e uma base de estado isolada para baixar a cadeia de dependências amd64; `dpkg-deb` extrai os arquivos sem executar scripts de instalação x86. Cada pacote, versão, arquitetura e SHA256 aparece em `guest_packages` no `/opt/build-info.json`. A publicação falha se uma biblioteca principal não for x86_64 ou se o carregador não resolver suas dependências pelo FEX. A verificação usa diretamente `ld-linux-x86-64.so.2 --list`, pois `ldd` sob emulação pode acabar listando dependências ARM do próprio emulador.
-
-Enquanto a versão ainda não tiver sido publicada, uma nova tentativa pode incorporar um FEX/rootfs/base atualizado. Após publicar, escolha outro número em `VERSION` para gerar uma nova imagem. Use o digest Docker para identificar exatamente o artefato publicado. O resumo do workflow lista as tags, e os logs de push informam o digest. A imagem é somente `linux/arm64`, ajustada a Neoverse N1. Antes de publicar, o workflow executa os testes do supervisor, o preflight FEX e a validação da configuração HTTPS. O GitHub Actions não baixa nem inicia o Valheim; inicialização, conexão, salvamento e parada do jogo são validados diretamente no servidor Oracle.
-
-O preflight não instala SteamCMD nem executa o Valheim, e não substitui a aceitação de crossplay, BepInEx ou desempenho na Oracle. Consulte [validação na Oracle](#validacao).
-
-### Usar a imagem publicada na Oracle
-
-O `compose.yaml` distribuído já baixa a imagem indicada por `VALHEIM_IMAGE`; não há bloco `build` na instalação. No `.env` da Oracle, configure a referência correspondente à publicação:
-
-```dotenv
-VALHEIM_IMAGE=hfgalmeida/valheim-arm:0.1.0
-```
-
-O destino padrão da publicação é `hfgalmeida/valheim-arm`, obtido do repositório GitHub. Use `DOCKERHUB_IMAGE` no CI somente para publicar em outro namespace/repositório. `VALHEIM_IMAGE` configura o que a Oracle baixa e pode incluir uma tag ou digest específico; seu padrão também é `hfgalmeida/valheim-arm:latest`.
-
-Para seguir automaticamente a referência da publicação mais recente ao executar `pull`, use `:latest`. Para selecionar uma versão numerada, use exatamente o número de `VERSION` como tag e atualize o `.env` da Oracle ao decidir migrar. Publicar uma imagem não reinicia nem atualiza a instância por conta própria.
-
-Com o repositório da imagem definido como **Public** no Docker Hub, a Oracle pode fazer `pull` sem login nem token. Se você optar por uma imagem privada, autentique-se antes com `sudo docker login` e uma credencial de leitura. Pare o jogo de forma segura pelo painel antes de trocar sua imagem e execute:
-
-```sh
-sudo docker compose pull valheim
-sudo docker compose up -d --no-build
-```
-
-A primeira instalação por imagem pronta ainda exige criar `data` com proprietário 10001, configurar `.env`, executar `set-password` e configurar o HTTPS conforme o [README](../README.md). Atualizar a imagem troca supervisor/FEX; as atualizações do jogo continuam sob controle do supervisor.
-
-<a id="api"></a>
-## API
-
-Base `/api/v1`, JSON. A API é acessada pelo mesmo HTTPS do painel. Não publique 8080. Há um administrador; não há registro nem alteração de senha pela web.
-
-1. `POST /login` com `{"password":"..."}` e cabeçalho `Origin` exatamente igual a `PANEL_ORIGIN`.
-2. Guardar o cookie `session` (Secure, HttpOnly, SameSite=Strict) e o `csrf` retornado.
-3. Em mutações autenticadas, enviar `Origin` e `X-CSRF-Token`. O cookie autentica leituras e SSE.
-
-| Método e caminho | Entrada / saída |
-|---|---|
-| GET `/session` | Recupera token CSRF da sessão atual |
-| POST `/logout` | Invalida sessão |
-| GET `/state` | Estado do jogo, contagem e motivo, crossplay e código de entrada, builds, operações, últimos 500 logs, histórico de até 720 métricas e proveniência da imagem |
-| GET `/cloud` | Configuração pública e status do envio, sem tokens: `enabled`, `configured`, `provider`, `folder`, `pending`, `uploading`, `last_success`, `last_file`, `error` |
-| PUT `/cloud` | `{"enabled":true,"folder":"Valheim/backups","config":"..."}`; `config` vazio mantém a conexão salva. Exige sessão e CSRF; recusa alterações durante um envio |
-| GET `/events` | SSE a cada cinco segundos, com estado, operações, logs e métrica mais recente; termina ao expirar a sessão |
-| GET `/config` | `values`, `sources`, `pending`, opções de modificadores; senha do jogo sempre vazia |
-| PATCH `/config` | `{"changes":{"crossplay":true},"reset":[],"confirm_world":false}`; trocar o mundo exige confirmação |
-| POST `/actions` | `{"action":"backup"}`; aceita start, stop, restart, update, backup, restore |
-| GET `/jobs/{id}` | Consulta resultado da operação retornada com HTTP 202 |
-| GET `/backups` | Lista de nomes e tamanhos |
-| GET `/backups/{name}` | Download autenticado do tar.gz |
-| GET `/users/{kind}` | Listas `admins`, `banned`, `permitted`, como `{"entries":["Steam_..."]}` |
-| PUT `/users/{kind}` | Substitui a lista após validar/deduplicar IDs |
-
-Restauração exige `{"action":"restore","backup":"NOME.tar.gz","confirm":true}` e jogo parado. Somente arquivos do diretório de backups podem ser selecionados. Não há upload web nem execução de comandos arbitrários. Configurações e listas não podem ser alteradas durante operação em execução.
-
-Operações têm `id`, `action`, `state`, `created` e, quando disponíveis, `result` ou `error`. Estados: `fila`, `executando`, `concluído`, `falha`, `adiado`, `cancelado`. Retornar 202 confirma entrada na fila, não conclusão nem prontidão do jogo. O estado `online` exige a conclusão do carregamento do mundo (`Loading: Done`) e o backend disponível; em crossplay, exige também um join code de sessão registrado. Manutenções automáticas aguardam essa prontidão antes de consultar atualizações ou agendar paradas.
-
-O estado e os eventos incluem `crossplay` (configuração em execução, ou a configuração efetiva quando parado) e `join_code` (texto de seis dígitos ou `null`). O código é extraído das mensagens de registro/atividade da sessão no log, preservando zeros iniciais; veja um [exemplo do formato do log](https://github.com/husjon/valheim_server_oci_setup#crossplay-console--game-pass). Ele é limpo ao iniciar uma nova execução, encerrar o jogo ou falhar a leitura do log. O painel aguarda o código quando crossplay está ativo e só o exibe dentro da sessão administrativa autenticada.
-
-O campo `cloud` de `/state` e dos eventos contém o mesmo status público de GET `/cloud`, permitindo acompanhar os envios sem recarregar o painel.
-
-HTTP 401 indica sessão ausente/expirada ou login recusado; 403 indica origem/CSRF incorretos; 404, recurso ausente; 409, conflito/fila cheia; 422, configuração inválida ou confirmação ausente. Erros de validação não retornam o valor de senha enviado.
-
-`GET /healthz` não exige sessão, é interno e verifica a disponibilidade do supervisor. O estado do jogo é um campo separado. Métricas CPU/memória usam cgroup v2 quando disponível; a alternativa mede apenas o supervisor e é identificada no payload/painel. CPU usa 100% por núcleo; rede corresponde ao namespace do contêiner e disco ao sistema de arquivos que contém `/data`.
-
-<a id="validacao"></a>
-## Validação na Oracle
-
-**Pendente:** a aceitação completa na instância Oracle ARM ainda precisa ser registrada. Os testes do supervisor e o preflight do FEX não substituem a validação real do jogo, crossplay e mods na plataforma de referência.
-
-Execute em Ubuntu 24.04 ARM64, 2 OCPUs/12 GB, começando em um mundo descartável. Registre tag/commit do projeto, `uname -a`, `getconf PAGESIZE`, versão Docker/Compose e conteúdo de `/opt/build-info.json`. Guarde somente dados sem senhas.
-
-### Etapa 1 — prova funcional obrigatória
-
-- [ ] Configurar `VALHEIM_IMAGE` com a imagem publicada, executar `docker compose pull valheim` e `preflight`, sem compilar na instância nem instalar binfmt, privilégios adicionais, FUSE ou outro emulador. Registrar também o digest da imagem baixada.
-- [ ] Configurar senha administrativa, iniciar vanilla, observar conexão e entrar com cliente Steam.
-- [ ] Identificar `Connections N ZDOS:` nos logs; confirmar estado desconhecido antes do primeiro snapshot e durante conexões/desconexões.
-- [ ] Habilitar crossplay, reiniciar e entrar por join code com cliente compatível de outra plataforma. Confirmar que eventos PlayFab invalidam a contagem até o próximo snapshot. Guardar amostras anonimizadas para atualizar os testes.
-- [ ] Instalar um BepInExPack Linux com SHA256 conhecido e plugin de teste compatível; confirmar carregamento no log e conexão. Repetir a verificação de contagem com BepInEx ativo.
-- [ ] Validar que o SIGINT entregue através do FEX salva o mundo e encerra o processo. Se o texto de save/conexões diferir, adaptar o parser e os testes antes de continuar.
-
-Interrompa a aceitação se qualquer combinação exigida não funcionar. Não substitua FEX por outro emulador para contornar a incompatibilidade.
-
-### Etapa 2 — painel e manutenção
-
-- [ ] Confiar na CA obtida via SSH e entrar em `https://IP`; verificar bloqueio de acesso não autenticado à API e aos backups.
-- [ ] Conferir métricas contra `docker stats`: CPU por núcleo, memória do cgroup, rede e disco. Deixar a página aberta para observar gráficos em atualização.
-- [ ] Alterar nome, senha e modificadores; confirmar indicação pendente, aplicação após reinício e origem dos valores. Usar “Usar Compose”, recriar o contêiner e confirmar precedência/persistência.
-- [ ] Trocar mundo com confirmação e voltar ao anterior; verificar que os saves originais permanecem.
-- [ ] Editar administradores, banidos e permitidos e conferir comportamento no jogo.
-- [ ] Solicitar atualização/reinício pelo painel com jogadores conectados: confirmar parada imediata com salvamento e desconexão. Agendar tarefa automática e confirmar adiamento sem desconexão.
-- [ ] Sair do jogo, aguardar snapshot completo e dois minutos vazios; confirmar execução da tarefa adiada, save e retorno do jogo.
-- [ ] Tentar conectar durante a verificação final, em Steam e crossplay; verificar cancelamento caso o evento já tenha sido processado e comportamento de suspensão/retomada do grupo FEX.
-- [ ] Simular contagem desconhecida e consulta A2S indisponível; confirmar que nenhum SIGINT é enviado automaticamente.
-- [ ] Agendar backup e reinício no mesmo horário e combinar uma atualização pendente; observar uma única manutenção.
-- [ ] Recriar o supervisor com manutenção adiada e confirmar retomada da intenção persistida.
-
-### Etapa 3 — dados e falhas
-
-- [ ] Criar backup com o jogo parado, baixar no navegador e validar manifesto/checksum.
-- [ ] Alterar algo no mundo, parar, restaurar e confirmar o estado anterior no jogo. Verificar criação do backup pré-restauração.
-- [ ] Em volume descartável, simular disco sem espaço e download Steam interrompido; confirmar preservação do backup/instalação anteriores e erro visível.
-- [ ] Confirmar rejeição de arquivo adulterado e de entradas tar com caminhos externos ou links.
-- [ ] Simular encerramento anormal em mundo descartável; confirmar marcador e bloqueio da manutenção até recuperação/parada limpa.
-- [ ] Desligar e ligar a instância; verificar volumes, configurações, senha administrativa e certificado persistentes.
-
-### Medição de desempenho
-
-Use o mesmo mundo, mesmas áreas e jogadores, e registre três execuções por configuração: vanilla sem cache, vanilla com cache quente e BepInEx com a lista exata de plugins. Anote tempo até ficar online, consumo ocioso, pico de memória, CPU e atrasos de save durante pelo menos 30 minutos de jogo. Altere uma opção FEX de cada vez.
-
-| Cenário | FEX / build jogo | Jogadores / mods | Inicialização | CPU média/pico | RAM pico | Save / observações |
-|---|---|---|---|---|---|---|
-| Vanilla sem cache | pendente | pendente | pendente | pendente | pendente | pendente |
-| Vanilla cache quente | pendente | pendente | pendente | pendente | pendente | pendente |
-| BepInEx cache quente | pendente | pendente | pendente | pendente | pendente | pendente |
-
-A aceitação termina quando os cenários exigidos funcionarem e as evidências forem registradas. Não há promessa prévia de número de jogadores ou melhoria percentual.
-
-<a id="desenvolvimento"></a>
-## Desenvolvimento
-
-Para publicar uma nova versão da imagem, altere somente [VERSION](../VERSION), por exemplo de `0.1.0` para `0.1.1`, e envie a mudança à `main`. O GitHub Actions publica as tags `0.1.1`, `latest` e a identificação do commit após os testes e o preflight. Detalhes em [publicação](#publicacao).
-
-O ambiente abaixo serve aos testes do código-fonte na máquina do mantenedor/CI. A instalação na Oracle usa exclusivamente as imagens Docker Hub descritas acima. Para desenvolver, use Python 3.12 e Node:
-
-```sh
-python -m venv .venv
-. .venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest -q
-node --check app/static/panel.js
-```
-
-Os testes usam um runtime isolado, sem executar o jogo nem acessar Steam/Oracle. A API privada do painel está documentada em [API](#api).
-
-O teste opcional de navegador usa a interface real com respostas de API determinísticas, verificando login, formulários, ações e layout móvel. Não representa uma sessão real do jogo:
-
-```sh
-pip install -r requirements-browser.txt
-python -m playwright install chromium
-RUN_BROWSER_TESTS=1 python -m pytest -q tests/test_panel_browser.py
-```
-
-No Windows com Edge instalado, use `$env:RUN_BROWSER_TESTS='1'` e `$env:BROWSER_CHANNEL='msedge'` no PowerShell; não é necessário baixar Chromium nesse caso. A captura gerada fica em `.artifacts/panel.png` e contém dados de teste. O workflow `Checks` executa os testes do supervisor e oferece build ARM/preflight manual por `workflow_dispatch`. O workflow `Publish Docker Hub` também constrói e verifica a imagem antes de publicar, nos disparos descritos em [publicação](#publicacao). Esses testes não substituem a aceitação OCI.
-
-## Instalação e migração
-
-O instalador aceita Ubuntu 24.04 e 26.04 LTS ARM64 com páginas de 4 KiB, usa o repositório oficial Docker correspondente ao host (`noble` ou `resolute`) quando necessário e grava a instalação em `./valheim-arm`. Para escolher outra pasta, execute `VALHEIM_INSTALL_DIR=/caminho/servidor bash install-valheim.sh`. O IP sugerido é obtido por HTTPS em api.ipify.org e pode ser alterado no prompt. As portas da OCI e do firewall local precisam estar liberadas antes de jogar; o instalador não altera regras da nuvem.
-
-Se o UFW estiver ativo, o instalador acrescenta permissões de entrada para UDP 2456–2457 e TCP 443, inclusive em uma nova execução sobre instalação existente. Não habilita/desabilita o UFW, não altera SSH ou políticas padrão e não remove regras existentes. UFW ausente ou inativo é apenas informado. As regras de publicação/NAT do Docker normalmente passam antes do UFW; isso não contorna a rede OCI nem garante passagem por regras adicionais de encaminhamento, `DOCKER-USER`, firewalld ou nftables. O instalador não modifica esses outros firewalls.
-
-Para uma instalação existente, indique sua pasta com `VALHEIM_INSTALL_DIR`. O instalador preserva `.env`, Compose, senhas e saves, e não reinicia um servidor que já esteja rodando. Se houver falha durante uma instalação nova, execute novamente usando a mesma pasta.
-
-O download usa `sudo docker compose pull valheim` uma única vez para os dois serviços. Os dois serviços usam a mesma imagem publicada: o serviço `valheim` executa o supervisor e o serviço `proxy` executa o Caddy incluído na imagem. A configuração do proxy é interna; atualizações chegam pela imagem.
-
-O `.env.example` contém somente o essencial. Todas as opções avançadas continuam disponíveis no `compose.yaml` e nas tabelas acima. A imagem padrão é pública, `hfgalmeida/valheim-arm:latest`, e não exige login. Modificadores, crossplay, horários, usuários e backups podem ser administrados pelo painel. Alterações do jogo ficam pendentes até uma reinicialização segura; ajustes de horário são lidos pelo agendador.
-
-A imagem continua baseada em Ubuntu 24.04, independentemente da versão do host. A aceitação completa na Oracle permanece pendente; a inclusão de Ubuntu 26.04 no instalador não substitui esse teste real. O preflight é executado automaticamente na inicialização. Se houver erro de permissão em `data`, confirme o proprietário UID/GID 10001. Se Docker existente não tiver Compose ou houver pacotes conflitantes, siga a [instalação oficial Docker](https://docs.docker.com/engine/install/ubuntu/) e execute o instalador novamente. O instalador não remove engines existentes.
+Não publique `.env`, credenciais ou backups em pedidos de suporte. Para investigar builds, rollback do jogo e falhas de encerramento, consulte o [guia do mantenedor](MAINTAINER.md).

@@ -14,9 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .auth import Auth
-from .config import Settings
 from .metrics import Metrics
+from .mod_configs import ModConfigs, Conflict
 from .runtime import Runtime
+from .plugins import Plugins, MAX_PLUGIN_SIZE
 
 
 class Login(BaseModel):
@@ -35,6 +36,19 @@ class Action(BaseModel):
     action: str
     backup: str | None = None
     confirm: bool = False
+
+
+class PluginRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(max_length=124)
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ModConfigChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str = Field(max_length=256)
+    content: str = Field(max_length=32768)
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class UserList(BaseModel):
@@ -62,6 +76,8 @@ def create_app(data=None, runtime=None, lifecycle=True):
     rt = runtime or Runtime(data)
     auth, metrics = Auth(data), Metrics(data)
     origin = os.environ.get("PANEL_ORIGIN", "")
+    mod_configs = ModConfigs(data)
+    plugins = Plugins(data)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -86,7 +102,9 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, exc):
         # Pydantic's default error response can echo secret input.
-        return JSONResponse({"detail": [{"loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]}, status_code=422)
+        return JSONResponse(
+            {"detail": [{"loc": e["loc"], "msg": e["msg"]} for e in exc.errors()]}, status_code=422
+        )
 
     @app.middleware("http")
     async def headers(request, call_next):
@@ -100,7 +118,9 @@ def create_app(data=None, runtime=None, lifecycle=True):
         if not value:
             raise HTTPException(401, "Faça login")
         if request.method not in ("GET", "HEAD"):
-            if request.headers.get("origin") != origin or not secrets.compare_digest(request.headers.get("x-csrf-token", ""), value["csrf"]):
+            if request.headers.get("origin") != origin or not secrets.compare_digest(
+                request.headers.get("x-csrf-token", ""), value["csrf"]
+            ):
                 raise HTTPException(403, "Origem ou token CSRF inválido")
         return value
 
@@ -116,7 +136,15 @@ def create_app(data=None, runtime=None, lifecycle=True):
             token, csrf = await asyncio.to_thread(auth.login, body.password, request.client.host)
         except ValueError as exc:
             raise HTTPException(401, str(exc))
-        response.set_cookie("session", token, secure=True, httponly=True, samesite="strict", max_age=8*3600, path="/")
+        response.set_cookie(
+            "session",
+            token,
+            secure=True,
+            httponly=True,
+            samesite="strict",
+            max_age=8 * 3600,
+            path="/",
+        )
         return {"csrf": csrf}
 
     @app.get("/api/v1/session")
@@ -132,7 +160,10 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.get("/api/v1/state", dependencies=[Depends(session)])
     async def state():
         build = Path("/opt/build-info.json")
-        return rt.status() | {"metrics": list(metrics.history), "image": json.loads(build.read_text()) if build.exists() else {}}
+        return rt.status() | {
+            "metrics": list(metrics.history),
+            "image": json.loads(build.read_text()) if build.exists() else {},
+        }
 
     @app.get("/api/v1/config", dependencies=[Depends(session)])
     async def get_config():
@@ -164,6 +195,94 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 return item
         raise HTTPException(404, "Operação não encontrada")
 
+    def config_error(exc):
+        code = (
+            409 if isinstance(exc, Conflict) else 404 if isinstance(exc, FileNotFoundError) else 422
+        )
+        raise HTTPException(
+            code,
+            (
+                str(exc)
+                if isinstance(exc, ValueError)
+                else "Arquivo indisponível; confira permissões e espaço livre"
+            ),
+        )
+
+    def plugin_stopped():
+        if rt.live or rt.active or not rt.queue.empty():
+            raise HTTPException(
+                409, "Pare o jogo e aguarde as operações terminarem antes de enviar plugins"
+            )
+
+    @app.get("/api/v1/plugins", dependencies=[Depends(session)])
+    async def list_plugins():
+        try:
+            return {"files": plugins.list()}
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.post("/api/v1/plugins", dependencies=[Depends(session)])
+    async def upload_plugin(request: Request, name: str, revision: str | None = None):
+        plugin_stopped()
+        if revision is not None and not re.fullmatch(r"[a-f0-9]{64}", revision):
+            raise HTTPException(422, "Confirmação de substituição inválida")
+        if (
+            request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+            != "application/octet-stream"
+        ):
+            raise HTTPException(415, "Envie o conteúdo binário da DLL")
+        try:
+            with plugins.staging(name) as (file, temporary):
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_PLUGIN_SIZE:
+                        raise HTTPException(413, "A DLL pode ter no máximo 16 MiB")
+                    file.write(chunk)
+                file.flush()
+                os.fsync(file.fileno())
+                file.close()
+                # State and authentication may have changed during the transfer.
+                session(request)
+                plugin_stopped()
+                return plugins.commit(name, temporary, revision)
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.post("/api/v1/plugins/restore", dependencies=[Depends(session)])
+    async def restore_plugin(body: PluginRestore):
+        plugin_stopped()
+        try:
+            return plugins.restore(body.name, body.revision)
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.get("/api/v1/mod-configs", dependencies=[Depends(session)])
+    async def list_mod_configs():
+        try:
+            return {"files": mod_configs.list()}
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.get("/api/v1/mod-config", dependencies=[Depends(session)])
+    async def read_mod_config(path: str, previous: bool = False):
+        try:
+            return mod_configs.read(path, previous)
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.put("/api/v1/mod-config", dependencies=[Depends(session)])
+    async def save_mod_config(body: ModConfigChange):
+        if rt.live or rt.active or not rt.queue.empty():
+            raise HTTPException(
+                409,
+                "Pare o jogo pelo painel e aguarde as operações terminarem antes de editar plugins",
+            )
+        try:
+            return mod_configs.save(body.path, body.content, body.revision)
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
     @app.get("/api/v1/cloud", dependencies=[Depends(session)])
     async def cloud_config():
         return rt.cloud.describe()
@@ -192,7 +311,17 @@ def create_app(data=None, runtime=None, lifecycle=True):
         if kind not in LISTS:
             raise HTTPException(404, "Lista inválida")
         path = data / "saves" / LISTS[kind]
-        return {"entries": path.read_text().splitlines() if path.exists() else []}
+        known = {entry["id"]: entry for entry in rt.player_directory.describe()}
+        for filename in LISTS.values():
+            existing = data / "saves" / filename
+            for entry in existing.read_text().splitlines() if existing.exists() else []:
+                entry = entry.strip()
+                if re.fullmatch(r"(?:[A-Za-z]+_)?[A-Za-z0-9:_-]{1,128}", entry):
+                    known.setdefault(entry, {"id": entry, "last_seen": None})
+        return {
+            "entries": path.read_text().splitlines() if path.exists() else [],
+            "known_players": sorted(known.values(), key=lambda entry: entry["id"]),
+        }
 
     @app.put("/api/v1/users/{kind}", dependencies=[Depends(session)])
     async def put_users(kind: str, body: UserList):
@@ -200,7 +329,11 @@ def create_app(data=None, runtime=None, lifecycle=True):
             raise HTTPException(404, "Lista inválida")
         if rt.active:
             raise HTTPException(409, "Aguarde a operação atual antes de editar listas")
-        entries = list(dict.fromkeys(e.strip() for e in body.entries if e.strip() and not e.strip().startswith("//")))
+        entries = list(
+            dict.fromkeys(
+                e.strip() for e in body.entries if e.strip() and not e.strip().startswith("//")
+            )
+        )
         if any(not re.fullmatch(r"(?:[A-Za-z]+_)?[A-Za-z0-9:_-]{1,128}", e) for e in entries):
             raise HTTPException(422, "Use um ID de plataforma por linha, copiado do jogo")
         path = data / "saves" / LISTS[kind]
@@ -224,7 +357,10 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 payload = rt.status() | {"metric": metrics.history[-1] if metrics.history else None}
                 yield "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
                 await asyncio.sleep(5)
-        return StreamingResponse(stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+        return StreamingResponse(
+            stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+        )
 
     static = Path(__file__).parent / "static"
     app.mount("/", StaticFiles(directory=static, html=True), name="panel")

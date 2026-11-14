@@ -11,33 +11,46 @@ import pytest
 from app.runtime import MaintenanceDeferred, Runtime, SteamError, public_build, save_completed
 
 
-@pytest.mark.parametrize("line,expected", [
-    ("World saved", True),
-    ("11/13/2026 22:45:40: World saved (480ms)", True),
-    ("11/13/2026 22:45:40: World save (5/5) done. Total time [480ms]", True),
-    ("World save (1/5) Cloud & Backup checks done [11ms] => Save number 1", False),
-    ("World save (2/5) Chunks writing done [330ms]", False),
-    ("World save (3/5) DB2 writing done [91ms]", False),
-    ("World save (4/5) FWL writing done [6ms]", False),
-    ("World save (5/5) failed", False),
-    ("Error: World saved", False),
-    ("Skipping backup. World session not long enough.", False),
-    ("Processo do jogo encerrado: 0", False),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("World saved", True),
+        ("11/13/2026 22:45:40: World saved (480ms)", True),
+        ("11/13/2026 22:45:40: World save (5/5) done. Total time [480ms]", True),
+        ("World save (1/5) Cloud & Backup checks done [11ms] => Save number 1", False),
+        ("World save (2/5) Chunks writing done [330ms]", False),
+        ("World save (3/5) DB2 writing done [91ms]", False),
+        ("World save (4/5) FWL writing done [6ms]", False),
+        ("World save (5/5) failed", False),
+        ("Error: World saved", False),
+        ("Skipping backup. World session not long enough.", False),
+        ("Processo do jogo encerrado: 0", False),
+    ],
+)
 def test_only_completed_world_saves_are_acknowledged(line, expected):
     assert save_completed(line) is expected
 
 
 def steam_child(code, lines=()):
-    return SimpleNamespace(pid=42, returncode=code,
+    return SimpleNamespace(
+        pid=42,
+        returncode=code,
         stdout=SimpleNamespace(readline=AsyncMock(side_effect=[*lines, b""])),
-        wait=AsyncMock(return_value=code))
+        wait=AsyncMock(return_value=code),
+    )
 
 
 def test_steam_self_update_restarts_same_command_immediately(runtime):
-    children = [steam_child(42, [b"Update complete, launching...\n"]),
-                steam_child(0, [b"Success! App '896660' fully installed.\n"])]
-    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=children)) as spawn:
+    children = [
+        steam_child(42, [b"Update complete, launching...\n"]),
+        steam_child(0, [b"Success! App '896660' fully installed.\n"]),
+    ]
+    with (
+        patch("app.runtime.install_steam"),
+        patch(
+            "app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=children)
+        ) as spawn,
+    ):
         output = asyncio.run(runtime.run_steam(["+login", "anonymous", "+quit"]))
     assert spawn.await_count == 2
     assert spawn.await_args_list[0] == spawn.await_args_list[1]
@@ -48,7 +61,13 @@ def test_steam_self_update_restarts_same_command_immediately(runtime):
 
 
 def test_steam_repeated_self_update_is_bounded(runtime):
-    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=[steam_child(42) for _ in range(4)])) as spawn:
+    with (
+        patch("app.runtime.install_steam"),
+        patch(
+            "app.runtime.asyncio.create_subprocess_exec",
+            AsyncMock(side_effect=[steam_child(42) for _ in range(4)]),
+        ) as spawn,
+    ):
         with pytest.raises(RuntimeError, match="42"):
             asyncio.run(runtime.run_steam(["+quit"]))
     assert spawn.await_count == 4
@@ -56,7 +75,12 @@ def test_steam_repeated_self_update_is_bounded(runtime):
 
 @pytest.mark.parametrize("code", [1, 8, -11])
 def test_steam_real_failure_is_reported_without_retry(runtime, code):
-    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(return_value=steam_child(code))) as spawn:
+    with (
+        patch("app.runtime.install_steam"),
+        patch(
+            "app.runtime.asyncio.create_subprocess_exec", AsyncMock(return_value=steam_child(code))
+        ) as spawn,
+    ):
         with pytest.raises(RuntimeError, match=f"saída {code}"):
             asyncio.run(runtime.run_steam(["+quit"]))
     assert spawn.await_count == 1
@@ -69,8 +93,15 @@ def test_steam_timeout_kills_process_after_self_update_restart(runtime):
     child = steam_child(None)
     child.stdout.readline = blocked
     child.wait = AsyncMock(return_value=-9)
-    with patch("app.runtime.install_steam"), patch("app.runtime.asyncio.create_subprocess_exec", AsyncMock(side_effect=[steam_child(42), child])), \
-            patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.signal.SIGKILL", 9, create=True):
+    with (
+        patch("app.runtime.install_steam"),
+        patch(
+            "app.runtime.asyncio.create_subprocess_exec",
+            AsyncMock(side_effect=[steam_child(42), child]),
+        ),
+        patch("app.runtime.os.killpg", create=True) as kill,
+        patch("app.runtime.signal.SIGKILL", 9, create=True),
+    ):
         with pytest.raises(asyncio.TimeoutError):
             asyncio.run(runtime.run_steam(["+quit"], timeout=0.05))
     kill.assert_called_once_with(42, 9)
@@ -121,7 +152,13 @@ def test_other_steam_install_error_is_not_retried(runtime):
 
 
 def test_zero_exit_code_with_missing_configuration_is_retried(runtime):
-    runtime.run_steam = AsyncMock(side_effect=["ready", "ERROR! Failed to install app '896660' (Missing configuration)", "success"])
+    runtime.run_steam = AsyncMock(
+        side_effect=[
+            "ready",
+            "ERROR! Failed to install app '896660' (Missing configuration)",
+            "success",
+        ]
+    )
     with patch("app.runtime.asyncio.sleep", new=AsyncMock()):
         assert asyncio.run(runtime.fetch_game(runtime.data / "installs/stage")) == "success"
     assert runtime.run_steam.await_count == 3
@@ -130,24 +167,30 @@ def test_zero_exit_code_with_missing_configuration_is_retried(runtime):
 @pytest.mark.parametrize("crossplay", [True, False])
 def test_crossplay_join_code_from_game_log(runtime, crossplay):
     runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
-    lines = iter([
-        b'Session "World" registered with join code 012345\n',
-        b'Session "World" with join code 987654 and IP 1.2.3.4:2456 is active with 0 player(s)\n',
-        b'Session "World" registered with join code 1234567\n',
-        b'Session "World" registered with join code \n',
-        b'Unrelated build number 123456\n',
-        b'',
-    ])
+    lines = iter(
+        [
+            b'Session "World" registered with join code 012345\n',
+            b'Session "World" with join code 987654 and IP 1.2.3.4:2456 is active with 0 player(s)\n',
+            b'Session "World" registered with join code 1234567\n',
+            b'Session "World" registered with join code \n',
+            b"Unrelated build number 123456\n",
+            b"",
+        ]
+    )
     observed = []
 
     async def readline():
         observed.append(runtime.status()["join_code"])
         return next(lines)
 
-    process = SimpleNamespace(returncode=None, stdout=SimpleNamespace(readline=readline), wait=AsyncMock(return_value=0))
+    process = SimpleNamespace(
+        returncode=None, stdout=SimpleNamespace(readline=readline), wait=AsyncMock(return_value=0)
+    )
     runtime.process = process
     asyncio.run(runtime.read_game(process))
-    assert observed == ([None, "012345", "987654", "987654", "987654", "987654"] if crossplay else [None] * 6)
+    assert observed == (
+        [None, "012345", "987654", "987654", "987654", "987654"] if crossplay else [None] * 6
+    )
     assert runtime.join_code is None
 
 
@@ -174,8 +217,10 @@ def test_join_code_cleared_before_restart_attempt(runtime):
 
 def test_join_code_cleared_on_log_failure(runtime):
     runtime.join_code = "012345"
-    process = SimpleNamespace(stdout=SimpleNamespace(readline=AsyncMock(side_effect=OSError("broken pipe"))),
-                              wait=AsyncMock(return_value=1))
+    process = SimpleNamespace(
+        stdout=SimpleNamespace(readline=AsyncMock(side_effect=OSError("broken pipe"))),
+        wait=AsyncMock(return_value=1),
+    )
     asyncio.run(runtime.read_game(process))
     assert runtime.join_code is None
 
@@ -208,8 +253,12 @@ def test_final_connection_cancels_and_resumes(runtime):
     async def connection(_):
         runtime.players.consume("Got connection SteamID 123")
 
-    with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.asyncio.sleep", side_effect=connection), \
-            patch("app.runtime.signal.SIGSTOP", 19, create=True), patch("app.runtime.signal.SIGCONT", 18, create=True):
+    with (
+        patch("app.runtime.os.killpg", create=True) as kill,
+        patch("app.runtime.asyncio.sleep", side_effect=connection),
+        patch("app.runtime.signal.SIGSTOP", 19, create=True),
+        patch("app.runtime.signal.SIGCONT", 18, create=True),
+    ):
         with pytest.raises(RuntimeError, match="verificação final"):
             asyncio.run(runtime.stop())
         assert [call.args[1] for call in kill.call_args_list] == [19, 18]
@@ -328,7 +377,9 @@ def test_crash_recovery_uses_existing_world_not_restore(runtime):
         runtime.process = SimpleNamespace(returncode=1)
         runtime.clean_stop = False
         runtime.start = AsyncMock()
-        runtime.backups.restore = lambda *_: (_ for _ in ()).throw(AssertionError("must not restore saves automatically"))
+        runtime.backups.restore = lambda *_: (_ for _ in ()).throw(
+            AssertionError("must not restore saves automatically")
+        )
         await runtime.tick()
         job = runtime.jobs[-1]
         assert job["action"] == "start"
@@ -347,8 +398,11 @@ def test_shutdown_never_schedules_recovery(runtime):
 def test_initial_crashes_retry_quickly_then_back_off(runtime):
     async def scenario():
         for expected_delay in (15, 30, 60, 300):
-            runtime.process = SimpleNamespace(returncode=-11, stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
-                                              wait=AsyncMock(return_value=-11))
+            runtime.process = SimpleNamespace(
+                returncode=-11,
+                stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
+                wait=AsyncMock(return_value=-11),
+            )
             before = time.monotonic()
             await runtime.read_game(runtime.process)
             delay = runtime.next_recovery - before
@@ -361,8 +415,11 @@ def test_initial_crashes_retry_quickly_then_back_off(runtime):
 
 
 def test_manual_shutdown_does_not_schedule_rapid_startup_retry(runtime):
-    runtime.process = SimpleNamespace(returncode=-11, stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
-                                      wait=AsyncMock(return_value=-11))
+    runtime.process = SimpleNamespace(
+        returncode=-11,
+        stdout=SimpleNamespace(readline=AsyncMock(return_value=b"")),
+        wait=AsyncMock(return_value=-11),
+    )
     runtime.closing = True
     asyncio.run(runtime.read_game(runtime.process))
     assert runtime.startup_failures == 0
@@ -375,8 +432,14 @@ def test_server_online_only_after_world_and_backend_are_ready(runtime, crossplay
         runtime.process = SimpleNamespace(returncode=None)
         runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
         runtime.state = "iniciando"
-        lines = iter([b"Game server connected\n", b"Loading: Done.\n",
-                      b'Session "World" registered with join code 123456\n', b""])
+        lines = iter(
+            [
+                b"Game server connected\n",
+                b"Loading: Done.\n",
+                b'Session "World" registered with join code 123456\n',
+                b"",
+            ]
+        )
         observed = []
 
         async def readline():
@@ -444,7 +507,10 @@ def test_container_shutdown_stops_game_without_waiting_for_empty_players(runtime
             runtime.process.returncode = 0
 
         runtime.reader = asyncio.create_task(finish())
-        with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.query_steam") as query:
+        with (
+            patch("app.runtime.os.killpg", create=True) as kill,
+            patch("app.runtime.query_steam") as query,
+        ):
             await runtime.shutdown()
         assert runtime.closing and not runtime.want_running
         assert runtime.clean_stop
@@ -456,18 +522,29 @@ def test_container_shutdown_stops_game_without_waiting_for_empty_players(runtime
 
 @pytest.mark.skipif(os.name != "posix", reason="Sinais e grupos de processos Linux necessários")
 @pytest.mark.parametrize("safe", [True, False])
-@pytest.mark.parametrize("saved", [False, "World saved", "World save (5/5) done. Total time [480ms]"])
+@pytest.mark.parametrize(
+    "saved", [False, "World saved", "World save (5/5) done. Total time [480ms]"]
+)
 def test_real_process_signals_require_save_confirmation(runtime, safe, saved):
     async def scenario():
-        code = ('import signal,sys\n'
-                'def stop(*args):\n'
-                + (' print(' + repr(saved) + ', flush=True)\n' if saved else '')
-                + ' sys.exit(0)\n'
-                'signal.signal(signal.SIGINT, stop)\n'
-                'print("ready", flush=True)\n'
-                'while True: signal.pause()\n')
-        child = await asyncio.create_subprocess_exec(sys.executable, "-u", "-c", code,
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+        code = (
+            "import signal,sys\n"
+            "def stop(*args):\n"
+            + (" print(" + repr(saved) + ", flush=True)\n" if saved else "")
+            + " sys.exit(0)\n"
+            "signal.signal(signal.SIGINT, stop)\n"
+            'print("ready", flush=True)\n'
+            "while True: signal.pause()\n"
+        )
+        child = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-c",
+            code,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+        )
         runtime.process = child
         runtime.running = runtime.config.effective().model_copy(update={"crossplay": True})
         runtime.clean_stop = False
@@ -504,7 +581,10 @@ def test_stop_finishes_when_game_exited_but_stdout_stays_open(runtime):
             runtime.process.returncode = 0
             runtime.last_save = time.monotonic()
 
-        with patch("app.runtime.os.killpg", side_effect=finish, create=True), patch("app.runtime.LOG_DRAIN_TIMEOUT", 0.01):
+        with (
+            patch("app.runtime.os.killpg", side_effect=finish, create=True),
+            patch("app.runtime.LOG_DRAIN_TIMEOUT", 0.01),
+        ):
             await asyncio.wait_for(runtime.stop(safe=False), timeout=1)
         assert runtime.clean_stop
         assert runtime.reader.cancelled()
@@ -525,7 +605,9 @@ def test_cancelled_stop_is_resumed_without_repeating_signal_or_deadline(runtime)
             runtime.process.returncode = 0
 
         runtime.reader = asyncio.create_task(reader())
-        with patch("app.runtime.os.killpg", side_effect=lambda *_: signalled.set(), create=True) as kill:
+        with patch(
+            "app.runtime.os.killpg", side_effect=lambda *_: signalled.set(), create=True
+        ) as kill:
             original = asyncio.create_task(runtime.stop(safe=False))
             await signalled.wait()
             requested = runtime.stop_request
@@ -548,7 +630,10 @@ def test_stop_timeout_never_kills_or_marks_world_clean(runtime):
         runtime.process = SimpleNamespace(pid=42, returncode=None)
         runtime.clean_stop = False
         runtime.reader = asyncio.create_task(asyncio.Event().wait())
-        with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.GAME_STOP_TIMEOUT", 0.02):
+        with (
+            patch("app.runtime.os.killpg", create=True) as kill,
+            patch("app.runtime.GAME_STOP_TIMEOUT", 0.02),
+        ):
             with pytest.raises(RuntimeError, match="Parada excedeu"):
                 await runtime.stop(safe=False)
             with pytest.raises(RuntimeError, match="Parada excedeu"):
@@ -586,7 +671,9 @@ def test_shutdown_cancels_metadata_query_without_waiting_two_minutes(runtime):
 def test_chunked_save_shutdown_drives_maintenance_safely(runtime, action, complete):
     async def scenario():
         lines = asyncio.Queue()
-        process = SimpleNamespace(pid=42, returncode=None, stdout=SimpleNamespace(readline=lines.get))
+        process = SimpleNamespace(
+            pid=42, returncode=None, stdout=SimpleNamespace(readline=lines.get)
+        )
 
         async def wait():
             return process.returncode
@@ -607,18 +694,23 @@ def test_chunked_save_shutdown_drives_maintenance_safely(runtime, action, comple
 
         def signal_game(_pid, sig):
             if sig == signal.SIGINT:
-                for stage in ("World save (1/5) Cloud & Backup checks done [11ms]",
-                              "World save (2/5) Chunks writing done [330ms]",
-                              "World save (3/5) DB2 writing done [91ms]",
-                              "World save (4/5) FWL writing done [6ms]"):
+                for stage in (
+                    "World save (1/5) Cloud & Backup checks done [11ms]",
+                    "World save (2/5) Chunks writing done [330ms]",
+                    "World save (3/5) DB2 writing done [91ms]",
+                    "World save (4/5) FWL writing done [6ms]",
+                ):
                     lines.put_nowait((stage + "\n").encode())
                 if complete:
                     lines.put_nowait(b"World save (5/5) done. Total time [480ms]\n")
                 process.returncode = 0
                 lines.put_nowait(b"")
 
-        with patch("app.runtime.os.killpg", side_effect=signal_game, create=True), \
-                patch("app.runtime.signal.SIGSTOP", 19, create=True), patch("app.runtime.signal.SIGCONT", 18, create=True):
+        with (
+            patch("app.runtime.os.killpg", side_effect=signal_game, create=True),
+            patch("app.runtime.signal.SIGSTOP", 19, create=True),
+            patch("app.runtime.signal.SIGCONT", 18, create=True),
+        ):
             if complete:
                 await runtime.execute({"action": action})
                 runtime.snapshot.assert_awaited_once_with(action)
@@ -676,8 +768,12 @@ def test_stop_requires_save_after_signal(runtime, saved):
             runtime.process.returncode = 0
 
         runtime.reader = finish()
-        with patch("app.runtime.os.killpg", create=True) as kill, patch("app.runtime.asyncio.sleep", new=AsyncMock()), \
-                patch("app.runtime.signal.SIGSTOP", 19, create=True), patch("app.runtime.signal.SIGCONT", 18, create=True):
+        with (
+            patch("app.runtime.os.killpg", create=True) as kill,
+            patch("app.runtime.asyncio.sleep", new=AsyncMock()),
+            patch("app.runtime.signal.SIGSTOP", 19, create=True),
+            patch("app.runtime.signal.SIGCONT", 18, create=True),
+        ):
             if saved:
                 await runtime.stop()
                 assert runtime.clean_stop and not runtime.clean_marker.exists()
@@ -882,19 +978,26 @@ def test_shutdown_does_not_resurrect_cancelled_maintenance(runtime):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("restart_at,backup_at,hour,maintenance", [
-    ("05:00", "05:00", 5, "restart"),
-    ("07:00", "05:00", 7, "restart"),
-    ("off", "06:00", 6, "backup"),
-    ("off", "off", 5, None),
-])
-def test_daily_update_check_runs_once_at_maintenance_time(runtime, restart_at, backup_at, hour, maintenance):
+@pytest.mark.parametrize(
+    "restart_at,backup_at,hour,maintenance",
+    [
+        ("05:00", "05:00", 5, "restart"),
+        ("07:00", "05:00", 7, "restart"),
+        ("off", "06:00", 6, "backup"),
+        ("off", "off", 5, None),
+    ],
+)
+def test_daily_update_check_runs_once_at_maintenance_time(
+    runtime, restart_at, backup_at, hour, maintenance
+):
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
 
     async def scenario():
         now = datetime(2026, 11, 13, hour, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
-        runtime.config.overrides.update({"auto_update": True, "restart_at": restart_at, "backup_at": backup_at})
+        runtime.config.overrides.update(
+            {"auto_update": True, "restart_at": restart_at, "backup_at": backup_at}
+        )
         runtime.schedule_started = now.replace(hour=0)
         runtime.process = SimpleNamespace(returncode=None)
         runtime.game_ready = True
@@ -923,7 +1026,9 @@ def test_daily_update_check_runs_once_at_maintenance_time(runtime, restart_at, b
             clock.now.return_value = now + timedelta(days=1)
             await restored.tick()
         assert restored.jobs[0]["action"] == "check-update"
-        assert [job["action"] for job in restored.jobs] == (["check-update", maintenance] if maintenance else ["check-update"])
+        assert [job["action"] for job in restored.jobs] == (
+            ["check-update", maintenance] if maintenance else ["check-update"]
+        )
 
     asyncio.run(scenario())
 
@@ -943,13 +1048,18 @@ def test_daily_update_uses_same_stop_as_restart(runtime):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("count,message", [(None, r"Steam indisponível \(UDP 2457\)"), (2, "detectou 2 jogador")])
+@pytest.mark.parametrize(
+    "count,message", [(None, r"Steam indisponível \(UDP 2457\)"), (2, "detectou 2 jogador")]
+)
 def test_steam_guard_explains_refusal_without_sending_signals(runtime, count, message):
     runtime.process = SimpleNamespace(pid=42, returncode=None)
     runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
     runtime.players.consume("Connections 0 ZDOS:1")
     runtime.players.empty_since -= 121
-    with patch("app.runtime.query_steam", return_value=count), patch("app.runtime.os.killpg", create=True) as kill:
+    with (
+        patch("app.runtime.query_steam", return_value=count),
+        patch("app.runtime.os.killpg", create=True) as kill,
+    ):
         with pytest.raises(MaintenanceDeferred, match=message):
             asyncio.run(runtime.stop())
     kill.assert_not_called()
@@ -1000,8 +1110,13 @@ def test_manual_actions_signal_immediately_with_players_and_no_steam_query(runti
             runtime.process.returncode = 0
 
         runtime.reader = finish_game()
-        with patch("app.runtime.query_steam", side_effect=AssertionError("manual operation must not query Steam")) as query, \
-                patch("app.runtime.os.killpg", create=True) as kill:
+        with (
+            patch(
+                "app.runtime.query_steam",
+                side_effect=AssertionError("manual operation must not query Steam"),
+            ) as query,
+            patch("app.runtime.os.killpg", create=True) as kill,
+        ):
             await runtime.execute({"action": action})
         query.assert_not_called()
         kill.assert_called_once_with(42, signal.SIGINT)

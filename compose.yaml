@@ -49,6 +49,7 @@ services:
     ports:
       - "2456-2457:2456-2457/udp"
     volumes:
+      # Bind mount persistente: remover o contêiner não apaga os arquivos do host.
       - ./data:/data
     expose: ["8080"]
     healthcheck:

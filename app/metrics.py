@@ -30,15 +30,25 @@ class Metrics:
             scope = "supervisor somente (cgroup v2 indisponível)"
         net = psutil.net_io_counters()
         disk = psutil.disk_usage(self.data)
-        sample = {"time": time.time(), "cpu_percent": 0.0, "memory_bytes": memory,
-                  "memory_limit": memory_limit, "network_in_bps": 0.0, "network_out_bps": 0.0,
-                  "disk_used": disk.used, "disk_total": disk.total, "scope": scope}
+        sample = {
+            "time": time.time(),
+            "cpu_percent": 0.0,
+            "memory_bytes": memory,
+            "memory_limit": memory_limit,
+            "network_in_bps": 0.0,
+            "network_out_bps": 0.0,
+            "disk_used": disk.used,
+            "disk_total": disk.total,
+            "scope": scope,
+        }
         if self.previous:
             before, cpu, received, sent = self.previous
             elapsed = max(now - before, 0.001)
-            sample.update(cpu_percent=max(0, (cpu_seconds - cpu) / elapsed * 100),
-                          network_in_bps=max(0, (net.bytes_recv - received) / elapsed),
-                          network_out_bps=max(0, (net.bytes_sent - sent) / elapsed))
+            sample.update(
+                cpu_percent=max(0, (cpu_seconds - cpu) / elapsed * 100),
+                network_in_bps=max(0, (net.bytes_recv - received) / elapsed),
+                network_out_bps=max(0, (net.bytes_sent - sent) / elapsed),
+            )
         self.previous = now, cpu_seconds, net.bytes_recv, net.bytes_sent
         self.history.append(sample)
         return sample

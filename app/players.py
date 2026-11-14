@@ -1,4 +1,5 @@
 """Conservative log snapshots, corroborated with A2S on the Steam backend."""
+
 import re
 import socket
 import time
@@ -22,9 +23,16 @@ class Players:
             if value != 0 or self.count != 0:
                 self.empty_since = self.clock() if value == 0 else None
             self.count, self.observed, self.reason = value, self.clock(), "snapshot do jogo"
-        elif re.search(r"Got connection|Got handshake|New peer connected|Got character ZDOID|Closing socket|RPC_Disconnect|PlayFab.*(?:connect|Connect)|k_ESteamNetworkingConnectionState_(?:Connecting|Connected|Closed)", line):
+        elif re.search(
+            r"Got connection|Got handshake|New peer connected|Got character ZDOID|Closing socket|RPC_Disconnect|PlayFab.*(?:connect|Connect)|k_ESteamNetworkingConnectionState_(?:Connecting|Connected|Closed)",
+            line,
+        ):
             # A connect OR disconnect invalidates until the next full snapshot.
-            self.count, self.empty_since, self.reason = None, None, "Conexão alterada; aguardando novo snapshot"
+            self.count, self.empty_since, self.reason = (
+                None,
+                None,
+                "Conexão alterada; aguardando novo snapshot",
+            )
 
     def current(self):
         if self.clock() - self.observed > 660:
@@ -32,7 +40,11 @@ class Players:
         return self.count
 
     def idle(self, seconds=120):
-        return self.current() == 0 and self.empty_since is not None and self.clock() - self.empty_since >= seconds
+        return (
+            self.current() == 0
+            and self.empty_since is not None
+            and self.clock() - self.empty_since >= seconds
+        )
 
     def status(self):
         return {"count": self.current(), "reason": self.reason}

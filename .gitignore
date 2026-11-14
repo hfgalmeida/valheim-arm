@@ -8,3 +8,5 @@ __pycache__/
 *.pyc
 .test-tmp/
 .artifacts/
+
+.ruff_cache/

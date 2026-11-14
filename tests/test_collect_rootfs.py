@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-collect = runpy.run_path(str(Path(__file__).resolve().parents[1] / "docker/collect_rootfs.py"))["collect_rootfs"]
+collect = runpy.run_path(str(Path(__file__).resolve().parents[1] / "docker/collect_rootfs.py"))[
+    "collect_rootfs"
+]
 
 
 def test_docker_data_override_matches_fex_rootfs_path_concatenation():
@@ -14,7 +16,9 @@ def test_docker_data_override_matches_fex_rootfs_path_concatenation():
     data = re.search(r"FEX_APP_DATA_LOCATION=([^\s]+)", dockerfile)[1]
     # FEX-2611.1 uses GetDataDirectory() + "RootFS/", without adding a separator.
     assert Path(data + "RootFS/") == Path(data) / "RootFS"
-    assert dockerfile.index('mkdir -p "$HOME" "$FEX_APP_DATA_LOCATION"') < dockerfile.index('&& FEXRootFSFetcher')
+    assert dockerfile.index('mkdir -p "$HOME" "$FEX_APP_DATA_LOCATION"') < dockerfile.index(
+        "&& FEXRootFSFetcher"
+    )
 
 
 def root_fixture(data, name="Ubuntu_24_04", with_i386=True):

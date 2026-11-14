@@ -10,7 +10,12 @@ from app.cloud import Cloud, connection
 
 
 def remote(provider="drive"):
-    return '[my-account]\ntype = ' + provider + '\ntoken = {"access_token":"secret-access","refresh_token":"secret-refresh"}\n' + ('drive_id = personal-drive\ndrive_type = personal\n' if provider == "onedrive" else '')
+    return (
+        "[my-account]\ntype = "
+        + provider
+        + '\ntoken = {"access_token":"secret-access","refresh_token":"secret-refresh"}\n'
+        + ("drive_id = personal-drive\ndrive_type = personal\n" if provider == "onedrive" else "")
+    )
 
 
 def archive(runtime):
@@ -26,15 +31,26 @@ def test_import_supported_connection(provider):
     assert "secret-refresh" in config
 
 
-@pytest.mark.parametrize("config", ["nonsense", "[a]\ntype=local", remote() + "\n[b]\ntype=drive",
-    remote() + "\ntoken_command=echo secret", remote() + "\nclient_credentials=true",
-    "[a]\ntype=drive\ntoken={}", "[DEFAULT]\nfoo=bar\n" + remote()])
+@pytest.mark.parametrize(
+    "config",
+    [
+        "nonsense",
+        "[a]\ntype=local",
+        remote() + "\n[b]\ntype=drive",
+        remote() + "\ntoken_command=echo secret",
+        remote() + "\nclient_credentials=true",
+        "[a]\ntype=drive\ntoken={}",
+        "[DEFAULT]\nfoo=bar\n" + remote(),
+    ],
+)
 def test_reject_unsafe_connections(config):
     with pytest.raises(ValueError):
         connection(config)
 
 
-@pytest.mark.parametrize("folder", ["/absolute", "../escape", "a/../b", "remote:path", "a\\b", "a\nb", "a//b"])
+@pytest.mark.parametrize(
+    "folder", ["/absolute", "../escape", "a/../b", "remote:path", "a\\b", "a\nb", "a//b"]
+)
 def test_reject_unsafe_destinations(runtime, folder):
     with pytest.raises(ValueError):
         runtime.cloud.configure(True, folder, remote())
@@ -49,7 +65,10 @@ def test_upload_and_durable_receipt_without_secrets(runtime):
     c.copy = AsyncMock()
     assert asyncio.run(c.upload_one())
     assert c.copy.await_count == 2
-    assert c.copy.await_args_list[0].args == (runtime.backups.resolve(name), "cloud:Valheim/meu mundo/" + name)
+    assert c.copy.await_args_list[0].args == (
+        runtime.backups.resolve(name),
+        "cloud:Valheim/meu mundo/" + name,
+    )
     assert c.copy.await_args_list[1].args[1].endswith(".tar.gz.sha256")
     reloaded = Cloud(runtime.data, runtime.backups)
     assert reloaded.pending() == []
@@ -184,7 +203,10 @@ def test_cancel_upload_kills_child_and_keeps_pending(runtime):
     c.configure(True, "Valheim", remote())
     name = archive(runtime)
     from unittest.mock import Mock
-    child = SimpleNamespace(wait=AsyncMock(side_effect=[asyncio.CancelledError(), 0]), returncode=None, kill=Mock())
+
+    child = SimpleNamespace(
+        wait=AsyncMock(side_effect=[asyncio.CancelledError(), 0]), returncode=None, kill=Mock()
+    )
     with patch("app.cloud.asyncio.create_subprocess_exec", AsyncMock(return_value=child)):
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(c.upload_one())

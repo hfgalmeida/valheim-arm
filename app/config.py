@@ -77,11 +77,26 @@ class Settings(BaseModel):
     @field_validator("preset")
     @classmethod
     def valid_preset(cls, value):
-        if value.lower() not in ("", "normal", "casual", "easy", "hard", "hardcore", "immersive", "hammer"):
+        if value.lower() not in (
+            "",
+            "normal",
+            "casual",
+            "easy",
+            "hard",
+            "hardcore",
+            "immersive",
+            "hammer",
+        ):
             raise ValueError("Preset inválido")
         return value.lower()
 
-    @field_validator("modifier_combat", "modifier_deathpenalty", "modifier_resources", "modifier_raids", "modifier_portals")
+    @field_validator(
+        "modifier_combat",
+        "modifier_deathpenalty",
+        "modifier_resources",
+        "modifier_raids",
+        "modifier_portals",
+    )
     @classmethod
     def modifier(cls, value, info):
         if value not in MODIFIERS[info.field_name.removeprefix("modifier_")]:
@@ -106,15 +121,36 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_pack(self):
-        if self.bepinex and (not self.bepinex_url.startswith("https://") or not re.fullmatch(r"[a-fA-F0-9]{64}", self.bepinex_sha256)):
+        if self.bepinex and (
+            not self.bepinex_url.startswith("https://")
+            or not re.fullmatch(r"[a-fA-F0-9]{64}", self.bepinex_sha256)
+        ):
             raise ValueError("BepInEx exige URL HTTPS e SHA256 de 64 caracteres")
         return self
 
     def arguments(self, save_dir: Path):
-        args = ["-nographics", "-batchmode", "-name", self.server_name, "-world", self.world_name,
-                "-password", self.server_password, "-port", str(self.server_port),
-                "-public", str(int(self.public)), "-savedir", str(save_dir),
-                "-saveinterval", str(self.save_interval), "-backups", str(self.native_backups), "-logFile", "-"]
+        args = [
+            "-nographics",
+            "-batchmode",
+            "-name",
+            self.server_name,
+            "-world",
+            self.world_name,
+            "-password",
+            self.server_password,
+            "-port",
+            str(self.server_port),
+            "-public",
+            str(int(self.public)),
+            "-savedir",
+            str(save_dir),
+            "-saveinterval",
+            str(self.save_interval),
+            "-backups",
+            str(self.native_backups),
+            "-logFile",
+            "-",
+        ]
         if self.crossplay:
             args.append("-crossplay")
         if self.preset:
@@ -133,8 +169,12 @@ class ConfigStore:
     def __init__(self, data: Path, environ=None):
         environ = os.environ if environ is None else environ
         self.path = data / "config/overrides.json"
-        self.base = {key: environ[key.upper()] for key in Settings.model_fields if key.upper() in environ}
-        self.overrides = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        self.base = {
+            key: environ[key.upper()] for key in Settings.model_fields if key.upper() in environ
+        }
+        self.overrides = (
+            json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        )
         self.overrides.pop("update_interval", None)  # Replaced by daily scheduling.
         self.effective()  # Fail immediately, never silently discard invalid overrides.
 
@@ -149,7 +189,9 @@ class ConfigStore:
         overrides = {k: v for k, v in self.overrides.items() if k not in reset} | changes
         result = Settings(**(self.base | overrides))
         if result.world_name != self.effective().world_name and not confirm_world:
-            raise ValueError("Confirme a seleção/criação de outro mundo; o mundo anterior será preservado")
+            raise ValueError(
+                "Confirme a seleção/criação de outro mundo; o mundo anterior será preservado"
+            )
         atomic_json(self.path, overrides)
         self.overrides = overrides
         return result
@@ -158,6 +200,13 @@ class ConfigStore:
         values = self.effective().model_dump()
         for key in ("server_password",):
             values[key] = ""  # Never return passwords to the browser.
-        return {"values": values, "sources": {k: "painel" if k in self.overrides else "compose" if k in self.base else "padrão" for k in values},
-                "pending": running is not None and running != self.effective(),
-                "modifiers": MODIFIERS, "keys": KEYS}
+        return {
+            "values": values,
+            "sources": {
+                k: "painel" if k in self.overrides else "compose" if k in self.base else "padrão"
+                for k in values
+            },
+            "pending": running is not None and running != self.effective(),
+            "modifiers": MODIFIERS,
+            "keys": KEYS,
+        }

@@ -61,7 +61,11 @@ def test_roundtrip_chunked_world_and_native_backup_preserves_all_files(tmp_path,
     (saves / "Dedicated/_main.0.ok").unlink()
     (saves / "Dedicated/stale.chunk").write_bytes(b"must-not-survive-restore")
     backups.restore(name)
-    actual = {path.relative_to(saves).as_posix(): path.read_bytes() for path in saves.rglob("*") if path.is_file()}
+    actual = {
+        path.relative_to(saves).as_posix(): path.read_bytes()
+        for path in saves.rglob("*")
+        if path.is_file()
+    }
     assert actual == expected
 
 
@@ -76,8 +80,17 @@ def test_disk_failure_preserves_previous(tmp_path, config):
     assert not list(backups.root.glob("*.partial"))
 
 
-@pytest.mark.parametrize("name,kind", [("../escape", "file"), ("/absolute", "file"), ("saves/link", "symlink"),
-    ("config/admin.json", "file"), ("saves/a", "duplicate"), ("saves/../../escape", "file")])
+@pytest.mark.parametrize(
+    "name,kind",
+    [
+        ("../escape", "file"),
+        ("/absolute", "file"),
+        ("saves/link", "symlink"),
+        ("config/admin.json", "file"),
+        ("saves/a", "duplicate"),
+        ("saves/../../escape", "file"),
+    ],
+)
 def test_reject_malicious_archives(tmp_path, name, kind):
     path = tmp_path / "bad.tar.gz"
     with tarfile.open(path, "w:gz") as archive:
@@ -108,12 +121,22 @@ def test_tampering_prevents_restore(tmp_path, config):
 def test_retention_keeps_daily_and_weekly(tmp_path, config):
     save_fixture(tmp_path)
     backups = Backups(tmp_path)
-    for stamp in ("20261001", "20261008", "20261015", "20261022", "20261029", "20261112", "20261113"):
+    for stamp in (
+        "20261001",
+        "20261008",
+        "20261015",
+        "20261022",
+        "20261029",
+        "20261112",
+        "20261113",
+    ):
         name = backups.create("daily", config.effective())
         original = backups.resolve(name)
         new = backups.root / (stamp + "T050000000000Z.tar.gz")
         original.rename(new)
-        original.with_suffix(original.suffix + ".sha256").rename(new.with_suffix(new.suffix + ".sha256"))
+        original.with_suffix(original.suffix + ".sha256").rename(
+            new.with_suffix(new.suffix + ".sha256")
+        )
     backups.prune(2, 2)
     names = [x["name"][:8] for x in backups.list()]
     assert names == ["20261113", "20261112", "20261029"]

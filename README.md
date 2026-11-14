@@ -9,7 +9,7 @@ Servidor Valheim na Oracle ARM: instale com Docker, jogue e gerencie pelo navega
 - **Atualizações e manutenção automáticas**, com verificação de jogadores, salvamento antes das paradas e recuperação após falhas. [Detalhes](docs/REFERENCE.md#operacao).
 - **Backups automáticos**, download e restauração pelo painel, com envio opcional para OneDrive, Dropbox ou Google Drive. [Detalhes](docs/REFERENCE.md#backups).
 - **Configuração do mundo e crossplay**, modificadores e listas de administradores, banidos e jogadores permitidos. [Detalhes](docs/REFERENCE.md#configuracao).
-- **Suporte opcional a mods BepInEx**, com instalação de pacote verificado. [Detalhes](docs/REFERENCE.md#backups).
+- **Suporte opcional a mods BepInEx**, com instalação de pacote verificado. [Detalhes](docs/REFERENCE.md#mods).
 
 ## Instalar
 
@@ -64,6 +64,8 @@ Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baix
 
 Os horários usam **America/Sao_Paulo**. Manutenções automáticas aguardam o servidor ficar vazio e confirmam o salvamento antes de criar backups. Você pode configurar o [envio automático para OneDrive, Dropbox ou Google Drive](docs/REFERENCE.md#nuvem) pelo painel.
 
-Os dados ficam em `valheim-arm/data`. Guarde também uma cópia dos backups fora da instância.
+Saves, configurações editáveis, mods e backups ficam em `valheim-arm/data`, com acesso preparado automaticamente para o usuário SSH. Eles permanecem após remover os contêineres. Guarde também uma cópia dos backups fora da instância.
 
 Configurações avançadas, certificado, importação de mundos, mods e administração estão na [referência](docs/REFERENCE.md).
+
+Para desenvolver ou publicar imagens, consulte o [guia do mantenedor](docs/MAINTAINER.md).

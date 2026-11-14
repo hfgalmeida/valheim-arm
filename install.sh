@@ -177,14 +177,21 @@ main() {
     fi
     "${ROOT[@]}" install -d -o 10001 -g 10001 -m 0700 data
     "${DOCKER[@]}" compose config --quiet
+    log 'Baixando a imagem pública e preparando o acesso aos dados…'
+    "${DOCKER[@]}" compose pull valheim
+    local access_uid="${SUDO_UID:-$(id -u)}"
+    if [[ "$access_uid" =~ ^[0-9]+$ ]] && (( access_uid > 0 )); then
+        "${DOCKER[@]}" compose run --rm --no-deps --user 0:0 \
+            --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE valheim \
+            prepare-access --access-uid "$access_uid"
+    else
+        log 'Instalação como root: execute pelo sudo do usuário SSH para preparar acesso sem sudo aos dados.'
+    fi
     # Re-running the installer must not replace or restart a running world.
     if [[ -n "$("${DOCKER[@]}" compose ps --status running --quiet valheim)" ]]; then
         log 'O servidor já está em execução. Seus arquivos e o jogo foram preservados.'
         return
     fi
-    log 'Baixando as imagens públicas e verificando a plataforma…'
-    # Both services share this image; request its download only once.
-    "${DOCKER[@]}" compose pull valheim
     "${DOCKER[@]}" compose run --rm --no-deps valheim preflight
     if ! "${ROOT[@]}" test -f data/config/admin.json; then
         log 'Defina agora a senha do painel (diferente da senha do jogo).'

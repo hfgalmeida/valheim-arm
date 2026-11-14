@@ -6,7 +6,12 @@
 }
 https://{$SERVER_IP} {
     tls internal
-    request_body {
+    @plugin_upload path /api/v1/plugins
+    @regular not path /api/v1/plugins
+    request_body @plugin_upload {
+        max_size 16777216
+    }
+    request_body @regular {
         max_size 64KB
     }
     header {

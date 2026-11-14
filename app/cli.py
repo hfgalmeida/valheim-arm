@@ -11,11 +11,21 @@ from .auth import set_password
 
 def main():
     parser = argparse.ArgumentParser(description="Valheim ARM — supervisor e administração local")
-    parser.add_argument("command", choices=("serve", "set-password", "health", "preflight"))
+    parser.add_argument(
+        "command", choices=("serve", "set-password", "health", "preflight", "prepare-access")
+    )
+    parser.add_argument("--access-uid", type=int)
     args = parser.parse_args()
     data = Path(os.environ.get("DATA_DIR", "/data"))
     os.umask(0o077)
-    if args.command == "set-password":
+    if args.command == "prepare-access":
+        from .file_access import prepare
+
+        if args.access_uid is None:
+            parser.error("--access-uid é obrigatório")
+        prepare(data, args.access_uid)
+        print("Acesso aos arquivos preparado.")
+    elif args.command == "set-password":
         password = getpass.getpass("Nova senha administrativa (mínimo 12 caracteres): ")
         if password != getpass.getpass("Repita a senha: "):
             raise SystemExit("As senhas não conferem")
@@ -29,17 +39,26 @@ def main():
             sys.exit(1)
     elif args.command == "preflight":
         from .runtime import preflight
+
         preflight(data)
         print("Preflight ARM/FEX aprovado.")
     else:
         import uvicorn
         from .web import create_app
+
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
         # One worker owns the game process and in-memory sessions/queue.
         # Bound HTTP/SSE drain time separately so lifespan shutdown retains
         # enough of Docker's six-minute grace period to save the world.
-        uvicorn.run(create_app(data), host="0.0.0.0", port=8080, workers=1, proxy_headers=False,
-                    timeout_graceful_shutdown=10, access_log=False)
+        uvicorn.run(
+            create_app(data),
+            host="0.0.0.0",
+            port=8080,
+            workers=1,
+            proxy_headers=False,
+            timeout_graceful_shutdown=10,
+            access_log=False,
+        )
 
 
 if __name__ == "__main__":

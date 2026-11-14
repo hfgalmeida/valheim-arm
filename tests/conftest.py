@@ -6,7 +6,15 @@ from app.runtime import Runtime
 
 @pytest.fixture
 def config(tmp_path):
-    return ConfigStore(tmp_path, {"SERVER_PASSWORD": "game-password", "RESTART_AT": "off", "BACKUP_AT": "off", "AUTO_UPDATE": "false"})
+    return ConfigStore(
+        tmp_path,
+        {
+            "SERVER_PASSWORD": "game-password",
+            "RESTART_AT": "off",
+            "BACKUP_AT": "off",
+            "AUTO_UPDATE": "false",
+        },
+    )
 
 
 @pytest.fixture

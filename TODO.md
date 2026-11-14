@@ -21,21 +21,33 @@
 
 - [x] Estrutura Docker Compose ARM64, build FEX e configuração individual.
 - [x] Supervisor nativo, painel, autenticação e métricas.
+- [x] Cadastro assistido nas listas de administradores, banidos e permitidos, com seleção de IDs conhecidos, inclusão manual e remoção por botão.
 - [x] Fila de manutenção, persistência de tarefas adiadas e backups com restauração.
 - [x] Integração opcional BepInEx com pacote verificado e plugins locais.
+- [x] Upload de DLLs pelo painel com jogo parado, confirmação de substituição e restauração da versão anterior.
+- [x] Editor de configurações de plugins pelo painel, com gravação com jogo parado, detecção de conflitos e recuperação da versão anterior.
 - [x] Documentação de instalação, configuração, API e recuperação.
 - [x] Testes locais de configuração, jogadores, autenticação, backups e manutenção.
-- [ ] Construção e prova funcional FEX/SteamCMD/Valheim na Oracle ARM.
-- [ ] Validação de crossplay, BepInEx e formatos reais dos logs na Oracle.
+- [x] Prova funcional FEX/SteamCMD/Valheim na Oracle ARM, com inicialização e conexão confirmadas pelo administrador.
+- [x] Conexão ao servidor com crossplay desativado (Steam).
+- [x] Conexão ao servidor com crossplay ativado (PlayFab).
+- [ ] Validar carregamento do BepInEx e compatibilidade dos plugins escolhidos, incluindo entrada com e sem crossplay.
+- [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
 - [ ] Medições e ajustes de desempenho no Ampere A1.
-- [ ] Aceitação completa conforme docs/REFERENCE.md#validacao.
+- [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
 
 ### Instalação pública simplificada
 
 - [x] Imagem pública padrão hfgalmeida/valheim-arm:latest.
 - [x] Instalador interativo com Docker, configuração e inicialização automáticos.
-- [x] README direto para jogadores e referência avançada única.
+- [x] README direto para jogadores, referência de configuração e guia separado para mantenedores.
 - [x] Recuperação automática com intervalo de cinco minutos e respeito à parada manual.
+
+### Melhoria futura: identificação de jogadores de outras plataformas
+
+- [ ] Descobrir automaticamente IDs de permissão de outras plataformas no crossplay, usando mensagens explícitas do servidor ou um plugin BepInEx validado.
+- [ ] Associar nome, plataforma e ID quando essa informação estiver disponível, sem deduzir permissões a partir de join codes, ZDOIDs ou identificadores temporários de conexão PlayFab.
+- [ ] Validar com clientes das plataformas atendidas e manter o cadastro manual como alternativa; separar histórico de IDs de presença online.
 
 ### Melhoria futura: usuários e permissões do painel
 

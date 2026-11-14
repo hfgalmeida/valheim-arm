@@ -42,7 +42,10 @@ def test_native_arm_library_is_rejected(tmp_path):
 
 def test_native_arm_deb_is_rejected_before_extraction(tmp_path):
     package = tmp_path / "bad.deb"
-    with patch("subprocess.check_output", return_value="Package: libatomic1\nVersion: 1\nArchitecture: arm64\n"):
+    with patch(
+        "subprocess.check_output",
+        return_value="Package: libatomic1\nVersion: 1\nArchitecture: arm64\n",
+    ):
         with pytest.raises(ValueError, match="arquitetura"):
             GUEST["package_metadata"](package)
 
@@ -64,6 +67,7 @@ def test_guest_build_checks_transitive_dependencies_using_x86_loader(tmp_path):
 
 def test_guest_build_propagates_missing_transitive_dependency(tmp_path):
     import subprocess
+
     directory = tmp_path / "usr/lib/x86_64-linux-gnu"
     elf(directory / "ld-linux-x86-64.so.2")
     elf(directory / GUEST["LIBRARIES"][0])
@@ -75,7 +79,9 @@ def test_guest_build_propagates_missing_transitive_dependency(tmp_path):
 def test_crossplay_reports_missing_guest_library_before_game_launch(tmp_path):
     party = tmp_path / "valheim_server_Data/Plugins/libparty.so"
     elf(party)
-    result = SimpleNamespace(returncode=127, stderr="libatomic.so.1: cannot open shared object file")
+    result = SimpleNamespace(
+        returncode=127, stderr="libatomic.so.1: cannot open shared object file"
+    )
     with patch("app.runtime.subprocess.run", return_value=result) as run:
         with pytest.raises(RuntimeError, match="libatomic.so.1"):
             check_crossplay(tmp_path)
@@ -100,10 +106,21 @@ def test_prepare_records_only_validated_package_provenance(tmp_path):
             apt_path = Path(kwargs["env"]["APT_CONFIG"]).parent
             (apt_path / "cache/archives/libatomic.deb").write_bytes(b"package")
 
-    with patch("subprocess.run", side_effect=apt), patch.dict(run, {
-        "package_metadata": lambda _: {"name": "libatomic1", "version": "1", "architecture": "amd64", "sha256": "hash"},
-        "validate": lambda _: None,
-    }):
+    with (
+        patch("subprocess.run", side_effect=apt),
+        patch.dict(
+            run,
+            {
+                "package_metadata": lambda _: {
+                    "name": "libatomic1",
+                    "version": "1",
+                    "architecture": "amd64",
+                    "sha256": "hash",
+                },
+                "validate": lambda _: None,
+            },
+        ),
+    ):
         GUEST["prepare"](root, info)
     data = json.loads(info.read_text())
     assert data["guest_packages"][0]["architecture"] == "amd64"

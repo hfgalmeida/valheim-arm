@@ -30,17 +30,35 @@ def test_world_confirmation_and_validation(config):
 
 
 def test_arguments_no_shell_injection_and_order(tmp_path):
-    settings = Settings(server_password="secret-password", server_name='Name; $(whoami)', preset="Hard",
-                        modifier_combat="easy", modifier_resources="most", key_nomap=True, crossplay=True)
+    settings = Settings(
+        server_password="secret-password",
+        server_name="Name; $(whoami)",
+        preset="Hard",
+        modifier_combat="easy",
+        modifier_resources="most",
+        key_nomap=True,
+        crossplay=True,
+    )
     args = settings.arguments(tmp_path)
-    assert args[args.index("-name") + 1] == 'Name; $(whoami)'
+    assert args[args.index("-name") + 1] == "Name; $(whoami)"
     assert args.index("-preset") < args.index("-modifier")
-    assert ["-modifier", "resources", "most"] == args[args.index("resources")-1:args.index("resources")+2]
+    assert ["-modifier", "resources", "most"] == args[
+        args.index("resources") - 1 : args.index("resources") + 2
+    ]
     assert "-crossplay" in args and "nomap" in args
 
 
-@pytest.mark.parametrize("field,value", [("restart_at", "25:00"), ("backup_at", "5:00"), ("timezone", "Mars/Base"),
-    ("save_interval", 0), ("server_password", "1234"), ("bepinex", True)])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("restart_at", "25:00"),
+        ("backup_at", "5:00"),
+        ("timezone", "Mars/Base"),
+        ("save_interval", 0),
+        ("server_password", "1234"),
+        ("bepinex", True),
+    ],
+)
 def test_invalid_settings(config, field, value):
     with pytest.raises(ValueError):
         config.change({field: value}, [])

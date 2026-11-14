@@ -1,34 +1,377 @@
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Valheim · Sala de comando</title><link rel="stylesheet" href="/style.css"><script src="/panel.js" defer></script></head>
-<body><header><div><span class="eyebrow">ORACLE ARM · VALHEIM</span><h1>Sala de comando</h1></div><button id="logout" hidden>Sair</button></header><main>
-<p id="notice" role="status" aria-live="polite"></p>
-<section id="login" class="card login"><span class="eyebrow">ACESSO ADMINISTRATIVO</span><h2>Bem-vindo de volta</h2><p>Entre para cuidar do seu mundo.</p><form id="login-form"><label>Senha do painel<input id="password" type="password" autocomplete="current-password" required maxlength="256"></label><button class="primary">Entrar</button></form><small>A senha é definida pelo administrador diretamente no servidor.</small></section>
-<div id="dashboard" hidden>
-<section class="overview"><div><span class="eyebrow">SEU MUNDO, SEMPRE À VISTA</span><h2 id="server-name">Valheim ARM</h2><p id="status">Conectando…</p><p id="versions"></p><p id="crossplay-info" hidden>Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong></p></div><div class="player-count"><strong id="players">—</strong><span>jogadores</span><small id="player-reason"></small></div></section>
-<div class="tabs" role="tablist" aria-label="Seções do painel">
-<button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" tabindex="0">Visão geral</button>
-<button type="button" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">Configuração</button>
-<button type="button" role="tab" id="tab-players" aria-controls="panel-players" aria-selected="false" tabindex="-1">Jogadores</button>
-<button type="button" role="tab" id="tab-backups" aria-controls="panel-backups" aria-selected="false" tabindex="-1">Backups</button>
-<button type="button" role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false" tabindex="-1">Atividade</button>
-</div>
-<div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0"><nav id="actions" aria-label="Controle do servidor"><button data-action="start">Iniciar</button><button data-action="stop">Parar</button><button data-action="restart">Reiniciar</button><button data-action="update">Atualizar jogo</button><button data-action="backup">Criar backup</button></nav>
-<p class="muted">Ações do painel solicitam a parada imediatamente e podem desconectar jogadores. O jogo salva antes de encerrar; apenas as tarefas automáticas aguardam o servidor vazio.</p>
-<section class="metrics" aria-label="Recursos em tempo real">
-<article class="card"><span>CPU · 100% por núcleo</span><strong id="cpu">—</strong><canvas id="cpu-chart" width="600" height="150" aria-label="Histórico de CPU"></canvas></article>
-<article class="card"><span>Memória do contêiner</span><strong id="memory">—</strong><canvas id="memory-chart" width="600" height="150" aria-label="Histórico de memória"></canvas></article>
-<article class="card"><span>Rede · entrada / saída</span><strong id="network">—</strong><canvas id="network-chart" width="600" height="150" aria-label="Histórico de rede"></canvas></article>
-<article class="card"><span>Disco do volume</span><strong id="disk">—</strong><canvas id="disk-chart" width="600" height="150" aria-label="Histórico de disco"></canvas></article>
-</section><p id="metric-scope" class="muted"></p>
-</div>
-<div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" tabindex="0" hidden><section class="card"><div class="section-title"><h2>Configuração</h2><span id="pending"></span></div><p class="muted">Ajustes do painel prevalecem sobre o Compose. “Usar Compose” remove um ajuste. Senhas nunca são exibidas.</p><form id="config-form"><div id="settings" class="settings"></div><button class="primary">Salvar configuração</button></form><p class="muted">Trocar o nome do mundo seleciona ou cria outro save. Desmarcar uma chave deixa de enviá-la ao jogo; isso não remove uma chave já gravada no mundo.</p></section>
-</div>
-<div role="tabpanel" id="panel-players" aria-labelledby="tab-players" tabindex="0" hidden><section class="card"><h2>Usuários do jogo</h2><label>Lista<select id="user-kind"><option value="admins">Administradores</option><option value="banned">Banidos</option><option value="permitted">Permitidos</option></select></label><p class="muted">Um ID por linha. Uma lista de permitidos preenchida restringe o acesso a esses jogadores.</p><form id="users-form"><label>IDs de plataforma<textarea id="user-entries" rows="7" spellcheck="false"></textarea></label><button>Salvar lista</button></form></section>
-</div>
-<div role="tabpanel" id="panel-backups" aria-labelledby="tab-backups" tabindex="0" hidden><section class="card"><div class="section-title"><h2>Backups</h2><button id="refresh-backups">Atualizar lista</button></div><p class="muted">Baixe uma cópia para seu computador. Restaurar substitui os saves e exige o jogo parado.</p><div id="backup-list"></div></section>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Valheim · Sala de comando</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/panel.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="eyebrow">ORACLE ARM · VALHEIM</span>
+        <h1>Sala de comando</h1>
+      </div>
+      <button id="logout" hidden>Sair</button>
+    </header>
+    <main>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login" class="card login">
+        <span class="eyebrow">ACESSO ADMINISTRATIVO</span>
+        <h2>Bem-vindo de volta</h2>
+        <p>Entre para cuidar do seu mundo.</p>
+        <form id="login-form">
+          <label
+            >Senha do painel<input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="256" /></label
+          ><button class="primary">Entrar</button>
+        </form>
+        <small>A senha é definida pelo administrador diretamente no servidor.</small>
+      </section>
+      <div id="dashboard" hidden>
+        <section class="overview">
+          <div>
+            <span class="eyebrow">SEU MUNDO, SEMPRE À VISTA</span>
+            <h2 id="server-name">Valheim ARM</h2>
+            <p id="status">Conectando…</p>
+            <p id="versions"></p>
+            <p id="crossplay-info" hidden>
+              Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
+            </p>
+          </div>
+          <div class="player-count">
+            <strong id="players">—</strong><span>jogadores</span><small id="player-reason"></small>
+          </div>
+        </section>
+        <div class="tabs" role="tablist" aria-label="Seções do painel">
+          <button
+            type="button"
+            role="tab"
+            id="tab-overview"
+            aria-controls="panel-overview"
+            aria-selected="true"
+            tabindex="0"
+          >
+            Visão geral
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-settings"
+            aria-controls="panel-settings"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Configuração
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-players"
+            aria-controls="panel-players"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Jogadores
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-backups"
+            aria-controls="panel-backups"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Backups
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-activity"
+            aria-controls="panel-activity"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Atividade
+          </button>
+        </div>
+        <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
+          <nav id="actions" aria-label="Controle do servidor">
+            <button data-action="start">Iniciar</button><button data-action="stop">Parar</button
+            ><button data-action="restart">Reiniciar</button
+            ><button data-action="update">Atualizar jogo</button
+            ><button data-action="backup">Criar backup</button>
+          </nav>
+          <p class="muted">
+            Ações do painel solicitam a parada imediatamente e podem desconectar jogadores. O jogo
+            salva antes de encerrar; apenas as tarefas automáticas aguardam o servidor vazio.
+          </p>
+          <section class="metrics" aria-label="Recursos em tempo real">
+            <article class="card">
+              <span>CPU · 100% por núcleo</span><strong id="cpu">—</strong
+              ><canvas
+                id="cpu-chart"
+                width="600"
+                height="150"
+                aria-label="Histórico de CPU"
+              ></canvas>
+            </article>
+            <article class="card">
+              <span>Memória do contêiner</span><strong id="memory">—</strong
+              ><canvas
+                id="memory-chart"
+                width="600"
+                height="150"
+                aria-label="Histórico de memória"
+              ></canvas>
+            </article>
+            <article class="card">
+              <span>Rede · entrada / saída</span><strong id="network">—</strong
+              ><canvas
+                id="network-chart"
+                width="600"
+                height="150"
+                aria-label="Histórico de rede"
+              ></canvas>
+            </article>
+            <article class="card">
+              <span>Disco do volume</span><strong id="disk">—</strong
+              ><canvas
+                id="disk-chart"
+                width="600"
+                height="150"
+                aria-label="Histórico de disco"
+              ></canvas>
+            </article>
+          </section>
+          <p id="metric-scope" class="muted"></p>
+        </div>
+        <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" tabindex="0" hidden>
+          <section class="card">
+            <div class="section-title">
+              <h2>Configuração</h2>
+              <span id="pending"></span>
+            </div>
+            <p class="muted">
+              Ajustes do painel prevalecem sobre o Compose. “Usar Compose” remove um ajuste. Senhas
+              nunca são exibidas.
+            </p>
+            <form id="config-form">
+              <div id="settings" class="settings"></div>
+              <button class="primary">Salvar configuração</button>
+            </form>
+            <p class="muted">
+              Trocar o nome do mundo seleciona ou cria outro save. Desmarcar uma chave deixa de
+              enviá-la ao jogo; isso não remove uma chave já gravada no mundo.
+            </p>
+          </section>
+          <section class="card">
+            <div class="section-title">
+              <h2>Enviar plugins</h2>
+              <button type="button" id="refresh-plugins">Atualizar plugins</button>
+            </div>
+            <p class="muted">
+              Pare o jogo, selecione uma DLL e envie. Use plugins de fontes confiáveis e compatíveis
+              com seu BepInEx. Eles serão carregados na próxima inicialização.
+            </p>
+            <form id="plugin-upload-form">
+              <label
+                >Arquivo DLL · até 16 MiB<input id="plugin-file" type="file" accept=".dll" required
+              /></label>
+              <div class="editor-actions">
+                <button class="primary" id="upload-plugin">Enviar plugin</button>
+              </div>
+            </form>
+            <p id="plugin-upload-status" role="status" aria-live="polite"></p>
+            <div id="plugin-list"></div>
+            <p class="muted">
+              O envio aceita DLLs individuais, sem ZIP ou arquivos auxiliares. Substituições exigem
+              confirmação e preservam uma cópia anterior fora da pasta carregada pelo BepInEx.
+            </p>
+          </section>
+          <section class="card">
+            <div class="section-title">
+              <h2>Arquivos dos plugins</h2>
+              <button type="button" id="refresh-mod-configs">Atualizar arquivos</button>
+            </div>
+            <p class="muted">
+              Selecione uma configuração de texto gerada pelo plugin. Pare o jogo antes de salvar e
+              inicie novamente para aplicar. O editor preserva uma versão anterior do arquivo.
+            </p>
+            <label
+              >Arquivo<select id="mod-config-file">
+                <option value="">Selecione um arquivo</option>
+              </select></label
+            >
+            <form id="mod-config-form">
+              <label
+                >Conteúdo<textarea
+                  id="mod-config-content"
+                  rows="16"
+                  maxlength="32768"
+                  spellcheck="false"
+                  disabled
+                ></textarea>
+              </label>
+              <div class="editor-actions">
+                <button class="primary" id="save-mod-config" disabled>Salvar arquivo</button
+                ><button type="button" id="previous-mod-config" disabled>
+                  Carregar versão anterior
+                </button>
+              </div>
+            </form>
+            <p class="muted">
+              Arquivos UTF-8 de até 32 KiB em BepInEx/config. O editor não valida as regras
+              específicas de cada plugin. Plugins que usam outras pastas ainda precisam ser
+              configurados pelo SSH.
+            </p>
+          </section>
+        </div>
+        <div role="tabpanel" id="panel-players" aria-labelledby="tab-players" tabindex="0" hidden>
+          <section class="card">
+            <div class="section-title">
+              <h2>Jogadores e permissões</h2>
+              <small id="user-list-count"></small>
+            </div>
+            <label
+              >Lista<select id="user-kind">
+                <option value="admins">Administradores</option>
+                <option value="banned">Banidos</option>
+                <option value="permitted">Permitidos</option>
+              </select></label
+            >
+            <p class="muted">
+              Escolha a lista, adicione ou remova jogadores e salve. Uma lista de permitidos
+              preenchida restringe o acesso a esses jogadores.
+            </p>
+            <div class="player-picker">
+              <label
+                >Jogador conhecido<select id="known-player">
+                  <option value="">Selecione um ID identificado ou já cadastrado</option>
+                </select></label
+              ><button id="refresh-players" type="button">Atualizar jogadores</button>
+            </div>
+            <p class="muted">
+              IDs encontrados no log e nas listas. Este histórico não indica quem está online.
+            </p>
+            <form id="player-add-form" class="player-add">
+              <label
+                >ID do jogador<input
+                  id="player-id"
+                  required
+                  maxlength="128"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="Steam_765… ou ID completo da plataforma" /></label
+              ><button type="submit">Adicionar à lista</button>
+            </form>
+            <p class="muted">
+              Use o ID de plataforma exibido no F2 do jogo. SteamID64 de 17 dígitos também é aceito.
+              Não use o código de entrada ou o identificador da conexão PlayFab.
+            </p>
+            <form id="users-form">
+              <div id="user-list" aria-live="polite"></div>
+              <details class="bulk-players">
+                <summary>Editar vários IDs de uma vez</summary>
+                <label
+                  >Um ID de plataforma por linha<textarea
+                    id="user-entries"
+                    rows="7"
+                    spellcheck="false"
+                  ></textarea>
+                </label>
+              </details>
+              <button class="primary">Salvar lista</button>
+            </form>
+          </section>
+        </div>
+        <div role="tabpanel" id="panel-backups" aria-labelledby="tab-backups" tabindex="0" hidden>
+          <section class="card">
+            <div class="section-title">
+              <h2>Backups</h2>
+              <button id="refresh-backups">Atualizar lista</button>
+            </div>
+            <p class="muted">
+              Baixe uma cópia para seu computador. Restaurar substitui os saves e exige o jogo
+              parado.
+            </p>
+            <div id="backup-list"></div>
+          </section>
 
-<section class="card"><h2>Backup na nuvem</h2><p class="muted">Envie automaticamente cada novo backup completo para OneDrive, Dropbox ou Google Drive. A conta é autorizada uma vez no seu computador. <a href="https://github.com/hfgalmeida/valheim-arm/blob/main/docs/REFERENCE.md#nuvem" target="_blank" rel="noopener">Como conectar sua conta</a></p><form id="cloud-form"><div class="settings"><label>Envio automático<select id="cloud-enabled"><option value="false">Desativado</option><option value="true">Ativado</option></select></label><label>Pasta na nuvem<input id="cloud-folder" value="Valheim/backups" required maxlength="256" placeholder="Valheim/backups"></label></div><label>Importar conexão do computador<input id="cloud-file" type="file" accept=".conf,.txt"></label><label>Conexão rclone autorizada<textarea id="cloud-config" rows="5" maxlength="65536" spellcheck="false" autocomplete="off" placeholder="Cole a seção da conta do rclone.conf. Deixe vazio para manter a conexão atual."></textarea></label><p class="muted">Esse conteúdo contém credenciais: use apenas sua própria conta. A conexão salva nunca é exibida. Ao alterar o destino, os envios pendentes seguem para a nova pasta/conta.</p><button class="primary">Salvar envio na nuvem</button></form><p id="cloud-status" role="status" aria-live="polite"></p><p class="muted">Arquivos locais são preservados enquanto aguardam envio. A cópia na nuvem não tem exclusão automática; acompanhe o espaço disponível.</p></section>
-</div>
-<div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden><section class="card"><h2>Operações</h2><div id="jobs" aria-live="polite"></div></section><section class="card"><h2>Log do servidor</h2><pre id="logs" tabindex="0"></pre></section>
-</div>
-</div></main><footer>Valheim ARM · Administração local · FEX Emu</footer></body></html>
+          <section class="card">
+            <h2>Backup na nuvem</h2>
+            <p class="muted">
+              Envie automaticamente cada novo backup completo para OneDrive, Dropbox ou Google
+              Drive. A conta é autorizada uma vez no seu computador.
+              <a
+                href="https://github.com/hfgalmeida/valheim-arm/blob/main/docs/REFERENCE.md#nuvem"
+                target="_blank"
+                rel="noopener"
+                >Como conectar sua conta</a
+              >
+            </p>
+            <form id="cloud-form">
+              <div class="settings">
+                <label
+                  >Envio automático<select id="cloud-enabled">
+                    <option value="false">Desativado</option>
+                    <option value="true">Ativado</option>
+                  </select></label
+                ><label
+                  >Pasta na nuvem<input
+                    id="cloud-folder"
+                    value="Valheim/backups"
+                    required
+                    maxlength="256"
+                    placeholder="Valheim/backups"
+                /></label>
+              </div>
+              <label
+                >Importar conexão do computador<input
+                  id="cloud-file"
+                  type="file"
+                  accept=".conf,.txt" /></label
+              ><label
+                >Conexão rclone autorizada<textarea
+                  id="cloud-config"
+                  rows="5"
+                  maxlength="65536"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="Cole a seção da conta do rclone.conf. Deixe vazio para manter a conexão atual."
+                ></textarea>
+              </label>
+              <p class="muted">
+                Esse conteúdo contém credenciais: use apenas sua própria conta. A conexão salva
+                nunca é exibida. Ao alterar o destino, os envios pendentes seguem para a nova
+                pasta/conta.
+              </p>
+              <button class="primary">Salvar envio na nuvem</button>
+            </form>
+            <p id="cloud-status" role="status" aria-live="polite"></p>
+            <p class="muted">
+              Arquivos locais são preservados enquanto aguardam envio. A cópia na nuvem não tem
+              exclusão automática; acompanhe o espaço disponível.
+            </p>
+          </section>
+        </div>
+        <div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden>
+          <section class="card">
+            <h2>Operações</h2>
+            <div id="jobs" aria-live="polite"></div>
+          </section>
+          <section class="card">
+            <h2>Log do servidor</h2>
+            <pre id="logs" tabindex="0"></pre>
+          </section>
+        </div>
+      </div>
+    </main>
+    <footer>Valheim ARM · Administração local · FEX Emu</footer>
+  </body>
+</html>

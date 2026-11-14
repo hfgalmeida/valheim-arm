@@ -36,6 +36,7 @@ class Auth:
             raise ValueError("Muitas tentativas; aguarde cinco minutos")
         attempts.append(now)
         import json
+
         fingerprint = self.fingerprint()
         credential = json.loads(self.path.read_text())["hash"] if fingerprint else self.dummy_hash
         try:
@@ -54,7 +55,11 @@ class Auth:
 
     def session(self, token):
         session = self.sessions.get(token or "")
-        if session and session["expires"] > time.monotonic() and session["credential"] == self.fingerprint():
+        if (
+            session
+            and session["expires"] > time.monotonic()
+            and session["credential"] == self.fingerprint()
+        ):
             return session
         self.sessions.pop(token or "", None)
         return None
