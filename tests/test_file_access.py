@@ -36,6 +36,15 @@ def test_only_editable_paths_are_shared_and_new_files_are_seen(tmp_path):
         assert str(tmp_path / "config/admin.json") not in names
         assert str(tmp_path / "config/file-access.json") not in names
         assert str(tmp_path / "cloud/token") not in names
+        for call in run.call_args_list:
+            command = call.args[0]
+            acl = command[command.index("-m") + 1]
+            if str(tmp_path / "mods/BepInEx/config/plugin.cfg") in command:
+                assert "u:12345:rw-" in acl
+                assert "X" not in acl
+            if str(tmp_path / "mods/BepInEx/config") in command:
+                assert "u:12345:rwx" in acl
+                assert "d:u:12345:rwx" in acl
         run.reset_mock()
         access.sync()
         run.assert_not_called()

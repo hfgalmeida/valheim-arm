@@ -68,7 +68,10 @@ class FileAccess:
                     continue
                 groups.setdefault((editable, path.is_dir()), []).append(path)
             for (editable, directory), paths in groups.items():
-                permission = "rwX" if editable else "r-x"
+                # Inherited ACL entries may contain masked execute bits even
+                # after chmod(0600). Conditional X can reactivate those bits
+                # when setfacl recalculates the mask, so choose by file type.
+                permission = ("rwx" if directory else "rw-") if editable else "r-x"
                 acl = f"u:{uid}:{permission},u:10001:{permission}"
                 if editable and directory:
                     acl += f",d:u:{uid}:rwx,d:u:10001:rwx"
