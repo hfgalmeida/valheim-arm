@@ -17,7 +17,7 @@ Execute os comandos do servidor na pasta da instalação: `cd ~/valheim-arm`. Aj
 <a id="configuracao"></a>
 ## Configuração
 
-Prefira a aba **Configuração** do painel. Ajustes do painel prevalecem sobre o `.env`; **Usar Compose** remove essa substituição. Alterações do jogo são aplicadas na próxima inicialização; horários são lidos pelo agendador. Trocar o nome do mundo seleciona ou cria outro save, preservando o anterior.
+Use **Configurações do jogo** para mundo, acesso e regras; **Configurações do servidor** para salvamento, rotina automática e alertas; e **Mods** para BepInEx e plugins. Cada aba salva seus próprios ajustes. Ajustes do painel prevalecem sobre o `.env`; **Usar Compose** remove essa substituição. Alterações do jogo são aplicadas na próxima inicialização; horários são lidos pelo agendador. Trocar o nome do mundo seleciona ou cria outro save, preservando o anterior.
 
 Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose up -d`. Isso pode recriar os contêineres; faça um backup e solicite a parada pelo painel antes. `VALHEIM_IMAGE`, `SERVER_IP` e opções `FEX_*` são configurados somente pelo `.env`.
 
@@ -106,7 +106,7 @@ A publicação do Docker pode passar antes do UFW. Para restringir o painel por 
 <a id="painel"></a>
 ## Painel e certificado
 
-Acesse **https://SEU_IP**. As abas são **Visão geral**, **Configuração**, **Jogadores**, **Backups** e **Atividade**. Ações manuais solicitam a parada imediatamente, mesmo com jogadores conectados, e aguardam o jogo salvar e encerrar.
+Acesse **https://SEU_IP**. As abas são **Visão geral**, **Configurações do jogo**, **Configurações do servidor**, **Mods**, **Jogadores**, **Backups** e **Atividade**. Ações manuais solicitam a parada imediatamente, mesmo com jogadores conectados, e aguardam o jogo salvar e encerrar.
 
 Para redefinir a senha administrativa:
 
@@ -229,7 +229,7 @@ O arquivo de conexão contém credenciais: guarde-o em privado. Se a autorizaç�
 <a id="mods"></a>
 ## Mods BepInEx
 
-Na aba **Configuração**, defina `BEPINEX=true`, `BEPINEX_URL` e `BEPINEX_SHA256` de um **BepInExPack_Valheim Linux** confiável, contendo `libdoorstop.so` e `BepInEx/core`. Para calcular o hash do pacote baixado:
+Na aba **Mods**, defina `BEPINEX=true`, `BEPINEX_URL` e `BEPINEX_SHA256` de um **BepInExPack_Valheim Linux** confiável, contendo `libdoorstop.so` e `BepInEx/core`. Para calcular o hash do pacote baixado:
 
 ```sh
 sha256sum BepInExPack_Valheim.zip
@@ -237,11 +237,11 @@ sha256sum BepInExPack_Valheim.zip
 
 No PowerShell: `Get-FileHash .\BepInExPack_Valheim.zip -Algorithm SHA256`.
 
-Na aba **Configuração → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; mantenha o pacote configurado acima.
+Na aba **Mods → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; mantenha o pacote configurado acima.
 
 Para atualizar uma DLL, use o mesmo nome e confirme a substituição. A versão anterior fica preservada; **Restaurar anterior** permite voltar pelo painel, também com o jogo parado. A lista informa arquivos instalados, não comprova que o plugin carregou ou é compatível. Confira os logs depois de iniciar.
 
-Configurações ficam em `data/mods/BepInEx/config`. Para editá-las, use **Configuração → Arquivos dos plugins**: atualize a lista, selecione o arquivo, altere o texto e clique em **Salvar arquivo** com o jogo parado. Inicie novamente para aplicar. Os arquivos aparecem depois que o plugin os gerar, normalmente na primeira inicialização.
+Configurações ficam em `data/mods/BepInEx/config`. Para editá-las, use **Mods → Arquivos dos plugins**: atualize a lista, selecione o arquivo, altere o texto e clique em **Salvar arquivo** com o jogo parado. Inicie novamente para aplicar. Os arquivos aparecem depois que o plugin os gerar, normalmente na primeira inicialização.
 
 O editor aceita arquivos existentes `.cfg`, `.ini`, `.json`, `.yaml`, `.yml`, `.toml`, `.txt` e `.xml`, em UTF-8, de até 32 KiB, inclusive em subpastas. Antes de salvar, mantém uma cópia anterior; **Carregar versão anterior** a coloca no editor para você conferir e salvar. Se outro processo já alterou o arquivo, atualize antes de tentar novamente. A sintaxe e as opções continuam sendo específicas do plugin. O envio aceita DLLs individuais. Pacotes ZIP, dependências nativas, arquivos auxiliares e configurações fora da pasta padrão ainda exigem instalação pelo SSH.
 
@@ -334,3 +334,13 @@ sudo df -h ./data
 | Restauração falha | Jogo parado, espaço livre e integridade do backup/checksum |
 
 Não publique `.env`, credenciais ou backups em pedidos de suporte. Para investigar builds, rollback do jogo e falhas de encerramento, consulte o [guia do mantenedor](MAINTAINER.md).
+
+## Alertas no Discord
+
+Na aba **Configurações do servidor**, em **Alertas no Discord**, cole a URL de um webhook criado nas configurações do canal do Discord, em **Integrações → Webhooks**. Ative as notificações, salve e clique em **Enviar teste**. Deixar a URL vazia mantém a credencial salva; desativar interrompe os envios.
+
+Os avisos cobrem falha na criação de backups, falha de envio à nuvem, suspensão da recuperação automática e menos de 6 GiB livres no disco de dados. A normalização também é notificada; para disco, exige ao menos 7 GiB livres para evitar oscilações. O monitor verifica a cada 30 segundos, sem depender de o painel estar aberto.
+
+Cada categoria avisa uma vez ao entrar em falha e uma vez ao normalizar, com intervalo mínimo de cinco minutos. Entregas malsucedidas são tentadas novamente após cinco minutos. O estado é preservado em `data/config/alert-state.json`; o webhook fica protegido em `data/config/alerts.json`, fora dos saves, backups e arquivos compartilhados. Mensagens não contêm senhas, tokens ou logs. A situação dos alertas e erros de entrega aparecem no painel. Uma interrupção da instância ou da rede pode impedir qualquer envio; este recurso não substitui monitoramento externo.
+
+Detalhes do protocolo: [webhooks do Discord](https://docs.discord.com/developers/resources/webhook#execute-webhook).

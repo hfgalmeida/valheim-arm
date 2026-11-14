@@ -21,10 +21,14 @@ def save_fixture(tmp_path):
 
 def test_roundtrip_and_admin_excluded(tmp_path, config):
     saves = save_fixture(tmp_path)
+    (tmp_path / "config/alerts.json").write_text('{"url":"private-webhook"}')
+    (tmp_path / "config/alert-state.json").write_text("{}")
     backups = Backups(tmp_path)
     name = backups.create("manual", config.effective(), "123")
     manifest, _ = backups.validate(backups.resolve(name))
     assert "config/admin.json" not in manifest["files"]
+    assert "config/alerts.json" not in manifest["files"]
+    assert "config/alert-state.json" not in manifest["files"]
     (saves / "Dedicated.db").write_bytes(b"changed")
     (saves / "unexpected.db").write_bytes(b"remove-on-restore")
     backups.restore(name)

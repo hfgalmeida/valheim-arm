@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .alerts import Alerts
 from .backups import Backups, digest
 from .cloud import Cloud
 from .file_access import FileAccess
@@ -252,6 +253,8 @@ class Runtime:
         self.config = config or ConfigStore(data)
         self.backups = Backups(data)
         self.cloud = Cloud(data, self.backups)
+        self.alerts = Alerts(data)
+        self.alert_task = None
         self.cloud_task = None
         self.file_access = FileAccess(data)
         self.access_task = None
@@ -267,6 +270,7 @@ class Runtime:
         self.startup_failures = 0
         self.ready_since = None
         self.recovery_error = None
+        self.last_failure = None
         self.schedule_started = datetime.now(ZoneInfo(self.config.effective().timezone))
         self.state = "parado"
         self.logs = deque(maxlen=500)
@@ -331,11 +335,55 @@ class Runtime:
         self.logs.append({"time": time.time(), "message": message[:4000]})
         log.info("%s", message[:4000])
 
+    def record_failure(self, source, message):
+        for password in {
+            self.config.effective().server_password,
+            self.running.server_password if self.running else "",
+        }:
+            if password:
+                message = message.replace(password, "[senha]")
+        self.last_failure = {"time": time.time(), "source": source, "message": message[:1000]}
+
+    def diagnostics(self):
+        retry = None
+        if self.closing:
+            phase, detail = "stopping", "Supervisor encerrando."
+        elif self.state == "parando":
+            phase, detail = "stopping", "Aguardando salvamento e saída do jogo."
+        elif self.live:
+            if self.game_ready:
+                phase, detail = "ready", "Mundo carregado e conexão do servidor inicializada."
+            elif not self.world_loaded:
+                phase, detail = "starting", "Aguardando o carregamento do mundo."
+            else:
+                phase, detail = "starting", "Mundo carregado; aguardando a conexão do servidor."
+        elif self.active and self.active["action"] in ("start", "restart", "update", "restore"):
+            phase, detail = "starting", "Preparando o jogo: " + self.state + "."
+        elif self.recovery_error:
+            phase, detail = "failed", self.recovery_error
+        elif self.want_running and self.next_recovery > 0:
+            phase, detail = "recovering", "Nova tentativa automática de inicialização agendada."
+            retry = max(0, int(self.next_recovery - time.monotonic()))
+        elif self.state == "falha":
+            phase, detail = (
+                "failed",
+                "O jogo encontrou uma falha; consulte a última falha e os logs.",
+            )
+        else:
+            phase, detail = "stopped", "Jogo parado."
+        return {
+            "phase": phase,
+            "detail": detail,
+            "retry_in_seconds": retry,
+            "last_failure": self.last_failure,
+        }
+
     def status(self):
         crossplay = (
             self.running if self.live and self.running else self.config.effective()
         ).crossplay
         return {
+            "diagnostics": self.diagnostics(),
             "state": self.state,
             "running": self.live,
             "players": (
@@ -349,6 +397,7 @@ class Runtime:
             "maintenance_persistence_error": self.persistence_error,
             "automatic_recovery": self.want_running and not self.closing,
             "recovery_error": self.recovery_error,
+            "alerts": self.alerts.describe(),
             "cloud": self.cloud.describe(),
             "jobs": list(self.jobs),
             "logs": list(self.logs),
@@ -435,6 +484,7 @@ class Runtime:
         await asyncio.to_thread(preflight, self.data)
         self.worker_task = asyncio.create_task(self.worker())
         self.scheduler_task = asyncio.create_task(self.scheduler())
+        self.alert_task = asyncio.create_task(self.alerts.run(self))
         self.cloud_task = asyncio.create_task(self.cloud.run())
         self.access_task = asyncio.create_task(self.file_access.run())
         self.submit("start")
@@ -658,6 +708,7 @@ class Runtime:
             self.emit(f"Processo do jogo encerrado: {code}")
             expected = self.stop_request is not None and self.stop_request[0] is process
             if not expected and self.want_running and not self.closing:
+                self.record_failure("game", f"Processo do jogo encerrado inesperadamente: {code}")
                 if (
                     self.ready_since is not None
                     and time.monotonic() - self.ready_since >= STABLE_SESSION_SECONDS
@@ -757,6 +808,12 @@ class Runtime:
         self.clean_marker.unlink(missing_ok=True)
         self.emit("Jogo encerrado com salvamento confirmado")
 
+    def alert_condition(self, key, active):
+        try:
+            self.alerts.condition(key, active)
+        except Exception:
+            self.alerts.error = "Falha ao registrar estado de alerta no disco."
+
     async def snapshot(self, reason):
         if self.live:
             raise RuntimeError("Backup consistente exige servidor parado")
@@ -764,12 +821,17 @@ class Runtime:
             raise RuntimeError(
                 "Backup cancelado: último encerramento não foi confirmado como limpo"
             )
-        name = await asyncio.to_thread(
-            self.backups.create,
-            reason,
-            self.running or self.config.effective(),
-            self.installed_build(),
-        )
+        try:
+            name = await asyncio.to_thread(
+                self.backups.create,
+                reason,
+                self.running or self.config.effective(),
+                self.installed_build(),
+            )
+        except Exception:
+            self.alert_condition("backup", True)
+            raise
+        self.alert_condition("backup", False)
         self.cloud.wake.set()
         settings = self.config.effective()
         if reason != "pre-restore":
@@ -893,6 +955,10 @@ class Runtime:
                     and job.get("scheduled")
                     and job["action"] in ("restart", "backup", "update")
                 )
+                if not deferred and job["action"] == "backup":
+                    self.alert_condition("backup", True)
+                if not deferred:
+                    self.record_failure(job["action"], str(exc))
                 self.emit(
                     ("Operação adiada" if deferred else "Operação falhou")
                     + " ("
@@ -1013,6 +1079,9 @@ class Runtime:
         self.emit(
             "Desligamento do contêiner solicitado; suspendendo tarefas e preparando parada do jogo"
         )
+        if self.alert_task:
+            self.alert_task.cancel()
+            await asyncio.gather(self.alert_task, return_exceptions=True)
         if self.access_task:
             self.access_task.cancel()
             await asyncio.gather(self.access_task, return_exceptions=True)

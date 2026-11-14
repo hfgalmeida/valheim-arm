@@ -214,3 +214,33 @@ def test_plugin_upload_auth_state_replacement_and_limits(runtime, monkeypatch):
     client.cookies.clear()
     assert client.get("/api/v1/plugins").status_code == 401
     assert client.post(url, content=dll(), headers=headers).status_code == 401
+
+
+def test_alerts_require_auth_csrf_and_hide_webhook(runtime, monkeypatch):
+    from unittest.mock import patch
+
+    client = client_fixture(runtime, monkeypatch)
+    url = "https://discord.com/api/webhooks/123/" + "a" * 40
+    body = {"enabled": True, "url": url}
+    assert (
+        client.put("/api/v1/alerts", json=body, headers={"X-CSRF-Token": "bad"}).status_code == 403
+    )
+    assert client.put("/api/v1/alerts", json=body).status_code == 200
+    for path in ("/api/v1/alerts", "/api/v1/state"):
+        assert url not in client.get(path).text
+    with patch.object(runtime.alerts, "post") as send:
+        assert (
+            client.post("/api/v1/alerts/test", json={}, headers={"X-CSRF-Token": "bad"}).status_code
+            == 403
+        )
+        assert client.post("/api/v1/alerts/test", json={}).status_code == 200
+        assert send.call_count == 1
+    assert (
+        client.put(
+            "/api/v1/alerts", json={"enabled": True, "url": "https://localhost/"}
+        ).status_code
+        == 422
+    )
+    client.cookies.clear()
+    assert client.get("/api/v1/alerts").status_code == 401
+    assert client.post("/api/v1/alerts/test", json={}).status_code == 401

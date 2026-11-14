@@ -55,6 +55,12 @@ class UserList(BaseModel):
     entries: list[str] = Field(max_length=1000)
 
 
+class AlertChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    url: str = Field(default="", max_length=512)
+
+
 class CloudChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
@@ -282,6 +288,24 @@ def create_app(data=None, runtime=None, lifecycle=True):
             return mod_configs.save(body.path, body.content, body.revision)
         except (OSError, ValueError) as exc:
             config_error(exc)
+
+    @app.get("/api/v1/alerts", dependencies=[Depends(session)])
+    async def alert_config():
+        return rt.alerts.describe()
+
+    @app.put("/api/v1/alerts", dependencies=[Depends(session)])
+    async def alert_configure(body: AlertChange):
+        try:
+            return rt.alerts.configure(body.enabled, body.url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+
+    @app.post("/api/v1/alerts/test", dependencies=[Depends(session)])
+    async def alert_test():
+        try:
+            return await rt.alerts.test()
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     @app.get("/api/v1/cloud", dependencies=[Depends(session)])
     async def cloud_config():

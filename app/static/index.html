@@ -39,6 +39,11 @@
             <span class="eyebrow">SEU MUNDO, SEMPRE À VISTA</span>
             <h2 id="server-name">Valheim ARM</h2>
             <p id="status">Conectando…</p>
+            <div class="diagnostics" aria-live="polite">
+              <p id="panel-health">Painel: conectando…</p>
+              <p id="game-detail"></p>
+              <p id="last-failure" hidden></p>
+            </div>
             <p id="versions"></p>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
@@ -67,7 +72,27 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Configuração
+            Configurações do jogo
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-server"
+            aria-controls="panel-server"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Configurações do servidor
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-mods"
+            aria-controls="panel-mods"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Mods
           </button>
           <button
             type="button"
@@ -154,7 +179,7 @@
         <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" tabindex="0" hidden>
           <section class="card">
             <div class="section-title">
-              <h2>Configuração</h2>
+              <h2>Configurações do jogo</h2>
               <span id="pending"></span>
             </div>
             <p class="muted">
@@ -169,6 +194,63 @@
               Trocar o nome do mundo seleciona ou cria outro save. Desmarcar uma chave deixa de
               enviá-la ao jogo; isso não remove uma chave já gravada no mundo.
             </p>
+          </section>
+        </div>
+        <div role="tabpanel" id="panel-server" aria-labelledby="tab-server" tabindex="0" hidden>
+          <section class="card">
+            <h2>Configurações do servidor</h2>
+            <p class="muted">
+              Configure salvamento, backups e manutenção automática. Os horários usam o fuso
+              selecionado.
+            </p>
+            <form id="server-config-form">
+              <div id="server-settings" class="settings"></div>
+              <button class="primary">Salvar configurações do servidor</button>
+            </form>
+          </section>
+          <section class="card">
+            <h2>Alertas no Discord</h2>
+            <p class="muted">
+              Receba avisos de falha de backup, envio à nuvem, recuperação suspensa e pouco espaço
+              em disco. No Discord, crie um webhook em Configurações do canal → Integrações →
+              Webhooks e cole a URL abaixo.
+            </p>
+            <form id="alerts-form">
+              <label
+                >Notificações<select id="alerts-enabled">
+                  <option value="false">Desativadas</option>
+                  <option value="true">Ativadas</option>
+                </select></label
+              >
+              <label
+                >URL do webhook<input
+                  id="alerts-url"
+                  type="password"
+                  autocomplete="off"
+                  maxlength="512"
+                  placeholder="Deixe vazio para manter o webhook salvo"
+              /></label>
+              <button class="primary">Salvar alertas</button>
+              <button type="button" id="alerts-test">Enviar teste</button>
+            </form>
+            <p id="alerts-status" role="status" aria-live="polite"></p>
+            <p class="muted">
+              Salve antes de testar. A URL é uma credencial e nunca é exibida novamente. Alertas e
+              recuperações têm intervalo mínimo de cinco minutos por categoria.
+            </p>
+          </section>
+        </div>
+        <div role="tabpanel" id="panel-mods" aria-labelledby="tab-mods" tabindex="0" hidden>
+          <section class="card">
+            <h2>BepInEx</h2>
+            <p class="muted">
+              Configure o pacote BepInEx. As alterações serão aplicadas na próxima inicialização do
+              jogo.
+            </p>
+            <form id="mods-config-form">
+              <div id="mods-settings" class="settings"></div>
+              <button class="primary">Salvar configurações de mods</button>
+            </form>
           </section>
           <section class="card">
             <div class="section-title">

@@ -1145,3 +1145,37 @@ def test_automatic_maintenance_keeps_waiting_for_connected_players(runtime, acti
         assert runtime.live
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "world,transport,ready,phase",
+    [
+        (False, False, False, "starting"),
+        (True, False, False, "starting"),
+        (True, True, True, "ready"),
+    ],
+)
+def test_diagnostics_requires_world_and_connection(runtime, world, transport, ready, phase):
+    runtime.process = SimpleNamespace(returncode=None)
+    runtime.world_loaded, runtime.transport_ready, runtime.game_ready = world, transport, ready
+    assert runtime.diagnostics()["phase"] == phase
+
+
+def test_diagnostics_recovery_and_manual_stop(runtime):
+    runtime.next_recovery = time.monotonic() + 30
+    assert runtime.diagnostics()["phase"] == "recovering"
+    assert 28 <= runtime.diagnostics()["retry_in_seconds"] <= 30
+    runtime.want_running = False
+    assert runtime.diagnostics()["phase"] == "stopped"
+    runtime.recovery_error = "Recuperação suspensa"
+    assert runtime.diagnostics()["phase"] == "failed"
+
+
+def test_diagnostics_keeps_redacted_failure_after_recovery(runtime):
+    runtime.record_failure("start", "Falha game-password")
+    runtime.process = SimpleNamespace(returncode=None)
+    runtime.game_ready = True
+    result = runtime.diagnostics()
+    assert result["phase"] == "ready"
+    assert result["last_failure"]["message"] == "Falha [senha]"
+    assert result["last_failure"]["time"] > 0

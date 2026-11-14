@@ -121,7 +121,29 @@ async function loadCloud() {
   $("cloud-file").value = "";
   cloudStatus(c);
 }
+function alertStatus(a) {
+  const names = {
+    backup: "backup",
+    cloud: "envio à nuvem",
+    game: "recuperação do jogo",
+    disk: "espaço em disco",
+  };
+  $("alerts-status").textContent =
+    (a.enabled ? "Notificações ativadas." : "Notificações desativadas.") +
+    (a.configured ? " Webhook salvo." : " Webhook não configurado.") +
+    (a.active.length
+      ? " Atenção: " + a.active.map((key) => names[key] || key).join(", ") + "."
+      : " Nenhum problema ativo.") +
+    (a.error ? " " + a.error : "");
+}
+async function loadAlerts() {
+  const a = await api("/alerts");
+  $("alerts-enabled").value = String(a.enabled);
+  $("alerts-url").value = "";
+  alertStatus(a);
+}
 function update(s) {
+  if (s.alerts) alertStatus(s.alerts);
   if (s.cloud) cloudStatus(s.cloud);
   $("crossplay-info").hidden = !s.crossplay;
   $("join-code").textContent =
@@ -129,6 +151,36 @@ function update(s) {
     (s.running ? "Aguardando código do servidor…" : "Disponível ao iniciar o servidor");
   $("status").textContent =
     "Estado: " + s.state + (s.recovery_error ? " — " + s.recovery_error : "");
+  $("panel-health").textContent = "Painel: conectado ao supervisor";
+  const diagnostic = s.diagnostics;
+  const phases = {
+    ready: "Pronto para conexão",
+    starting: "Iniciando",
+    stopping: "Parando",
+    stopped: "Parado",
+    recovering: "Em recuperação",
+    failed: "Falha",
+  };
+  if (diagnostic) {
+    $("status").textContent = "Jogo: " + (phases[diagnostic.phase] || s.state);
+    $("game-detail").textContent =
+      diagnostic.detail +
+      (diagnostic.retry_in_seconds === null
+        ? ""
+        : " Nova tentativa em " + diagnostic.retry_in_seconds + " s.");
+    const failure = diagnostic.last_failure;
+    $("last-failure").hidden = !failure;
+    $("last-failure").textContent = failure
+      ? "Última falha (" +
+        failure.source +
+        ") · " +
+        new Date(failure.time * 1000).toLocaleString("pt-BR", {
+          timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+        }) +
+        ": " +
+        failure.message
+      : "";
+  }
   $("players").textContent = s.players.count === null ? "?" : s.players.count;
   $("player-reason").textContent = s.players.reason;
   $("versions").textContent =
@@ -213,11 +265,38 @@ function update(s) {
     m.disk_total,
   );
 }
-async function loadConfig() {
+function configGroup(key) {
+  if (key.startsWith("bepinex")) return "mods";
+  if (
+    [
+      "server_port",
+      "save_interval",
+      "native_backups",
+      "timezone",
+      "restart_at",
+      "backup_at",
+      "auto_update",
+      "retain_daily",
+      "retain_weekly",
+    ].includes(key)
+  )
+    return "server";
+  return "game";
+}
+const settingsContainers = { game: "settings", server: "server-settings", mods: "mods-settings" };
+async function loadConfig(savedGroup = null) {
+  const drafts = {};
+  if (savedGroup && currentConfig) {
+    for (const key of Object.keys(currentConfig.values)) {
+      const input = $("setting-" + key);
+      if (configGroup(key) !== savedGroup && input) drafts[key] = input.value;
+    }
+  }
   currentConfig = await api("/config");
-  $("settings").replaceChildren();
+  Object.values(settingsContainers).forEach((id) => $(id).replaceChildren());
   $("server-name").textContent = currentConfig.values.server_name;
   for (const [key, value] of Object.entries(currentConfig.values)) {
+    const container = $(settingsContainers[configGroup(key)]);
     const heading = {
       server_name: "Mundo e acesso",
       preset: "Regras de jogo",
@@ -229,7 +308,7 @@ async function loadConfig() {
       const title = document.createElement("h3");
       title.className = "settings-heading";
       title.textContent = heading;
-      $("settings").append(title);
+      container.append(title);
     }
     const row = document.createElement("div");
     row.className = "setting";
@@ -278,12 +357,13 @@ async function loadConfig() {
           if (world && !confirm("Voltar ao mundo do Compose? O save atual será preservado."))
             return;
           await api("/config", "PATCH", { reset: [key], confirm_world: world });
-          await loadConfig();
+          await loadConfig(configGroup(key));
           notice("Ajuste removido. Reinicie com segurança para aplicar ao jogo.");
         });
       row.append(b);
     }
-    $("settings").append(row);
+    container.append(row);
+    if (key in drafts) input.value = drafts[key];
   }
 }
 function draftPlayers() {
@@ -395,6 +475,7 @@ async function signedIn() {
     loadUsers(),
     loadBackups(),
     loadCloud(),
+    loadAlerts().catch((error) => notice("Não foi possível carregar os alertas: " + error.message)),
     loadModConfigs().catch((error) =>
       notice("Não foi possível carregar as configurações dos plugins: " + error.message),
     ),
@@ -408,7 +489,11 @@ async function signedIn() {
   if (events) events.close();
   events = new EventSource("/api/v1/events");
   events.onmessage = (e) => update(JSON.parse(e.data));
-  events.onerror = () => notice("Conexão interrompida; tentando reconectar ao supervisor…");
+  events.onerror = () => {
+    $("panel-health").textContent = "Painel: conexão interrompida; reconectando…";
+    $("status").textContent = "Jogo: estado sem atualização";
+    notice("Conexão interrompida; tentando reconectar ao supervisor…");
+  };
 }
 async function guard(fn) {
   try {
@@ -447,35 +532,43 @@ $("actions").onclick = (e) => {
     notice("Operação enviada. Acompanhe o resultado na aba Atividade.");
   });
 };
-$("config-form").onsubmit = (e) => {
-  e.preventDefault();
-  guard(async () => {
-    const changes = {};
-    for (const [key, old] of Object.entries(currentConfig.values)) {
-      if (key === "server_port") continue;
-      const value = $("setting-" + key).value;
-      if (key === "server_password" && !value) continue;
-      const parsed =
-        typeof old === "boolean"
-          ? value === "true"
-          : typeof old === "number"
-            ? Number(value)
-            : value;
-      if (parsed !== old) changes[key] = parsed;
-    }
-    const world = "world_name" in changes;
-    if (
-      world &&
-      !confirm(
-        "Selecionar/criar o mundo “" + changes.world_name + "”? O mundo anterior será preservado.",
+for (const [formId, group] of [
+  ["config-form", "game"],
+  ["server-config-form", "server"],
+  ["mods-config-form", "mods"],
+]) {
+  $(formId).onsubmit = (e) => {
+    e.preventDefault();
+    guard(async () => {
+      const changes = {};
+      for (const [key, old] of Object.entries(currentConfig.values)) {
+        if (key === "server_port" || configGroup(key) !== group) continue;
+        const value = $("setting-" + key).value;
+        if (key === "server_password" && !value) continue;
+        const parsed =
+          typeof old === "boolean"
+            ? value === "true"
+            : typeof old === "number"
+              ? Number(value)
+              : value;
+        if (parsed !== old) changes[key] = parsed;
+      }
+      const world = "world_name" in changes;
+      if (
+        world &&
+        !confirm(
+          "Selecionar/criar o mundo “" +
+            changes.world_name +
+            "”? O mundo anterior será preservado.",
+        )
       )
-    )
-      return;
-    await api("/config", "PATCH", { changes, confirm_world: world });
-    await loadConfig();
-    notice("Configuração salva. Alterações do jogo serão aplicadas na próxima inicialização.");
-  });
-};
+        return;
+      await api("/config", "PATCH", { changes, confirm_world: world });
+      await loadConfig(group);
+      notice("Configuração salva. Alterações do jogo serão aplicadas na próxima inicialização.");
+    });
+  };
+}
 $("user-kind").onchange = () => guard(loadUsers);
 $("users-form").onsubmit = (e) => {
   e.preventDefault();
@@ -748,3 +841,21 @@ $("plugin-upload-form").onsubmit = (event) => {
     }
   });
 };
+
+$("alerts-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(async () => {
+    const a = await api("/alerts", "PUT", {
+      enabled: $("alerts-enabled").value === "true",
+      url: $("alerts-url").value,
+    });
+    $("alerts-url").value = "";
+    alertStatus(a);
+    notice("Alertas salvos.");
+  });
+};
+$("alerts-test").onclick = () =>
+  guard(async () => {
+    await api("/alerts/test", "POST", {});
+    notice("Notificação de teste entregue ao Discord.");
+  });

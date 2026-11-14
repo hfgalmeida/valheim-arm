@@ -94,6 +94,12 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                 value = runtime.config.describe()
             elif endpoint == "/state":
                 value = state
+            elif endpoint == "/alerts":
+                if method == "PUT":
+                    runtime.alerts.configure(payload["enabled"], payload.get("url", ""))
+                value = runtime.alerts.describe()
+            elif endpoint == "/alerts/test":
+                value = {"sent": True}
             elif endpoint == "/cloud":
                 if method == "PUT":
                     runtime.cloud.configure(
@@ -177,7 +183,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert (
             page.get_by_role("heading", name="Rotina automática", include_hidden=True).count() == 1
         )
-        assert page.get_by_role("tab").count() == 5
+        assert page.get_by_role("tab").count() == 7
         assert page.get_by_role("tabpanel").count() == 1
         assert (
             page.get_by_role("tab", name="Visão geral", exact=True).get_attribute("aria-selected")
@@ -197,9 +203,15 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.keyboard.press("ArrowRight")
         assert page.locator("#config-form").is_visible()
         assert (
-            page.get_by_role("tab", name="Configuração", exact=True).get_attribute("tabindex")
+            page.get_by_role("tab", name="Configurações do jogo", exact=True).get_attribute(
+                "tabindex"
+            )
             == "0"
         )
+        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        assert page.locator("#setting-server_name").is_hidden()
+        page.locator("#setting-restart_at").fill("04:00")
+        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
         page.locator("#setting-server_name").fill("Mundo de teste")
         page.locator("#setting-modifier_resources").select_option("more")
         page.get_by_role("button", name="Salvar configuração", exact=True).click()
@@ -210,6 +222,15 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             "server_name": "Mundo de teste",
             "modifier_resources": "more",
         }
+        assert runtime.config.effective().restart_at == "off"
+        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        assert page.locator("#setting-restart_at").input_value() == "04:00"
+        page.get_by_role("button", name="Salvar configurações do servidor", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#setting-restart_at').value === '04:00' && document.querySelector('#setting-restart_at').closest('.setting').textContent.includes('painel')"
+        )
+        assert runtime.config.effective().restart_at == "04:00"
+        page.get_by_role("tab", name="Mods", exact=True).click()
         page.locator("#plugin-file").set_input_files(
             {"name": "test.dll", "mimeType": "application/octet-stream", "buffer": dll()}
         )
@@ -344,7 +365,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         page.get_by_role("tab", name="Jogadores", exact=True).click()
         page.screenshot(path=str(artifact.with_name("panel-players-mobile.png")), full_page=True)
-        page.get_by_role("tab", name="Configuração", exact=True).click()
+        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
         page.screenshot(path=str(artifact.with_name("panel-mobile.png")), full_page=True)
         page.route(
             "https://panel.test/api/v1/plugins",
@@ -356,6 +377,18 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert page.locator("#dashboard").is_visible()
         assert (
             "Não foi possível carregar a lista de plugins" in page.locator("#notice").inner_text()
+        )
+        assert not errors
+        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
+        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.locator("#alerts-enabled").select_option("true")
+        page.locator("#alerts-url").fill("https://discord.com/api/webhooks/123/" + "a" * 40)
+        page.get_by_role("button", name="Salvar alertas", exact=True).click()
+        page.wait_for_function("document.querySelector('#alerts-url').value === ''")
+        assert runtime.alerts.settings["enabled"]
+        page.get_by_role("button", name="Enviar teste", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#notice').textContent.includes('entregue ao Discord')"
         )
         assert not errors
         browser.close()

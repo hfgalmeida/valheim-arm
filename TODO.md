@@ -65,3 +65,18 @@
 - [ ] Disponibilizar consulta dos logs de auditoria ao administrador no painel, com filtros por usuário, período e operação e retenção definida para limitar o uso de disco.
 - [ ] Testar os perfis, o bloqueio de acesso direto à API, a troca obrigatória de senha e a migração do acesso administrativo atual.
 - [ ] Testar a persistência e a atribuição dos logs de auditoria, o registro de falhas, as restrições de acesso ao histórico e a ausência de credenciais nos registros.
+
+### Melhorias de operação e diagnóstico
+
+- [x] Diagnóstico do painel: distinguir conexão com supervisor, jogo iniciando, pronto, parado, parando, em recuperação ou com falha; mostrar prazo da recuperação e última falha da sessão com horário.
+- [ ] Facilitar atualização da imagem Docker (FEX e painel), preservando dados e permitindo retorno à imagem anterior.
+- [ ] Validar na Oracle restauração completa de backups no formato atual de saves.
+- [x] Alertas opcionais no Discord para recuperação suspensa, falha de backup/envio à nuvem e pouco espaço em disco, com teste no painel e aviso de normalização.
+- [ ] Persistir a intenção de parada pelo painel e definir seu comportamento após reiniciar a instância.
+- [ ] Diagnóstico BepInEx: versão, plugins detectados e erros de carregamento.
+- [ ] Histórico de manutenção com início, término, duração e origem (administrador, agendamento ou recuperação).
+- [ ] Concluir validação de desempenho no Ampere A1, plugins BepInEx e contagem de jogadores.
+
+### Melhoria futura: versão mobile do painel
+
+- [ ] Criar uma experiência mobile dedicada, com navegação, métricas, formulários e operações adaptados a telas pequenas; validar acessibilidade e uso por toque.

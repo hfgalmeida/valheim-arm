@@ -43,7 +43,11 @@ class Backups:
                 for path in base.rglob("*"):
                     if path.is_symlink():
                         raise ValueError("Links simbólicos não são aceitos nos dados de backup")
-                    if path.is_file() and path.name != "admin.json":
+                    if path.is_file() and path.name not in {
+                        "admin.json",
+                        "alerts.json",
+                        "alert-state.json",
+                    }:
                         files.append(path)
         size = sum(p.stat().st_size for p in files)
         if shutil.disk_usage(self.root).free < size * 2 + 64 * 1024**2:
