@@ -100,6 +100,31 @@ fetch_if_missing() {
     mv -- "$temporary" "$target"
 }
 
+
+prepare_update_agent() {
+    local stage script failed=0
+    command -v python3 >/dev/null 2>&1 || "${ROOT[@]}" apt-get install -y python3
+    log 'Preparando a atualização da imagem pelo painel…'
+    stage="$(mktemp -d)"
+    for script in host-agent.py update-server.py; do
+        if ! curl --fail --silent --show-error --location --retry 3 \
+            "$SOURCE_URL/$script" -o "$stage/$script"; then
+            failed=1
+            break
+        fi
+    done
+    if (( failed == 0 )); then
+        if ! "${ROOT[@]}" python3 "$stage/host-agent.py" install --directory "$INSTALL_DIR"; then
+            failed=1
+        fi
+    fi
+    rm -f -- "$stage/host-agent.py" "$stage/update-server.py"
+    rmdir -- "$stage"
+    (( failed == 0 )) || die 'Não foi possível preparar o serviço de atualização. Corrija o erro acima e execute o instalador novamente.'
+    # The agent protects Compose sources and .env with root-only permissions.
+    DOCKER=("${ROOT[@]}" docker)
+}
+
 create_config() {
     local detected ip name world password temporary
     detected="$(curl -4 --fail --silent --show-error --connect-timeout 5 --max-time 8 https://api.ipify.org 2>/dev/null || true)"
@@ -177,6 +202,7 @@ main() {
         create_config
     fi
     "${ROOT[@]}" install -d -o 10001 -g 10001 -m 0700 data
+    prepare_update_agent
     "${DOCKER[@]}" compose config --quiet
     log 'Baixando a imagem pública e preparando o acesso aos dados…'
     local configured_image
@@ -197,6 +223,8 @@ main() {
     # Re-running the installer must not replace or restart a running world.
     if [[ -n "$("${DOCKER[@]}" compose ps --status running --quiet valheim)" ]]; then
         log 'O servidor já está em execução. Seus arquivos e o jogo foram preservados.'
+        log 'Se o painel ainda não tiver acesso ao atualizador, aplique a integração quando puder interromper o jogo:'
+        printf 'cd %q && sudo docker compose up -d --no-deps valheim\n' "$INSTALL_DIR"
         return
     fi
     "${DOCKER[@]}" compose run --rm --no-deps valheim preflight

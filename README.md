@@ -77,3 +77,7 @@ sudo python3 update-server.py
 ```
 
 O comando interrompe jogadores, faz backup e verifica a nova imagem. Consulte [atualização da imagem](docs/REFERENCE.md#atualizacao-da-imagem) para retorno à versão anterior.
+
+Ao usar **Parar** no painel, o jogo permanece parado mesmo após reiniciar a instância ou recriar o contêiner. O painel continua acessível; use **Iniciar** para voltar a jogar.
+
+O painel também oferece **Configurações do servidor → Atualizar imagem**, com o serviço local preparado automaticamente pelo instalador. Consulte a [referência](docs/REFERENCE.md#atualizacao-da-imagem).

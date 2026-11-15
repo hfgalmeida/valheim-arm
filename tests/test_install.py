@@ -222,6 +222,7 @@ check_platform() { :; }
 sudo() { if [[ "$1" == -v ]]; then return 0; fi; "$@"; }
 prepare_docker() { ROOT=(); DOCKER=(fake_docker); }
 prepare_firewall() { :; }
+prepare_update_agent() { printf 'agent-prepared\n' >> "$COMMAND_LOG"; }
 install() { mkdir -p "${@: -1}"; }
 curl() {
     if [[ "${@: -1}" == https://api.ipify.org ]]; then printf '203.0.113.20'; return; fi
@@ -259,6 +260,8 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     assert log.read_text().splitlines().count("compose pull valheim") == 1
     assert "compose run --rm --no-deps valheim preflight" in log.read_text()
     assert "compose up -d --no-build" in log.read_text()
+    assert log.read_text().splitlines().count("agent-prepared") == 1
+    assert log.read_text().index("agent-prepared") < log.read_text().index("compose config --quiet")
     log.write_text("")
     result = shell(STUBS, env=env | {"MOCK_RUNNING": "1"})
     assert result.returncode == 0, result.stderr
@@ -268,6 +271,8 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     assert "prepare-access --access-uid 1000" in log.read_text()
     assert "set-password" not in log.read_text()
     assert "compose up" not in log.read_text()
+    assert log.read_text().splitlines().count("agent-prepared") == 1
+    assert "sudo docker compose up -d --no-deps valheim" in result.stdout
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Permissões POSIX reais necessárias")
@@ -296,3 +301,49 @@ def test_install_asks_again_for_invalid_world_and_keeps_custom_name(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert 'WORLD_NAME="Meu Mundo-1_2"' in (target / ".env").read_text()
+
+
+@pytest.mark.parametrize("failure", ["none", "download", "install"])
+def test_agent_preparation_refreshes_scripts_and_cleans_up_without_host_changes(tmp_path, failure):
+    script = r"""
+ROOT=()
+INSTALL_DIR="$TARGET_DIR"
+curl() {
+    local url='' target=''
+    while (( $# )); do
+        if [[ "$1" == -o ]]; then shift; target="$1";
+        elif [[ "$1" == https://* ]]; then url="$1"; fi
+        shift
+    done
+    printf '%s\n' "$url" >> "$COMMAND_LOG"
+    printf fixture > "$target"
+    [[ "$TEST_FAILURE" != download || "$url" != */update-server.py ]]
+}
+python3() {
+    [[ "$2" == install && "$3" == --directory && "$4" == "$INSTALL_DIR" ]] || return 99
+    [[ "$(cat "$1")" == fixture && "$(cat "${1%/*}/update-server.py")" == fixture ]] || return 98
+    printf 'agent-install\n' >> "$COMMAND_LOG"
+    [[ "$TEST_FAILURE" != install ]]
+}
+prepare_update_agent
+"""
+    commands = tmp_path / "commands"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    result = shell(
+        script,
+        env={
+            "TARGET_DIR": str(tmp_path / "server"),
+            "COMMAND_LOG": str(commands),
+            "TMPDIR": str(staging),
+            "TEST_FAILURE": failure,
+        },
+    )
+    assert (result.returncode == 0) == (failure == "none"), result.stderr
+    lines = commands.read_text().splitlines()
+    assert lines[:2] == [
+        "https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/host-agent.py",
+        "https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/update-server.py",
+    ]
+    assert ("agent-install" in lines) == (failure != "download")
+    assert not list(staging.iterdir())

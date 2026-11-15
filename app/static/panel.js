@@ -49,7 +49,11 @@ async function api(path, method = "GET", body) {
   }
   return v;
 }
+let imageUpdateTimer = null;
+let imageUpdateRequesting = false;
 function signedOut() {
+  clearInterval(imageUpdateTimer);
+  imageUpdateTimer = null;
   if (events) events.close();
   events = null;
   csrf = "";
@@ -198,6 +202,13 @@ function modDiagnostics(d) {
   }
 }
 function update(s) {
+  if (s.run_intent) {
+    $("run-intent").textContent =
+      (s.run_intent.running
+        ? "Após reiniciar o contêiner: iniciar o jogo automaticamente."
+        : "Após reiniciar o contêiner: manter o jogo parado.") +
+      (s.run_intent.error ? " " + s.run_intent.error : "");
+  }
   if (s.mods) modDiagnostics(s.mods);
   if (s.alerts) alertStatus(s.alerts);
   if (s.cloud) cloudStatus(s.cloud);
@@ -541,6 +552,7 @@ async function signedIn() {
   $("logout").hidden = false;
   await Promise.all([
     loadConfig(),
+    loadImageUpdateStatus(),
     loadUsers(),
     loadBackups(),
     loadCloud(),
@@ -558,6 +570,8 @@ async function signedIn() {
   if (events) events.close();
   events = new EventSource("/api/v1/events");
   events.onmessage = (e) => update(JSON.parse(e.data));
+  clearInterval(imageUpdateTimer);
+  imageUpdateTimer = setInterval(loadImageUpdateStatus, 3000);
   events.onerror = () => {
     $("panel-health").textContent = "Painel: conexão interrompida; reconectando…";
     $("status").textContent = "Jogo: estado sem atualização";
@@ -587,6 +601,12 @@ $("logout").onclick = () =>
     signedOut();
   });
 const actionConfirmations = {
+  "image-update": {
+    title: "Atualizar a imagem do servidor?",
+    label: "Atualizar imagem",
+    description:
+      "O host baixará e validará a nova imagem, criará um backup e trocará os contêineres. O painel pode desconectar e solicitar novo login. Em caso de falha após a troca, tentará retornar à imagem anterior.",
+  },
   stop: {
     title: "Parar o servidor?",
     label: "Parar servidor",
@@ -985,4 +1005,36 @@ $("alerts-test").onclick = () =>
   guard(async () => {
     await api("/alerts/test", "POST", {});
     notice("Notificação de teste entregue ao Discord.");
+  });
+
+function renderImageUpdate(status) {
+  $("update-image").disabled =
+    imageUpdateRequesting || !status.available || status.state === "running";
+  $("image-update-status").textContent = status.message || "Estado da atualização indisponível.";
+}
+async function loadImageUpdateStatus() {
+  try {
+    renderImageUpdate(await api("/image-update"));
+  } catch (error) {
+    $("update-image").disabled = true;
+    $("image-update-status").textContent =
+      "Painel temporariamente indisponível; reconectando para consultar a atualização. Pode ser necessário entrar novamente.";
+  }
+}
+$("update-image").onclick = () =>
+  guard(async () => {
+    if (imageUpdateRequesting) return;
+    imageUpdateRequesting = true;
+    try {
+      if (!(await confirmServerAction("image-update"))) return;
+      $("update-image").disabled = true;
+      const request_id = crypto.randomUUID().replaceAll("-", "");
+      renderImageUpdate(await api("/image-update", "POST", { confirm: true, request_id }));
+      notice(
+        "Atualização solicitada. Acompanhe em Configurações do servidor; entre novamente se o painel pedir login após a troca.",
+      );
+    } finally {
+      imageUpdateRequesting = false;
+      await loadImageUpdateStatus();
+    }
   });

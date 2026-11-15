@@ -16,6 +16,7 @@ pytestmark = pytest.mark.skipif(
 def test_panel_login_forms_actions_and_mobile(runtime):
     playwright = pytest.importorskip("playwright.sync_api")
     static = Path(__file__).resolve().parents[1] / "app/static"
+    image_update = {"available": True, "state": "idle", "message": "Pronto para atualizar."}
     authenticated = False
     requests = []
     plugin_config = runtime.data / "mods/BepInEx/config/test.cfg"
@@ -42,6 +43,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
     }
     state = runtime.status()
     state.update(
+        run_intent={"running": True, "error": None},
         state="online",
         running=True,
         crossplay=True,
@@ -113,6 +115,11 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                         payload.get("confirm_world", False),
                     )
                 value = runtime.config.describe()
+            elif endpoint == "/image-update":
+                if method == "POST":
+                    assert payload["confirm"] is True and len(payload["request_id"]) == 32
+                    image_update.update(state="running", message="Baixando a imagem Docker.")
+                value = image_update.copy()
             elif endpoint == "/state":
                 value = state
             elif endpoint == "/alerts":
@@ -198,6 +205,10 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.get_by_role("button", name="Entrar", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
         page.evaluate("document.fonts.ready")
+        assert "iniciar o jogo automaticamente" in page.locator("#run-intent").inner_text()
+        page.evaluate("s => update(s)", state | {"run_intent": {"running": False, "error": None}})
+        assert "manter o jogo parado" in page.locator("#run-intent").inner_text()
+        page.evaluate("s => update(s)", state)
         assert "Nova versão pública: 0.15.0" in page.locator("#image-version").inner_text()
         assert "sudo python3 update-server.py" in page.locator("#image-version").inner_text()
         # No disruptive action is submitted before explicit HTML confirmation.
@@ -450,5 +461,26 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.wait_for_function(
             "document.querySelector('#notice').textContent.includes('entregue ao Discord')"
         )
+        assert not errors
+        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.locator("#update-image").click()
+        assert page.get_by_role("dialog").is_visible()
+        page.get_by_role("dialog").get_by_role("button", name="Cancelar", exact=True).click()
+        assert not any(endpoint == "/image-update" for endpoint, _ in requests)
+        page.locator("#update-image").click()
+        page.locator("#action-confirm-submit").click()
+        page.wait_for_function(
+            "document.querySelector('#image-update-status').textContent.includes('Baixando')"
+        )
+        assert page.locator("#update-image").is_disabled()
+        page.reload()
+        page.locator("#password").fill("admin-test-password")
+        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        assert "Baixando" in page.locator("#image-update-status").inner_text()
+        image_update.update(state="succeeded", message="Atualização concluída.")
+        page.evaluate("loadImageUpdateStatus()")
+        assert page.locator("#update-image").is_enabled()
+        assert "concluída" in page.locator("#image-update-status").inner_text()
         assert not errors
         browser.close()

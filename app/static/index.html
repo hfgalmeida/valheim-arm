@@ -45,6 +45,7 @@
               <p id="last-failure" hidden></p>
             </div>
             <p id="versions"></p>
+            <p id="run-intent" aria-live="polite"></p>
             <p id="image-version"></p>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
@@ -198,6 +199,19 @@
           </section>
         </div>
         <div role="tabpanel" id="panel-server" aria-labelledby="tab-server" tabindex="0" hidden>
+          <section class="card">
+            <h2>Atualização da imagem Docker</h2>
+            <p class="muted">
+              Atualiza painel, FEX e proxy com backup e verificação. O painel pode desconectar
+              durante a troca; a preferência de manter o jogo ligado ou parado será preservada.
+            </p>
+            <button type="button" id="update-image" class="primary" disabled>
+              Atualizar imagem
+            </button>
+            <p id="image-update-status" role="status" aria-live="polite">
+              Consultando serviço de atualização…
+            </p>
+          </section>
           <section class="card">
             <h2>Configurações do servidor</h2>
             <p class="muted">

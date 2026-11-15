@@ -1,5 +1,6 @@
 import asyncio
 import json
+import http.client
 import os
 import re
 import secrets
@@ -22,6 +23,12 @@ from .plugins import Plugins, MAX_PLUGIN_SIZE
 
 class Login(BaseModel):
     password: str = Field(min_length=1, max_length=256)
+
+
+class ImageUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: bool = False
+    request_id: str = Field(pattern=r"^[a-f0-9]{32}$")
 
 
 class ConfigChange(BaseModel):
@@ -128,11 +135,23 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 request.headers.get("x-csrf-token", ""), value["csrf"]
             ):
                 raise HTTPException(403, "Origem ou token CSRF inválido")
+            if request.url.path not in ("/api/v1/logout", "/api/v1/image-update"):
+                rt.host_updates.status()
+                if rt.host_updates.busy:
+                    raise HTTPException(
+                        409,
+                        "Atualização da imagem em andamento; aguarde antes de executar outras operações.",
+                    )
         return value
 
     @app.get("/healthz")
     async def health():
-        return {"supervisor": "ok", "game": rt.state}
+        return {
+            "supervisor": "ok",
+            "game": rt.state,
+            "desired_running": rt.run_intent.running,
+            "run_intent_error": bool(rt.run_intent.error),
+        }
 
     @app.post("/api/v1/login")
     async def login(body: Login, request: Request, response: Response):
@@ -193,6 +212,27 @@ def create_app(data=None, runtime=None, lifecycle=True):
             return rt.submit(body.action, body.backup)
         except (ValueError, asyncio.QueueFull) as exc:
             raise HTTPException(409, str(exc) or "Fila cheia")
+
+    @app.get("/api/v1/image-update", dependencies=[Depends(session)])
+    async def image_update_status():
+        return await asyncio.to_thread(rt.host_updates.status)
+
+    @app.post("/api/v1/image-update", status_code=202, dependencies=[Depends(session)])
+    async def request_image_update(body: ImageUpdateRequest):
+        if not body.confirm:
+            raise HTTPException(
+                422, "Confirme a atualização da imagem e a possível desconexão de jogadores."
+            )
+        if rt.active or not rt.queue.empty() or rt.closing:
+            raise HTTPException(
+                409, "Aguarde as operações do jogo terminarem antes de atualizar a imagem."
+            )
+        try:
+            return await asyncio.to_thread(rt.host_updates.start, body.request_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except (OSError, http.client.HTTPException):
+            raise HTTPException(503, "Serviço de atualização indisponível no host.") from None
 
     @app.get("/api/v1/jobs/{job_id}", dependencies=[Depends(session)])
     async def job(job_id: str):

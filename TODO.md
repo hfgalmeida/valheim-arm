@@ -78,7 +78,7 @@
 - [x] Validar na Oracle restauração dos arquivos no formato atual: parada limpa, backup preservado fora da retenção, restauração de 9 arquivos de saves com hashes idênticos, remoção de arquivo adicional e retorno do mundo ao estado online (14/11/2026).
 - [x] Confirmar pelo cliente do jogo a entrada e o estado visual do mundo após a restauração validada em 14/11/2026: administrador conectou e confirmou que o mundo está correto.
 - [x] Alertas opcionais no Discord para recuperação suspensa, falha de backup/envio à nuvem e pouco espaço em disco, com teste no painel e aviso de normalização.
-- [ ] Persistir a intenção de parada pelo painel e definir seu comportamento após reiniciar a instância.
+- [x] Persistir a intenção de Iniciar/Parar pelo painel, preservando-a ao reiniciar contêiner/instância; manter painel disponível com jogo parado e respeitar a preferência durante manutenção e atualização da imagem.
 - [x] Diagnóstico BepInEx por sessão: versão, tentativas de carregamento dos plugins, conclusão do carregador, falhas/dependências e DLLs alteradas aguardando reinício; compatibilidade real continua pendente.
 - [ ] Histórico de manutenção com início, término, duração e origem (administrador, agendamento ou recuperação).
 - [ ] Concluir validação de desempenho no Ampere A1, contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
@@ -94,3 +94,12 @@
 - [x] Compartilhar o limite de cinco falhas e intervalos de recuperação existentes, respeitar parada manual e suspender se a fase do mundo for desconhecida ou tiver avançado. Não persistir tarefas ligadas a um PID nem bloquear a limpeza por falha de persistência.
 - [x] Validar no Linux da Oracle com processo sintético isolado que ignora SIGINT: encerrado com SIGKILL, uma falha contabilizada, saves de teste intactos e nenhum backup criado; servidor real preservado.
 - [ ] Aplicar a nova imagem e validar recuperação de uma ocorrência real do problema no FEX/Valheim. A causa do SIGSEGV não foi identificada nem atribuída ao BepInEx.
+
+### Atualização da imagem pelo painel
+
+- [x] Botão com confirmação HTML, API autenticada/CSRF e acompanhamento persistente do progresso, inclusive após novo login.
+- [x] Agente local com socket Unix, verificação de UID, montagem somente leitura e operação fixa de atualização; sem Docker socket nos contêineres, comandos livres ou novas portas de rede.
+- [x] Reutilizar backup, verificação, preferência de execução e retorno à imagem anterior do atualizador; impedir operações simultâneas e pausar manutenção durante atualização.
+- [x] Testar navegador, API e comunicação Unix em contêiner descartável no Linux, sem instalar serviço permanente nem executar atualização real.
+- [x] Integrar criação/habilitação automática do serviço privilegiado ao instalador; preservar configurações e não reiniciar o mundo ao reexecutar o script.
+- [ ] Validar uma atualização real pelo painel após instalar o agente e publicar a nova imagem.

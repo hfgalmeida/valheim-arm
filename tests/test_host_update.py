@@ -169,3 +169,40 @@ def test_offline_backup_requires_clean_stop_and_exclusive_volume(tmp_path, monke
     assert len(files) == 1
     manifest, _ = backups.validate(backups.resolve(files[0]["name"]))
     assert "saves/world.db" in manifest["files"]
+
+
+def write_stopped_intent(updater):
+    path = updater.root / "data/config/run-intent.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"version": 1, "running": False}))
+
+
+def test_wait_ready_accepts_healthy_panel_with_intentionally_stopped_game(updater):
+    write_stopped_intent(updater)
+    with (
+        patch.object(
+            updater,
+            "compose",
+            return_value=json.dumps(
+                {"supervisor": "ok", "game": "parado", "desired_running": False}
+            ),
+        ) as compose,
+        patch.object(host_update.time, "monotonic", side_effect=[0, 1, 2, 35]),
+    ):
+        host_update.Updater.wait_ready(updater)
+    assert any("proxy" in call.args for call in compose.call_args_list)
+
+
+def test_old_image_rollback_is_refused_before_stopping_when_intent_is_stopped(updater):
+    write_stopped_intent(updater)
+    original = updater.run
+
+    def run(*args, **kwargs):
+        if args[0] == "run" and args[-2] == "-c":
+            raise RuntimeError("old image lacks intent support")
+        return original(*args, **kwargs)
+
+    with patch.object(updater, "run", side_effect=run):
+        with pytest.raises(RuntimeError, match="não suporta"):
+            updater.restore({"previous": "old:image"})
+    assert not any(command[:2] == ("compose", "stop") for command in updater.commands)

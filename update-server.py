@@ -46,8 +46,9 @@ def set_image(path, image):
 
 
 class Updater:
-    def __init__(self, root, timeout=900):
+    def __init__(self, root, timeout=900, progress=None):
         self.root, self.timeout = root, timeout
+        self.progress = progress or (lambda phase: None)
         self.env = os.environ.copy()
         self.env.pop("VALHEIM_IMAGE", None)
         self.state = root / ".image-update.json"
@@ -72,15 +73,67 @@ class Updater:
     def save(self, state):
         atomic_write(self.state, json.dumps(state))
 
+    def desired_running(self):
+        path = self.root / "data/config/run-intent.json"
+        try:
+            value = json.loads(path.read_text())
+        except FileNotFoundError:
+            return True
+        except (OSError, ValueError):
+            raise RuntimeError(
+                "Preferência de execução inválida; corrija pelo painel antes de atualizar."
+            ) from None
+        if (
+            not isinstance(value, dict)
+            or type(value.get("version")) is not int
+            or value.get("version") != 1
+            or type(value.get("running")) is not bool
+        ):
+            raise RuntimeError(
+                "Preferência de execução inválida; corrija pelo painel antes de atualizar."
+            )
+        return value["running"]
+
+    def require_intent_support(self, image):
+        if self.desired_running():
+            return
+        try:
+            self.run(
+                "run",
+                "--rm",
+                "--network",
+                "none",
+                "--entrypoint",
+                "/opt/venv/bin/python",
+                image,
+                "-c",
+                "import importlib.util,sys;sys.exit(0 if importlib.util.find_spec('app.run_intent') else 1)",
+                capture=True,
+            )
+        except RuntimeError:
+            raise RuntimeError(
+                "A imagem escolhida não suporta manter o jogo parado. Troca recusada antes de interromper o contêiner; use uma imagem compatível ou solicite Iniciar antes de retornar a essa versão."
+            ) from None
+
     def wait_ready(self):
         deadline = time.monotonic() + self.timeout
         stable_since = None
         while time.monotonic() < deadline:
+            expected_running = self.desired_running()
             try:
                 status = json.loads(
                     self.compose("exec", "-T", "valheim", "python", "-c", HEALTH_CODE, capture=True)
                 )
-                ready = status.get("supervisor") == "ok" and status.get("game") == "online"
+                ready = (
+                    status.get("supervisor") == "ok"
+                    and not status.get("run_intent_error")
+                    and (
+                        status.get("game") == "online"
+                        if expected_running
+                        else status.get("game") == "parado"
+                        and status.get("desired_running") is False
+                    )
+                )
                 if ready:
                     stable_since = stable_since or time.monotonic()
                     if time.monotonic() - stable_since >= 30:
@@ -102,10 +155,14 @@ class Updater:
             except (RuntimeError, ValueError):
                 stable_since = None
             time.sleep(5)
-        raise RuntimeError("O jogo não ficou pronto e estável dentro do prazo.")
+        raise RuntimeError(
+            "O jogo não ficou pronto e estável no estado solicitado dentro do prazo."
+        )
 
     def restore(self, state):
+        self.progress("rollback")
         self.run("image", "inspect", state["previous"], capture=True)
+        self.require_intent_support(state["previous"])
         self.compose("stop")
         # Keep the newer saves. Never restore an older world automatically.
         set_image(self.root / ".env", state["previous"])
@@ -128,6 +185,7 @@ class Updater:
             raise RuntimeError(
                 "Atualização interrompida. Execute --rollback antes de tentar novamente."
             )
+        self.desired_running()
         container = self.compose("ps", "--quiet", "valheim", capture=True)
         if not container:
             raise RuntimeError("Inicie a instalação existente antes de atualizar.")
@@ -144,11 +202,14 @@ class Updater:
         if shutil.disk_usage(self.root / "data").free < 6 * 1024**3:
             raise RuntimeError("Libere pelo menos 6 GiB no disco de dados antes de atualizar.")
         # Fetch and preflight while the current world is still available.
+        self.progress("downloading")
         self.run("pull", "--platform", "linux/arm64", image)
         target_id = json.loads(self.run("image", "inspect", image, capture=True))[0]["Id"]
         if previous_id == target_id:
             print("A imagem instalada já é a solicitada. Nenhuma interrupção necessária.")
             return
+        self.progress("preflight")
+        self.require_intent_support(target_id)
         self.run(
             "run",
             "--rm",
@@ -196,8 +257,10 @@ class Updater:
         # Save recovery information before the first interruption.
         state = {"previous": previous, "target": target, "source": image, "phase": "prepared"}
         self.save(state)
+        self.progress("stopping")
         self.compose("stop", "valheim")
         try:
+            self.progress("backup")
             # Run the backup with the exact OLD image (also supports existing releases).
             self.run(
                 "run",
@@ -232,8 +295,10 @@ class Updater:
         state["phase"] = "switching"
         self.save(state)
         try:
+            self.progress("switching")
             set_image(self.root / ".env", target)
             self.compose("up", "-d", "--no-build", "--pull", "never")
+            self.progress("verifying")
             self.wait_ready()
         except (Exception, KeyboardInterrupt):
             print("Nova imagem não validada. Tentando retornar à anterior…")
@@ -241,7 +306,7 @@ class Updater:
             raise RuntimeError("Atualização cancelada; imagem anterior restaurada.") from None
         state["phase"] = "completed"
         self.save(state)
-        print("Atualização concluída. Jogo pronto e proxy validado.")
+        print("Atualização concluída. Painel validado; estado desejado do jogo preservado.")
         print("Retorno manual: sudo python3 update-server.py --rollback")
 
 

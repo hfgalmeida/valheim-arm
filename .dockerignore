@@ -13,3 +13,6 @@ tests
 
 .image-update.json
 .image-update.lock
+
+.update-agent/
+compose.update-agent.yaml

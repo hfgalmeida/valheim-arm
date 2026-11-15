@@ -303,7 +303,7 @@ Se o jogo registrar sinal fatal na primeira cena e permanecer ativo, o painel mo
 
 Se o mundo já começou a carregar ou a fase é desconhecida, o supervisor suspende essa recuperação e pede intervenção pelo painel/SSH. Um carregamento demorado, sozinho, não autoriza encerramento forçado. A recuperação não restaura nem substitui saves automaticamente.
 
-Depois de cinco falhas consecutivas, a recuperação automática fica suspensa; corrija a causa e use **Iniciar**. Uma parada manual não é desfeita pela recuperação automática. Não há restauração automática de backups.
+Depois de cinco falhas consecutivas, a recuperação automática fica suspensa; corrija a causa e use **Iniciar**. Os botões **Iniciar** e **Parar** guardam a preferência do administrador. Uma parada pelo painel permanece após reiniciar ou recriar o contêiner e após reboot da instância; o painel continua disponível. Use **Iniciar** para reativar o jogo. Backup, atualização e reinício automático preservam essa preferência. Em instalações sem preferência gravada, o jogo continua iniciando automaticamente, como antes. Se não for possível gravar a preferência, a operação é recusada e o painel informa o erro. Uma parada manual não é desfeita pela recuperação automática. Não há restauração automática de backups.
 
 ### Atualizar a imagem
 
@@ -382,6 +382,10 @@ Detalhes do protocolo: [webhooks do Discord](https://docs.discord.com/developers
 <a id="atualizacao-da-imagem"></a>
 ## Atualização da imagem Docker
 
+Na aba **Configurações do servidor → Atualização da imagem Docker**, clique em **Atualizar imagem** e confirme. O painel acompanha download, validação, backup, troca, verificação e eventual retorno à imagem anterior. A conexão pode cair e exigir novo login; o progresso e o resultado continuam disponíveis depois de entrar novamente. A preferência de manter o jogo ligado ou parado é preservada.
+
+O instalador prepara automaticamente o serviço local necessário ao botão. Em instalações anteriores, execute novamente o instalador atualizado; ele preserva as configurações e o jogo em execução. Quando puder interromper o jogo, execute `sudo docker compose up -d --no-deps valheim` na pasta da instalação para conectar o contêiner existente ao serviço. É necessário usar uma imagem que já contenha o botão. Nenhuma porta adicional precisa ser liberada na OCI ou no firewall. Detalhes técnicos: [agente local](MAINTAINER.md#agente-local-de-atualizacao).
+
 O jogo é atualizado pela rotina automática; painel e FEX são atualizados pelo host. Na pasta que contém `.env`, `compose.yaml` e `update-server.py`, execute:
 
 ```bash
@@ -396,7 +400,7 @@ curl -fsSL https://raw.githubusercontent.com/hfgalmeida/valheim-arm/main/update-
 
 O atualizador baixa e executa o preflight da nova imagem antes da parada. Depois encerra o jogo, exige a confirmação de saída limpa, gera um backup em `data/backups` e recria os dois contêineres com a nova imagem. Jogadores podem ser desconectados. O volume de dados e os certificados são preservados; o Compose não é substituído.
 
-A validação aguarda o jogo informar estado online por 30 segundos e valida a configuração do proxy, com prazo padrão de 15 minutos. Não equivale a testar uma conexão de jogador. Falhas após a troca tentam retornar à imagem anterior; os saves não são revertidos automaticamente. Consulte os logs se o retorno também falhar.
+A validação aguarda 30 segundos de estabilidade no estado desejado: jogo online quando a preferência é ligado, ou painel disponível com jogo parado quando a preferência é parado. Também valida a configuração do proxy, com prazo padrão de 15 minutos. Não equivale a testar uma conexão de jogador. Falhas após a troca tentam retornar à imagem anterior; os saves não são revertidos automaticamente. Consulte os logs se o retorno também falhar.
 
 ```bash
 # Voltar à imagem anterior preservada localmente
@@ -410,3 +414,5 @@ sudo python3 update-server.py --timeout 1800
 A imagem aplicada fica fixada em `VALHEIM_IMAGE` no `.env` usando uma tag local. O próximo comando de atualização consulta novamente `hfgalmeida/valheim-arm:latest`. Não execute `docker compose`, o instalador ou outro atualizador simultaneamente. Não remova as imagens locais `valheim-arm-local:*` enquanto precisar do retorno. Se o host reiniciar durante a troca, execute `--rollback` antes de tentar novamente.
 
 O painel consulta a versão pública ARM64 do Docker Hub a cada seis horas e exibe a versão instalada. A indicação se refere à imagem oficial `hfgalmeida/valheim-arm`; imagens personalizadas devem ser atualizadas com `--image`. Uma falha de consulta não interrompe o jogo. O painel não recebe acesso ao Docker do host.
+
+O atualizador também respeita o jogo parado: nessa condição valida o painel e o proxy, sem exigir que o jogo fique online. Para usar esse comportamento em uma instalação existente, mantenha `update-server.py` atualizado junto com a imagem; versões antigas do script esperavam sempre o jogo online. O retorno a uma imagem antiga sem suporte à preferência persistida é recusado enquanto a preferência for manter o jogo parado, evitando religamento inesperado.

@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .host_updates import HostUpdates
+from .run_intent import RunIntent
 from .startup_watchdog import StartupWatchdog, world_ready
 from .image_version import ImageVersion
 from .mod_diagnostics import ModDiagnostics
@@ -307,6 +309,8 @@ class Runtime:
         for directory in ("config", "saves", "home", "cache", "installs", "mods"):
             (data / directory).mkdir(parents=True, exist_ok=True)
         self.config = config or ConfigStore(data)
+        self.host_updates = HostUpdates()
+        self.host_update_task = None
         self.backups = Backups(data)
         self.cloud = Cloud(data, self.backups)
         self.image_version = ImageVersion()
@@ -344,7 +348,8 @@ class Runtime:
         self.latest_build = None
         self.failed_update_build = None
         self.next_retry = 0
-        self.want_running = True
+        self.run_intent = RunIntent(data)
+        self.want_running = self.run_intent.running
         self.next_recovery = 0
         self.persistence_error = None
         self.last_save = 0
@@ -363,6 +368,9 @@ class Runtime:
                 )
                 self.emit(job["error"])
             elif job["state"] in ("fila", "adiado"):
+                if not self.run_intent.running:
+                    job["state"] = "cancelado"
+                    continue
                 job["state"] = "fila"
                 self.queue.put_nowait(job)
 
@@ -429,6 +437,8 @@ class Runtime:
                 phase, detail = "starting", "Mundo carregado; aguardando a conexão do servidor."
         elif self.active and self.active["action"] in ("start", "restart", "update", "restore"):
             phase, detail = "starting", "Preparando o jogo: " + self.state + "."
+        elif self.run_intent.error:
+            phase, detail = "failed", self.run_intent.error
         elif self.recovery_error:
             phase, detail = "failed", self.recovery_error
         elif self.want_running and self.next_recovery > 0:
@@ -466,7 +476,10 @@ class Runtime:
             "installed_build": self.installed_build(),
             "available_build": self.latest_build,
             "maintenance_persistence_error": self.persistence_error,
-            "automatic_recovery": self.want_running and not self.closing,
+            "automatic_recovery": self.want_running
+            and self.run_intent.running
+            and not self.closing,
+            "run_intent": self.run_intent.describe(),
             "recovery_error": self.recovery_error,
             "image_version": self.image_version.describe(),
             "alerts": self.alerts.describe(),
@@ -486,10 +499,20 @@ class Runtime:
                 and pending["action"] == action
                 and pending.get("backup") == backup
                 and pending["state"] in ("fila", "executando")
+                and (
+                    action not in ("start", "stop")
+                    or pending.get("intent_revision") == self.run_intent.revision
+                )
             ):
                 return pending
-        if action == "stop" and self.startup_watchdog.fatal:
-            self.disable_recovery()
+        if self.queue.full():
+            raise asyncio.QueueFull
+        revision = None
+        if action in ("start", "stop"):
+            revision = self.set_run_intent(action == "start")
+            for pending in self.jobs:
+                if pending["action"] in ("start", "stop") and pending["state"] == "fila":
+                    pending["state"] = "cancelado"
         job = {
             "id": uuid.uuid4().hex,
             "action": action,
@@ -497,6 +520,8 @@ class Runtime:
             "state": "fila",
             "created": time.time(),
         }
+        if revision is not None:
+            job["intent_revision"] = revision
         self.queue.put_nowait(job)
         self.jobs.append(job)
         self.trim_jobs()
@@ -526,6 +551,13 @@ class Runtime:
                 "Não foi possível persistir manutenção; confira espaço e permissões"
             )
             self.emit(self.persistence_error)
+
+    def set_run_intent(self, running):
+        revision = self.run_intent.set(running)
+        self.want_running = running
+        if not running:
+            self.disable_recovery()
+        return revision
 
     def disable_recovery(self):
         self.want_running = False
@@ -558,13 +590,18 @@ class Runtime:
         except BlockingIOError:
             raise RuntimeError("Outro supervisor já utiliza este volume")
         await asyncio.to_thread(preflight, self.data)
+        self.host_update_task = asyncio.create_task(self.host_updates.run())
         self.worker_task = asyncio.create_task(self.worker())
         self.scheduler_task = asyncio.create_task(self.scheduler())
         self.image_version_task = asyncio.create_task(self.image_version.run())
         self.alert_task = asyncio.create_task(self.alerts.run(self))
         self.cloud_task = asyncio.create_task(self.cloud.run())
         self.access_task = asyncio.create_task(self.file_access.run())
-        self.submit("start")
+        self.persist_pending()
+        if self.run_intent.running:
+            self.schedule_once("start")
+        else:
+            self.emit("Preferência preservada: jogo permanece parado; painel disponível")
 
     async def run_steam(self, args, timeout=1800):
         await asyncio.to_thread(install_steam, self.data)
@@ -731,12 +768,21 @@ class Runtime:
                 "DOORSTOP_INVOKE_DLL_PATH=" + str(install / "BepInEx/core/BepInEx.Preloader.dll"),
             ]
         self.players.reset()
+        if self.closing or not self.want_running or not self.run_intent.running:
+            self.state = "parado"
+            self.emit(
+                "Inicialização cancelada pela intenção de parada; nenhum processo do jogo iniciado"
+            )
+            return
         self.state = "iniciando"
         self.stop_request = None
         self.running = settings
+        await asyncio.to_thread(self.mod_diagnostics.begin, settings.bepinex)
+        if self.closing or not self.want_running or not self.run_intent.running:
+            self.state = "parado"
+            return
         self.clean_stop = False
         atomic_json(self.clean_marker, {"started": time.time(), "world": settings.world_name})
-        await asyncio.to_thread(self.mod_diagnostics.begin, settings.bepinex)
         self.process = await asyncio.create_subprocess_exec(
             "FEXInterpreter",
             "/usr/bin/env",
@@ -1036,6 +1082,16 @@ class Runtime:
 
     async def execute(self, job):
         action = job["action"]
+        if job.get("scheduled") and (not self.want_running or not self.run_intent.running):
+            job["result"] = "Tarefa automática dispensada: servidor deve permanecer parado"
+            return
+        if action in ("start", "stop") and not job.get("scheduled"):
+            revision = job.get("intent_revision")
+            if revision is not None and revision != self.run_intent.revision:
+                job["result"] = "Solicitação substituída por uma preferência mais recente"
+                return
+            if revision is None:
+                self.set_run_intent(action == "start")
         if action == "recover-startup":
             await self.recover_startup()
             if self.recovery_error:
@@ -1108,7 +1164,13 @@ class Runtime:
             if action == "update":
                 await self.install()
         finally:
-            if was_running and not self.live and not self.closing:
+            if (
+                was_running
+                and not self.live
+                and not self.closing
+                and self.want_running
+                and self.run_intent.running
+            ):
                 try:
                     await self.start()
                 except Exception:
@@ -1215,15 +1277,21 @@ class Runtime:
             await asyncio.sleep(5)
 
     async def tick(self):
-        if self.active is not None or self.closing:
+        if self.active is not None or self.closing or self.host_updates.busy:
             return
-        if self.live and self.want_running and self.startup_watchdog.fatal:
+        if (
+            self.live
+            and self.want_running
+            and self.run_intent.running
+            and self.startup_watchdog.fatal
+        ):
             if self.queue.empty():
                 self.schedule_once("recover-startup")
             return
         if (
             not self.live
             and self.want_running
+            and self.run_intent.running
             and self.queue.empty()
             and time.monotonic() >= self.next_recovery
         ):
@@ -1232,7 +1300,7 @@ class Runtime:
             self.schedule_once("start")
         settings = self.config.effective()
         now = datetime.now(ZoneInfo(settings.timezone))
-        if self.live and self.game_ready:
+        if self.live and self.game_ready and self.want_running and self.run_intent.running:
             # Query first: a newly found update can absorb the queued daily
             # restart/backup before that maintenance operation starts.
             update_at = settings.restart_at if settings.restart_at != "off" else settings.backup_at
@@ -1282,6 +1350,9 @@ class Runtime:
         self.emit(
             "Desligamento do contêiner solicitado; suspendendo tarefas e preparando parada do jogo"
         )
+        if self.host_update_task:
+            self.host_update_task.cancel()
+            await asyncio.gather(self.host_update_task, return_exceptions=True)
         if self.image_version_task:
             self.image_version_task.cancel()
             await asyncio.gather(self.image_version_task, return_exceptions=True)
