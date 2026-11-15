@@ -77,6 +77,11 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                 "action": "restart",
                 "state": "concluído",
                 "created": 1794643216,
+                "started": 1794643217,
+                "finished": 1794643227,
+                "duration": 10,
+                "attempts": 1,
+                "origin": "administrator",
                 "result": "backup.tar.gz",
             }
         ],
@@ -254,7 +259,22 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert "14/11/2026" in page.locator("#jobs time").inner_text()
         assert "05:00:16" in page.locator("#jobs time").inner_text()
         assert page.locator("#jobs time").get_attribute("datetime") == "2026-11-14T08:00:16.000Z"
-        assert "restart · concluído" in page.locator("#jobs").inner_text()
+        assert "Reinício · concluído" in page.locator("#jobs").inner_text()
+        assert "Duração em execução: 10s" in page.locator("#jobs").inner_text()
+        page.locator("#history-origin").select_option("schedule")
+        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        page.locator("#history-origin").select_option("administrator")
+        assert "Reinício" in page.locator("#jobs").inner_text()
+        page.locator("#history-from").fill("2026-11-15")
+        page.locator("#history-from").dispatch_event("change")
+        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        page.locator("#history-from").fill("")
+        page.locator("#history-from").dispatch_event("change")
+        page.locator("#history-state").select_option("falha")
+        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        page.locator("#history-state").select_option("")
+        assert "Reinício" in page.locator("#jobs").inner_text()
+        page.locator("#tab-activity").focus()
         page.keyboard.press("ArrowRight")
         assert page.locator("#cpu").is_visible()
         page.keyboard.press("ArrowRight")

@@ -271,46 +271,9 @@ function update(s) {
   $("logs").textContent = s.logs
     .map((l) => new Date(l.time * 1000).toLocaleTimeString() + "  " + l.message)
     .join("\n");
-  $("jobs").replaceChildren();
-  [...s.jobs]
-    .reverse()
-    .slice(0, 15)
-    .forEach((j) => {
-      const r = document.createElement("div");
-      r.className = "job";
-      const when = document.createElement("time");
-      const zone = currentConfig?.values.timezone || "America/Sao_Paulo";
-      if (typeof j.created === "number" && Number.isFinite(j.created)) {
-        const date = new Date(j.created * 1000);
-        when.dateTime = date.toISOString();
-        when.textContent =
-          "Solicitado em " +
-          date.toLocaleString("pt-BR", {
-            timeZone: zone,
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hourCycle: "h23",
-          });
-      } else {
-        when.textContent = "Horário indisponível";
-      }
-      when.title = "Horário da solicitação · " + zone;
-      r.append(
-        when,
-        document.createTextNode(
-          j.action +
-            " · " +
-            j.state +
-            (j.error ? " — " + j.error : "") +
-            (j.result ? " — " + j.result : ""),
-        ),
-      );
-      $("jobs").append(r);
-    });
+  maintenanceJobs = s.jobs;
+  $("history-warning").textContent = s.maintenance_history_error || "";
+  renderMaintenanceHistory();
   if (s.metric && (!samples.length || samples.at(-1).time !== s.metric.time))
     samples.push(s.metric);
   samples = samples.slice(-720);
@@ -1038,3 +1001,88 @@ $("update-image").onclick = () =>
       await loadImageUpdateStatus();
     }
   });
+
+let maintenanceJobs = [];
+function renderMaintenanceHistory() {
+  const zone = currentConfig?.values.timezone || "America/Sao_Paulo";
+  const format = (timestamp) =>
+    typeof timestamp === "number" && Number.isFinite(timestamp)
+      ? new Date(timestamp * 1000).toLocaleString("pt-BR", { timeZone: zone, hourCycle: "h23" })
+      : "—";
+  const day = (timestamp) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(timestamp * 1000));
+  const origins = {
+    administrator: "Administrador",
+    schedule: "Agendamento",
+    recovery: "Recuperação",
+  };
+  const actions = {
+    start: "Início",
+    stop: "Parada",
+    restart: "Reinício",
+    backup: "Backup",
+    update: "Atualização do jogo",
+    restore: "Restauração",
+    "check-update": "Verificação de atualização",
+    "recover-startup": "Recuperação da inicialização",
+  };
+  $("jobs").replaceChildren();
+  const jobs = [...maintenanceJobs].reverse().filter((job) => {
+    const origin = job.origin || (job.scheduled ? "schedule" : "administrator");
+    const date = typeof job.created === "number" ? day(job.created) : "";
+    return (
+      (!$("history-origin").value || origin === $("history-origin").value) &&
+      (!$("history-state").value || job.state === $("history-state").value) &&
+      (!$("history-from").value || date >= $("history-from").value) &&
+      (!$("history-to").value || date <= $("history-to").value)
+    );
+  });
+  for (const job of jobs) {
+    const row = document.createElement("div");
+    row.className = "job";
+    const when = document.createElement("time");
+    when.textContent = "Solicitado em " + format(job.created);
+    if (typeof job.created === "number" && Number.isFinite(job.created))
+      when.dateTime = new Date(job.created * 1000).toISOString();
+    when.title = "Horários em " + zone;
+    const heading = document.createElement("strong");
+    heading.textContent = (actions[job.action] || job.action) + " · " + job.state;
+    const details = document.createElement("p");
+    details.className = "muted";
+    const duration = typeof job.duration === "number" ? Math.round(job.duration) + "s" : "—";
+    details.textContent =
+      origins[job.origin || (job.scheduled ? "schedule" : "administrator")] +
+      " · Início: " +
+      format(job.started) +
+      " · Término: " +
+      format(job.finished) +
+      " · Duração em execução: " +
+      duration +
+      " · Tentativas: " +
+      (job.attempts || 0);
+    row.append(when, heading, details);
+    for (const text of [
+      job.error,
+      job.result,
+      job.backup_created ? "Backup criado: " + job.backup_created : null,
+      job.backup ? "Backup restaurado: " + job.backup : null,
+    ]) {
+      if (text) {
+        const line = document.createElement("p");
+        line.textContent = text;
+        row.append(line);
+      }
+    }
+    $("jobs").append(row);
+  }
+  if (!jobs.length)
+    $("jobs").textContent = "Nenhuma operação neste período com os filtros selecionados.";
+}
+for (const id of ["history-origin", "history-state", "history-from", "history-to"]) {
+  $(id).addEventListener("change", renderMaintenanceHistory);
+}

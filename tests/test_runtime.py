@@ -1025,8 +1025,9 @@ def test_daily_update_check_runs_once_at_maintenance_time(
             assert restored.queue.empty()
             clock.now.return_value = now + timedelta(days=1)
             await restored.tick()
-        assert restored.jobs[0]["action"] == "check-update"
-        assert [job["action"] for job in restored.jobs] == (
+        pending = [job for job in restored.jobs if job["state"] == "fila"]
+        assert pending[0]["action"] == "check-update"
+        assert [job["action"] for job in pending] == (
             ["check-update", maintenance] if maintenance else ["check-update"]
         )
 

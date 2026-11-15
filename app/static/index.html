@@ -477,7 +477,34 @@
         </div>
         <div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden>
           <section class="card">
-            <h2>Operações</h2>
+            <h2>Histórico de manutenção</h2>
+            <p class="muted">
+              Até 200 operações dos últimos 30 dias. Tarefas pendentes são preservadas.
+            </p>
+            <div class="history-filters">
+              <label
+                >Origem<select id="history-origin">
+                  <option value="">Todas</option>
+                  <option value="administrator">Administrador</option>
+                  <option value="schedule">Agendamento</option>
+                  <option value="recovery">Recuperação</option>
+                </select></label
+              >
+              <label
+                >Resultado<select id="history-state">
+                  <option value="">Todos</option>
+                  <option>concluído</option>
+                  <option>falha</option>
+                  <option>adiado</option>
+                  <option>cancelado</option>
+                  <option>executando</option>
+                  <option>fila</option>
+                </select></label
+              >
+              <label>Desde<input type="date" id="history-from" /></label>
+              <label>Até<input type="date" id="history-to" /></label>
+            </div>
+            <p id="history-warning" role="status"></p>
             <div id="jobs" aria-live="polite"></div>
           </section>
           <section class="card">

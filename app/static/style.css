@@ -759,3 +759,13 @@ button:disabled {
   margin-bottom: 10px;
   color: var(--muted);
 }
+
+.history-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+.job p {
+  margin: 0.4rem 0;
+  overflow-wrap: anywhere;
+}

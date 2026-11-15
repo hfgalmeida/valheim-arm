@@ -80,7 +80,7 @@
 - [x] Alertas opcionais no Discord para recuperação suspensa, falha de backup/envio à nuvem e pouco espaço em disco, com teste no painel e aviso de normalização.
 - [x] Persistir a intenção de Iniciar/Parar pelo painel, preservando-a ao reiniciar contêiner/instância; manter painel disponível com jogo parado e respeitar a preferência durante manutenção e atualização da imagem.
 - [x] Diagnóstico BepInEx por sessão: versão, tentativas de carregamento dos plugins, conclusão do carregador, falhas/dependências e DLLs alteradas aguardando reinício; compatibilidade real continua pendente.
-- [ ] Histórico de manutenção com início, término, duração e origem (administrador, agendamento ou recuperação).
+- [x] Histórico persistente de manutenção com início, término, duração em execução, origem, resultado, tentativas e backup associado; filtros por origem, resultado e período, retenção de 30 dias/200 operações concluídas e preservação das pendentes.
 - [ ] Concluir validação de desempenho no Ampere A1, contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
 
 ### Melhoria futura: versão mobile do painel

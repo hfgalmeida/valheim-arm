@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .maintenance_history import MaintenanceHistory, origin, prune
 from .host_updates import HostUpdates
 from .run_intent import RunIntent
 from .startup_watchdog import StartupWatchdog, world_ready
@@ -339,6 +340,8 @@ class Runtime:
         self.state = "parado"
         self.logs = deque(maxlen=500)
         self.jobs = deque()
+        self.maintenance_history = MaintenanceHistory(data)
+        self.next_history_prune = time.monotonic() + 3600
         self.queue = asyncio.Queue(maxsize=32)
         self.active = None
         self.closing = False
@@ -373,6 +376,20 @@ class Runtime:
                     continue
                 job["state"] = "fila"
                 self.queue.put_nowait(job)
+
+        pending_ids = {job["id"] for job in self.jobs}
+        for job in self.maintenance_history.load():
+            if job["id"] in pending_ids:
+                continue
+            if job["state"] in ("fila", "adiado", "executando"):
+                job["state"] = "falha" if job["state"] == "executando" else "cancelado"
+                job["error"] = (
+                    "Operação interrompida pelo supervisor; não será repetida automaticamente"
+                )
+                job["finished"] = time.time()
+            self.jobs.append(job)
+        self.jobs = deque(sorted(self.jobs, key=lambda job: job.get("created", 0)))
+        self.persist_history()
 
     @property
     def live(self):
@@ -476,6 +493,7 @@ class Runtime:
             "installed_build": self.installed_build(),
             "available_build": self.latest_build,
             "maintenance_persistence_error": self.persistence_error,
+            "maintenance_history_error": self.maintenance_history.error,
             "automatic_recovery": self.want_running
             and self.run_intent.running
             and not self.closing,
@@ -524,16 +542,33 @@ class Runtime:
             job["intent_revision"] = revision
         self.queue.put_nowait(job)
         self.jobs.append(job)
-        self.trim_jobs()
+        self.persist_history()
         return job
 
     def trim_jobs(self):
-        if len(self.jobs) > 100:
-            terminal = [j for j in self.jobs if j["state"] not in ("fila", "executando", "adiado")]
-            for job in terminal[: len(self.jobs) - 100]:
-                self.jobs.remove(job)
+        self.jobs = deque(prune(list(self.jobs)))
+
+    def persist_history(self):
+        now = time.time()
+        secrets = (
+            self.config.effective().server_password,
+            self.running.server_password if self.running else "",
+        )
+        for job in self.jobs:
+            job.setdefault("origin", origin(job))
+            if job["state"] not in ("fila", "executando", "adiado"):
+                job.setdefault("finished", now)
+            for field in ("error", "result"):
+                if isinstance(job.get(field), str):
+                    for secret in secrets:
+                        if secret:
+                            job[field] = job[field].replace(secret, "[senha]")
+                    job[field] = job[field][:1000]
+        self.trim_jobs()
+        self.maintenance_history.save(self.jobs, secrets)
 
     def persist_pending(self):
+        self.persist_history()
         try:
             atomic_json(
                 self.pending_path,
@@ -1125,7 +1160,7 @@ class Runtime:
             if self.live:
                 raise RuntimeError("Pare o jogo antes de restaurar")
             await asyncio.to_thread(self.backups.validate, self.backups.resolve(job["backup"]))
-            await self.snapshot("pre-restore")
+            job["backup_created"] = await self.snapshot("pre-restore")
             manifest = await asyncio.to_thread(self.backups.restore, job["backup"])
             job["result"] = "Saves restaurados. Mundo do arquivo: " + manifest["world"]
             return
@@ -1161,6 +1196,7 @@ class Runtime:
             return
         try:
             job["result"] = await self.snapshot(action)
+            job["backup_created"] = job["result"]
             if action == "update":
                 await self.install()
         finally:
@@ -1199,8 +1235,12 @@ class Runtime:
                 self.queue.task_done()
                 continue
             self.active = job
+            job.setdefault("started", time.time())
+            job["attempts"] = job.get("attempts", 0) + 1
+            attempt_started = time.monotonic()
             job["state"] = "executando"
             job.pop("error", None)
+            self.persist_history()
             self.emit("Executando operação: " + job["action"])
             try:
                 if job.get("scheduled") and job["action"] != "recover-startup":
@@ -1234,7 +1274,17 @@ class Runtime:
                 if deferred:
                     job["state"] = "adiado"
                     self.next_retry = time.monotonic() + 300
+            except asyncio.CancelledError:
+                job["state"] = "falha"
+                job["error"] = (
+                    "Operação interrompida pelo supervisor; não será repetida automaticamente"
+                )
+                raise
             finally:
+                job["duration"] = job.get("duration", 0) + max(
+                    0, time.monotonic() - attempt_started
+                )
+                job["last_attempt_finished"] = time.time()
                 self.active = None
                 self.persist_pending()
                 self.queue.task_done()
@@ -1277,6 +1327,9 @@ class Runtime:
             await asyncio.sleep(5)
 
     async def tick(self):
+        if time.monotonic() >= self.next_history_prune:
+            self.persist_history()
+            self.next_history_prune = time.monotonic() + 3600
         if self.active is not None or self.closing or self.host_updates.busy:
             return
         if (

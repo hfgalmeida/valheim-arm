@@ -416,3 +416,10 @@ A imagem aplicada fica fixada em `VALHEIM_IMAGE` no `.env` usando uma tag local.
 O painel consulta a versão pública ARM64 do Docker Hub a cada seis horas e exibe a versão instalada. A indicação se refere à imagem oficial `hfgalmeida/valheim-arm`; imagens personalizadas devem ser atualizadas com `--image`. Uma falha de consulta não interrompe o jogo. O painel não recebe acesso ao Docker do host.
 
 O atualizador também respeita o jogo parado: nessa condição valida o painel e o proxy, sem exigir que o jogo fique online. Para usar esse comportamento em uma instalação existente, mantenha `update-server.py` atualizado junto com a imagem; versões antigas do script esperavam sempre o jogo online. O retorno a uma imagem antiga sem suporte à preferência persistida é recusado enquanto a preferência for manter o jogo parado, evitando religamento inesperado.
+
+
+### Histórico de manutenção
+
+Na aba **Atividade**, consulte as operações por origem (administrador, agendamento ou recuperação), resultado e período. Os horários seguem o fuso configurado no servidor. Cada registro mostra solicitação, início, término, tempo efetivo em execução, tentativas, resultado/motivo de adiamento ou falha e nome do backup criado ou restaurado, quando houver. O tempo aguardando jogadores ou na fila não entra na duração.
+
+O histórico permanece após recriar os contêineres. São mantidas até 200 operações concluídas dos últimos 30 dias, além das pendentes. Registros antigos podem não ter duração ou horário de início disponíveis. O nome do backup no histórico não garante que o arquivo ainda esteja disponível: a retenção dos backups é independente. Falhas ao gravar o histórico aparecem nessa aba e não impedem a parada do jogo.

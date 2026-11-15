@@ -384,3 +384,8 @@ O serviço é persistente e privilegiado: executa exclusivamente o atualizador p
 As rotas do painel GET/POST `/api/v1/image-update` exigem sessão; POST exige origem, CSRF e confirmação. Escritas do painel e agendamento automático aguardam uma atualização em curso. Após interrupção do agente, não há repetição automática da operação: o estado vira interrompido e exige verificação do host. Falhas podem exigir o retorno manual documentado em update-server.py. Diretórios `.update-agent` e seu override gerado não devem ser publicados no Git nem incluídos na imagem.
 
 Validação: testes automatizados de contrato, UID, repetição, falhas, bloqueios e navegador com novo login. Um teste isolado na Oracle usou agente temporário sem privilégios, contêiner descartável UID 10001 e diretório montado somente leitura; confirmou comunicação Unix, recusa de argumentos livres e retomada de status. O atualizador real não foi executado e nenhum serviço systemd foi instalado nesse teste.
+
+
+### Persistência do histórico de manutenção
+
+`data/config/maintenance-history.json` guarda registros limitados e sem a revisão interna de intenção de execução. A fila retomável continua separada em `maintenance.json`; carregar o histórico não reenfileira ações. Uma operação manual interrompida é marcada como falha ou cancelada, sem repetição; a retomada de tarefas automáticas continua obedecendo à fila existente. O arquivo de histórico não é incluído nos backups dos mundos nem liberado como arquivo editável ao usuário SSH. As durações somam o tempo monotônico das tentativas; uma queda abrupta pode perder a duração da última tentativa. `maintenance_history_error` informa falhas de gravação no estado da API.

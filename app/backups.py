@@ -48,6 +48,7 @@ class Backups:
                         "alerts.json",
                         "alert-state.json",
                         "run-intent.json",
+                        "maintenance-history.json",
                     }:
                         files.append(path)
         size = sum(p.stat().st_size for p in files)
