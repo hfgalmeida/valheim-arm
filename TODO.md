@@ -24,6 +24,7 @@
 - [x] Cadastro assistido nas listas de administradores, banidos e permitidos, com seleção de IDs conhecidos, inclusão manual e remoção por botão.
 - [x] Fila de manutenção, persistência de tarefas adiadas e backups com restauração.
 - [x] Integração opcional BepInEx com pacote verificado e plugins locais.
+- [x] Incluir BepInExPack_Valheim padrão na imagem Docker, com versão/hash fixos e ativação pelo painel sem URL ou SHA256.
 - [x] Upload de DLLs pelo painel com jogo parado, confirmação de substituição e restauração da versão anterior.
 - [x] Editor de configurações de plugins pelo painel, com gravação com jogo parado, detecção de conflitos e recuperação da versão anterior.
 - [x] Documentação de instalação, configuração, API e recuperação.

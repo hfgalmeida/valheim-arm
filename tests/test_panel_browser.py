@@ -277,6 +277,14 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         )
         assert runtime.config.effective().restart_at == "04:00"
         page.get_by_role("tab", name="Mods", exact=True).click()
+        assert page.locator("#setting-bepinex_url").count() == 0
+        assert page.locator("#setting-bepinex_sha256").count() == 0
+        page.locator("#setting-bepinex").select_option("true")
+        page.get_by_role("button", name="Salvar configurações de mods", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#setting-bepinex').closest('.setting').textContent.includes('painel')"
+        )
+        assert runtime.config.effective().bepinex
         assert "Carregador BepInEx concluído" in page.locator("#mod-session-status").inner_text()
         assert "Useful Plugin · 1.2.3" in page.locator("#mod-session-plugins").inner_text()
         assert "<unsafe>" in page.locator("#mod-session-issues").inner_text()

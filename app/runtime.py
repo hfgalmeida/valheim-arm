@@ -192,17 +192,43 @@ def install_steam(data):
         raise RuntimeError("Instalação do SteamCMD incompleta")
 
 
+BEPINEX_BUNDLE = Path("/opt/bepinex")
+
+
 def install_bepinex(data, install, settings):
     if not settings.bepinex:
         return
     mods = data / "mods"
     marker = mods / "pack.json"
-    expected = settings.bepinex_sha256.lower()
-    current = json.loads(marker.read_text()) if marker.exists() else {}
-    if current.get("sha256") != expected:
+    for target in (
+        marker,
+        mods / "BepInEx/core",
+        mods / "BepInEx/config/BepInEx.cfg",
+        mods / "libdoorstop.so",
+    ):
+        if any(part.is_symlink() for part in (target, *target.parents)):
+            raise ValueError(
+                "Links simbólicos não são permitidos nos destinos gerenciados do BepInEx"
+            )
+    bundled = not settings.bepinex_url
+    metadata = json.loads((BEPINEX_BUNDLE / "metadata.json").read_text()) if bundled else {}
+    expected = metadata["sha256"] if bundled else settings.bepinex_sha256.lower()
+    try:
+        current = json.loads(marker.read_text()) if marker.exists() else {}
+    except (OSError, ValueError):
+        current = {}
+    complete = (mods / "BepInEx/core/BepInEx.Preloader.dll").is_file() and (
+        mods / "libdoorstop.so"
+    ).is_file()
+    if bundled:
+        complete = complete and (mods / "BepInEx/config/BepInEx.cfg").is_file()
+    if current.get("sha256") != expected or not complete:
         with tempfile.TemporaryDirectory(dir=data) as tmp:
             archive = Path(tmp) / "bepinex.zip"
-            download(settings.bepinex_url, archive)
+            if bundled:
+                shutil.copy2(BEPINEX_BUNDLE / "pack.zip", archive)
+            else:
+                download(settings.bepinex_url, archive)
             if digest(archive) != expected:
                 raise ValueError("SHA256 do BepInEx não confere")
             unpack = Path(tmp) / "unpack"
@@ -222,19 +248,44 @@ def install_bepinex(data, install, settings):
                     if (item.external_attr >> 16) & 0o170000 == 0o120000:
                         raise ValueError("Links não permitidos no pacote BepInEx")
                 pack.extractall(unpack)
-            roots = [
-                p.parent
-                for p in unpack.rglob("libdoorstop.so")
-                if p.parent.joinpath("BepInEx/core").is_dir()
-            ]
+            roots = []
+            for library in (*unpack.rglob("libdoorstop.so"), *unpack.rglob("libdoorstop_x64.so")):
+                root = (
+                    library.parent.parent
+                    if library.parent.name == "doorstop_libs"
+                    else library.parent
+                )
+                if (root / "BepInEx/core").is_dir():
+                    roots.append((root, library))
             if len(roots) != 1:
-                raise ValueError("Use BepInExPack_Valheim Linux com libdoorstop.so e BepInEx/core")
-            source = roots[0]
+                raise ValueError("Use BepInExPack_Valheim Linux com Doorstop x64 e BepInEx/core")
+            source, library = roots[0]
+            if not all(
+                (source / "BepInEx/core" / name).is_file()
+                for name in ("BepInEx.dll", "BepInEx.Preloader.dll")
+            ):
+                raise ValueError("Pacote BepInEx incompleto")
             for directory in ("plugins", "config", "patchers"):
                 (mods / "BepInEx" / directory).mkdir(parents=True, exist_ok=True)
-            shutil.copytree(source / "BepInEx/core", mods / "BepInEx/core", dirs_exist_ok=True)
-            shutil.copy2(source / "libdoorstop.so", mods / "libdoorstop.so")
-            atomic_json(marker, {"sha256": expected, "url": settings.bepinex_url})
+            core = mods / "BepInEx/core"
+            if core.is_symlink():
+                raise ValueError("BepInEx/core não pode ser um link simbólico")
+            shutil.rmtree(core, ignore_errors=True)
+            shutil.copytree(source / "BepInEx/core", core)
+            default_config = source / "BepInEx/config/BepInEx.cfg"
+            saved_config = mods / "BepInEx/config/BepInEx.cfg"
+            if default_config.is_file() and not saved_config.exists():
+                shutil.copy2(default_config, saved_config)
+            shutil.copy2(library, mods / "libdoorstop.so")
+            atomic_json(
+                marker,
+                {
+                    "sha256": expected,
+                    "source": "bundled" if bundled else "custom",
+                    "version": metadata.get("version"),
+                    "url": metadata.get("url") if bundled else settings.bepinex_url,
+                },
+            )
     for name, destination in (
         ("BepInEx", mods / "BepInEx"),
         ("libdoorstop.so", mods / "libdoorstop.so"),

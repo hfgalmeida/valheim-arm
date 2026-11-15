@@ -38,8 +38,7 @@ Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose u
 | `BACKUP_AT` | 05:00 | HH:MM ou off; combinado com reinício quando coincidem |
 | `AUTO_UPDATE` | true | Consulta uma vez por dia, no horário do reinício, e agenda atualização do jogo |
 | `RETAIN_DAILY` / `RETAIN_WEEKLY` | 7 / 4 | Dias e semanas distintos representados nos arquivos completos |
-| `BEPINEX` | false | Injeção do pack Linux, com plugins locais |
-| `BEPINEX_URL` / `BEPINEX_SHA256` | vazios | URL HTTPS e hash obrigatório quando habilitado |
+| `BEPINEX` | false | Habilita o BepInEx padrão incluído na imagem, com plugins locais |
 
 A porta do jogo é fixada em 2456 no Compose, com UDP 2456–2457 publicado. O painel usa TCP 443; a API 8080 não é publicada.
 
@@ -229,19 +228,15 @@ O arquivo de conexão contém credenciais: guarde-o em privado. Se a autorizaç�
 <a id="mods"></a>
 ## Mods BepInEx
 
-Na aba **Mods**, defina `BEPINEX=true`, `BEPINEX_URL` e `BEPINEX_SHA256` de um **BepInExPack_Valheim Linux** confiável, contendo `libdoorstop.so` e `BepInEx/core`. Para calcular o hash do pacote baixado:
+Na aba **Mods**, ative **Habilitar BepInEx**, salve e reinicie o jogo. O pacote padrão já está incluído na imagem Docker: não é necessário informar URL, calcular hash ou baixar o BepInEx no servidor. Depois, envie seus plugins pelo painel.
 
-```sh
-sha256sum BepInExPack_Valheim.zip
-```
-
-No PowerShell: `Get-FileHash .\BepInExPack_Valheim.zip -Algorithm SHA256`.
+Desativado, o BepInEx não é injetado no processo do jogo. Seus arquivos ocupam espaço em disco, mas não são carregados. Quando ativado, o consumo depende dos plugins utilizados. Atualizações do pacote padrão acompanham novas imagens Docker; seus plugins e configurações existentes são preservados.
 
 Em **Mods → Diagnóstico dos mods**, consulte a versão do BepInEx detectada nos logs, a conclusão do carregador, nomes/versões dos plugins e avisos de dependências ou erros de carga. O diagnóstico acompanha a sessão atual; com o jogo parado, mantém a última execução do supervisor. Reiniciar o contêiner limpa esse histórico e a próxima execução começa um diagnóstico novo. Logs antigos em disco não são usados para confirmar a sessão atual.
 
 A lista de DLLs distingue arquivos presentes no início de arquivos novos ou alterados aguardando reinício. Clique em **Atualizar plugins** após alterações pelo SSH. Os nomes dos plugins nos logs não são necessariamente os nomes das DLLs, portanto as listas são separadas. Uma tentativa de carga ou a conclusão do carregador não comprova funcionamento do plugin: valide sua compatibilidade entrando no jogo. Se o BepInEx estiver habilitado sem confirmação nos logs, confira se o pacote está correto e se a saída de console do BepInEx está ativada.
 
-Na aba **Mods → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; mantenha o pacote configurado acima.
+Na aba **Mods → Enviar plugins**, pare o jogo, selecione uma DLL .NET de até **16 MiB** e clique em **Enviar plugin**. O arquivo aparece na lista de instalados e será carregado quando você iniciar o jogo. O envio não ativa o BepInEx automaticamente; ative o BepInEx conforme indicado acima.
 
 Para atualizar uma DLL, use o mesmo nome e confirme a substituição. A versão anterior fica preservada; **Restaurar anterior** permite voltar pelo painel, também com o jogo parado. A lista informa arquivos instalados, não comprova que o plugin carregou ou é compatível. Confira os logs depois de iniciar.
 

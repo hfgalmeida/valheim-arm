@@ -24,6 +24,9 @@ COPY docker/collect_rootfs.py /tmp/collect_rootfs.py
 RUN python3 /tmp/collect_rootfs.py
 COPY docker/prepare_guest.py /tmp/prepare_guest.py
 RUN python3 /tmp/prepare_guest.py
+COPY docker/bundle_bepinex.py docker/bepinex.json /tmp/
+COPY docker/licenses/BepInEx.txt /tmp/BepInEx-LICENSE
+RUN python3 /tmp/bundle_bepinex.py /tmp/bepinex.json /opt/bepinex /tmp/BepInEx-LICENSE
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
@@ -38,6 +41,7 @@ RUN groupadd --gid 10001 valheim \
 RUN python3 -m venv /opt/venv
 COPY --from=builder /usr/local/ /usr/local/
 COPY --from=builder /opt/rootfs /opt/rootfs
+COPY --from=builder /opt/bepinex /opt/bepinex
 COPY --from=builder /opt/build-info.json /opt/build-info.json
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY docker/Caddyfile /etc/caddy/Caddyfile

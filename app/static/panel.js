@@ -30,8 +30,6 @@ const labels = {
   retain_daily: "Retenção diária",
   retain_weekly: "Retenção semanal",
   bepinex: "Habilitar BepInEx",
-  bepinex_url: "URL HTTPS do BepInExPack Linux",
-  bepinex_sha256: "SHA256 do pacote BepInEx",
 };
 function notice(text) {
   $("notice").textContent = text;
@@ -366,6 +364,7 @@ async function loadConfig(savedGroup = null) {
   Object.values(settingsContainers).forEach((id) => $(id).replaceChildren());
   $("server-name").textContent = currentConfig.values.server_name;
   for (const [key, value] of Object.entries(currentConfig.values)) {
+    if (["bepinex_url", "bepinex_sha256"].includes(key)) continue;
     const container = $(settingsContainers[configGroup(key)]);
     const heading = {
       server_name: "Mundo e acesso",
@@ -656,7 +655,9 @@ for (const [formId, group] of [
       const changes = {};
       for (const [key, old] of Object.entries(currentConfig.values)) {
         if (key === "server_port" || configGroup(key) !== group) continue;
-        const value = $("setting-" + key).value;
+        const input = $("setting-" + key);
+        if (!input) continue;
+        const value = input.value;
         if (key === "server_password" && !value) continue;
         const parsed =
           typeof old === "boolean"

@@ -56,7 +56,6 @@ def test_arguments_no_shell_injection_and_order(tmp_path):
         ("timezone", "Mars/Base"),
         ("save_interval", 0),
         ("server_password", "1234"),
-        ("bepinex", True),
     ],
 )
 def test_invalid_settings(config, field, value):
@@ -74,3 +73,17 @@ def test_legacy_update_interval_does_not_break_existing_installation(tmp_path):
     store = ConfigStore(tmp_path, {"SERVER_PASSWORD": "game-password", "UPDATE_INTERVAL": "1800"})
     assert store.effective().server_name == "Existing"
     assert "update_interval" not in store.describe()["values"]
+
+
+def test_bepinex_uses_bundle_without_url_or_hash(config):
+    config.change({"bepinex": True}, [])
+    assert config.effective().bepinex
+    assert config.effective().bepinex_url == ""
+
+
+@pytest.mark.parametrize(
+    "changes", [{"bepinex_url": "https://example.com/pack.zip"}, {"bepinex_sha256": "a" * 64}]
+)
+def test_custom_bepinex_requires_both_url_and_hash(config, changes):
+    with pytest.raises(ValueError):
+        config.change({"bepinex": True} | changes, [])

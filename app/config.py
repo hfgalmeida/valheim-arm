@@ -121,11 +121,15 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_pack(self):
-        if self.bepinex and (
-            not self.bepinex_url.startswith("https://")
-            or not re.fullmatch(r"[a-fA-F0-9]{64}", self.bepinex_sha256)
+        if (
+            self.bepinex
+            and (self.bepinex_url or self.bepinex_sha256)
+            and (
+                not self.bepinex_url.startswith("https://")
+                or not re.fullmatch(r"[a-fA-F0-9]{64}", self.bepinex_sha256)
+            )
         ):
-            raise ValueError("BepInEx exige URL HTTPS e SHA256 de 64 caracteres")
+            raise ValueError("Pacote personalizado exige URL HTTPS e SHA256 de 64 caracteres")
         return self
 
     def arguments(self, save_dir: Path):
