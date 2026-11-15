@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .startup_watchdog import StartupWatchdog, world_ready
 from .image_version import ImageVersion
 from .mod_diagnostics import ModDiagnostics
 from .alerts import Alerts
@@ -30,6 +31,8 @@ from .player_directory import PlayerDirectory
 
 log = logging.getLogger("valheim")
 GAME_STOP_TIMEOUT = 150
+STARTUP_FATAL_GRACE = 30
+STARTUP_KILL_TIMEOUT = 10
 SHUTDOWN_JOB_TIMEOUT = 120
 STOP_PROGRESS_INTERVAL = 15
 LOG_DRAIN_TIMEOUT = 2
@@ -316,6 +319,7 @@ class Runtime:
         self.mod_diagnostics = ModDiagnostics(data)
         self.players = Players()
         self.player_directory = PlayerDirectory(data / "config/known-players.json")
+        self.startup_watchdog = StartupWatchdog()
         self.process = None
         self.reader = None
         self.running = None
@@ -406,6 +410,16 @@ class Runtime:
             phase, detail = "stopping", "Supervisor encerrando."
         elif self.state == "parando":
             phase, detail = "stopping", "Aguardando salvamento e saída do jogo."
+        elif self.live and self.startup_watchdog.fatal:
+            phase = (
+                "recovering"
+                if self.active and self.active["action"] == "recover-startup"
+                else "failed"
+            )
+            detail = (
+                self.recovery_error
+                or "Sinal fatal detectado; aguardando recuperação controlada da inicialização."
+            )
         elif self.live:
             if self.game_ready:
                 phase, detail = "ready", "Mundo carregado e conexão do servidor inicializada."
@@ -474,6 +488,8 @@ class Runtime:
                 and pending["state"] in ("fila", "executando")
             ):
                 return pending
+        if action == "stop" and self.startup_watchdog.fatal:
+            self.disable_recovery()
         job = {
             "id": uuid.uuid4().hex,
             "action": action,
@@ -499,7 +515,9 @@ class Runtime:
                 [
                     j
                     for j in self.jobs
-                    if j.get("scheduled") and j["state"] in ("fila", "executando", "adiado")
+                    if j.get("scheduled")
+                    and j["action"] != "recover-startup"
+                    and j["state"] in ("fila", "executando", "adiado")
                 ],
             )
             self.persistence_error = None
@@ -681,6 +699,7 @@ class Runtime:
     async def start(self):
         if self.live:
             return
+        self.startup_watchdog.reset(None)
         self.join_code = None
         self.game_ready = self.world_loaded = self.transport_ready = False
         self.ready_since = None
@@ -733,9 +752,28 @@ class Runtime:
         self.reader = asyncio.create_task(self.read_game(self.process))
 
     async def read_game(self, process):
+        if self.process is not None and self.process is not process:
+            return
+        if self.startup_watchdog.process is not process:
+            self.startup_watchdog.reset(process)
         try:
             while line := await process.stdout.readline():
+                if self.process is not None and self.process is not process:
+                    break
                 text = line.decode(errors="replace").strip()
+                fatal = self.startup_watchdog.consume(
+                    text,
+                    ready=self.game_ready,
+                    allow_fatal=not self.closing and self.stop_request is None,
+                )
+                if fatal:
+                    self.state = "falha"
+                    self.game_ready = False
+                    self.join_code = None
+                    self.record_failure("game", self.startup_watchdog.fatal)
+                    self.emit(
+                        "Sinal fatal detectado no jogo; recuperação será avaliada sem criar backup"
+                    )
                 self.players.consume(text)
                 self.player_directory.consume(text)
                 if self.running and self.running.crossplay:
@@ -749,34 +787,126 @@ class Runtime:
                     self.transport_ready = True
                 if save_completed(text):
                     self.last_save = time.monotonic()
-                if "Loading: Done" in text:
+                if world_ready(text):
                     self.world_loaded = True
-                if self.world_loaded and self.transport_ready and not self.game_ready:
+                if (
+                    self.world_loaded
+                    and self.transport_ready
+                    and not self.game_ready
+                    and not self.startup_watchdog.fatal
+                ):
                     self.game_ready = True
                     self.ready_since = time.monotonic()
                     self.state = "online"
                 self.emit(text)
                 self.mod_diagnostics.consume(self.logs[-1]["message"])
         except Exception as exc:
-            self.players.reset()
-            self.join_code = None
-            self.emit("Leitura do log falhou: " + str(exc))
+            if self.process is None or self.process is process:
+                self.players.reset()
+                self.join_code = None
+                self.emit("Leitura do log falhou: " + str(exc))
         finally:
-            self.join_code = None
             code = await process.wait()
-            self.state = "parado" if code in (0, -signal.SIGINT) else "falha"
-            self.players.reset()
-            self.emit(f"Processo do jogo encerrado: {code}")
-            expected = self.stop_request is not None and self.stop_request[0] is process
-            if not expected and self.want_running and not self.closing:
-                self.record_failure("game", f"Processo do jogo encerrado inesperadamente: {code}")
-                if (
-                    self.ready_since is not None
-                    and time.monotonic() - self.ready_since >= STABLE_SESSION_SECONDS
-                ):
-                    self.startup_failures = 0
-                self.recovery_failed(startup=not self.game_ready)
-            self.game_ready = False
+            if self.process is None or self.process is process:
+                self.join_code = None
+                self.state = "parado" if code in (0, -signal.SIGINT) else "falha"
+                self.players.reset()
+                self.emit(f"Processo do jogo encerrado: {code}")
+                expected = self.stop_request is not None and self.stop_request[0] is process
+                if not expected and self.want_running and not self.closing:
+                    self.record_failure(
+                        "game", f"Processo do jogo encerrado inesperadamente: {code}"
+                    )
+                    if (
+                        self.ready_since is not None
+                        and time.monotonic() - self.ready_since >= STABLE_SESSION_SECONDS
+                    ):
+                        self.startup_failures = 0
+                    self.recovery_failed(startup=not self.game_ready)
+                self.game_ready = False
+
+    def suspend_startup_recovery(self, message):
+        self.recovery_error = message
+        self.state = "falha"
+        self.disable_recovery()
+        self.record_failure("game", message)
+        self.emit(message)
+
+    async def wait_game_exit(self, process, seconds):
+        deadline = time.monotonic() + seconds
+        while process.returncode is None and time.monotonic() < deadline:
+            await asyncio.sleep(0.1)
+        return process.returncode is not None
+
+    async def recover_startup(self):
+        process = self.process
+        watchdog = self.startup_watchdog
+        if (
+            self.closing
+            or not self.want_running
+            or not self.live
+            or watchdog.process is not process
+            or not watchdog.fatal
+        ):
+            return
+        if not watchdog.safe_to_terminate:
+            self.suspend_startup_recovery(
+                "Sinal fatal com mundo iniciado ou fase desconhecida; recuperação automática suspensa para preservar os saves. Solicite parada pelo painel ou Docker e confira os logs."
+            )
+            return
+        self.clean_stop = False
+        try:
+            self.stop_request = (process, time.monotonic())
+            try:
+                os.killpg(process.pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
+            self.emit(
+                f"Recuperação da primeira cena: SIGINT enviado; aguardando saída por até {STARTUP_FATAL_GRACE}s"
+            )
+            exited = await self.wait_game_exit(process, STARTUP_FATAL_GRACE)
+            if self.process is not process or watchdog.process is not process:
+                return
+            if not exited:
+                # Logs may have advanced while SIGINT was being handled.
+                if not watchdog.safe_to_terminate:
+                    self.suspend_startup_recovery(
+                        "O mundo começou a carregar durante a parada; encerramento forçado cancelado e recuperação suspensa."
+                    )
+                    return
+                if self.closing:
+                    return
+                self.emit(
+                    "Processo fatal travado antes de carregar o mundo; encerrando grupo com SIGKILL, sem backup nem confirmação de salvamento"
+                )
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                if not await self.wait_game_exit(process, STARTUP_KILL_TIMEOUT):
+                    self.suspend_startup_recovery(
+                        "Processo fatal não encerrou após SIGKILL; recuperação suspensa. Verifique a instância pelo SSH."
+                    )
+                    return
+            if self.reader:
+                reader = asyncio.ensure_future(self.reader)
+                self.reader = reader
+                try:
+                    await asyncio.wait_for(asyncio.shield(reader), timeout=LOG_DRAIN_TIMEOUT)
+                except asyncio.TimeoutError:
+                    reader.cancel()
+                    await asyncio.gather(reader, return_exceptions=True)
+            self.stop_request = None
+            self.state = "falha"
+            self.emit(
+                "Inicialização fatal encerrada; saves existentes preservados e marcador de saída incompleta mantido"
+            )
+            if self.want_running and not self.closing:
+                self.recovery_failed(startup=True)
+        except (OSError, RuntimeError) as exc:
+            self.suspend_startup_recovery(
+                "Falha ao encerrar inicialização fatal; recuperação suspensa: " + str(exc)
+            )
 
     async def stop(self, safe=True):
         process = self.process
@@ -906,6 +1036,14 @@ class Runtime:
 
     async def execute(self, job):
         action = job["action"]
+        if action == "recover-startup":
+            await self.recover_startup()
+            if self.recovery_error:
+                raise RuntimeError(self.recovery_error)
+            job["result"] = (
+                "Inicialização fatal tratada; nova tentativa respeita o limite de recuperação e a intenção de parada"
+            )
+            return
         if action == "start":
             if job.get("scheduled") and not self.want_running:
                 return
@@ -1003,7 +1141,7 @@ class Runtime:
             job.pop("error", None)
             self.emit("Executando operação: " + job["action"])
             try:
-                if job.get("scheduled"):
+                if job.get("scheduled") and job["action"] != "recover-startup":
                     self.persist_pending()
                     if self.persistence_error:
                         raise MaintenanceDeferred(self.persistence_error)
@@ -1078,6 +1216,10 @@ class Runtime:
 
     async def tick(self):
         if self.active is not None or self.closing:
+            return
+        if self.live and self.want_running and self.startup_watchdog.fatal:
+            if self.queue.empty():
+                self.schedule_once("recover-startup")
             return
         if (
             not self.live

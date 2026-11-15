@@ -32,7 +32,11 @@
 - [x] Prova funcional FEX/SteamCMD/Valheim na Oracle ARM, com inicialização e conexão confirmadas pelo administrador.
 - [x] Conexão ao servidor com crossplay desativado (Steam).
 - [x] Conexão ao servidor com crossplay ativado (PlayFab).
-- [ ] Validar carregamento do BepInEx e compatibilidade dos plugins escolhidos, incluindo entrada com e sem crossplay.
+- [x] Validar BepInEx embutido e ServerInfo 2.2.7 com JsonDotNET 13.0.4 na Oracle: conexão e jogo normal confirmados pelo administrador com e sem crossplay. Essa validação não garante compatibilidade de outros plugins.
+- [x] Conexão e jogo normal confirmados pelo administrador com BepInEx, ServerInfo e crossplay ativado (14/11/2026).
+- [x] Conexão e jogo normal confirmados com os mesmos plugins sem crossplay; edição de configuração via backend do painel e recuperação da versão anterior verificadas.
+- [x] Desativação do BepInEx confirmada com preservação de DLLs/configuração e retorno online ao estado original após reinício controlado; falha fatal da primeira partida registrada na seção de recuperação abaixo.
+- [x] Carregamento real na Oracle do pacote embutido 5.4.2360 (engine 5.4.23.6), ServerInfo 2.2.7 e JsonDotNET 13.0.4: 2 plugins carregados, 0 falhas, API interna funcional e mundo online com crossplay. Conexão pelo cliente posteriormente confirmada nos dois modos.
 - [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
 - [ ] Medições e ajustes de desempenho no Ampere A1.
 - [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
@@ -77,8 +81,16 @@
 - [ ] Persistir a intenção de parada pelo painel e definir seu comportamento após reiniciar a instância.
 - [x] Diagnóstico BepInEx por sessão: versão, tentativas de carregamento dos plugins, conclusão do carregador, falhas/dependências e DLLs alteradas aguardando reinício; compatibilidade real continua pendente.
 - [ ] Histórico de manutenção com início, término, duração e origem (administrador, agendamento ou recuperação).
-- [ ] Concluir validação de desempenho no Ampere A1, plugins BepInEx e contagem de jogadores.
+- [ ] Concluir validação de desempenho no Ampere A1, contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
 
 ### Melhoria futura: versão mobile do painel
 
 - [ ] Criar uma experiência mobile dedicada, com navegação, métricas, formulários e operações adaptados a telas pequenas; validar acessibilidade e uso por toque.
+
+### Recuperação de falha fatal durante inicialização
+
+- [x] Detectar sinal fatal mesmo quando o processo permanece ativo; mostrar a falha no painel em vez de manter iniciando. Não confundir o Loading: Done inicial do Unity com a conclusão do carregamento do mundo.
+- [x] Recuperação serializada da falha fatal na primeira cena, com SIGINT, prazo de 30 segundos e SIGKILL apenas antes de qualquer indício de carregamento do mundo; manter saves, marcador de saída incompleta e proibição de backup nessa saída.
+- [x] Compartilhar o limite de cinco falhas e intervalos de recuperação existentes, respeitar parada manual e suspender se a fase do mundo for desconhecida ou tiver avançado. Não persistir tarefas ligadas a um PID nem bloquear a limpeza por falha de persistência.
+- [x] Validar no Linux da Oracle com processo sintético isolado que ignora SIGINT: encerrado com SIGKILL, uma falha contabilizada, saves de teste intactos e nenhum backup criado; servidor real preservado.
+- [ ] Aplicar a nova imagem e validar recuperação de uma ocorrência real do problema no FEX/Valheim. A causa do SIGSEGV não foi identificada nem atribuída ao BepInEx.

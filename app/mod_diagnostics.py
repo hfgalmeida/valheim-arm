@@ -58,7 +58,7 @@ class ModDiagnostics:
     def consume(self, line):
         if not self.enabled:
             return
-        match = LOG.match(line[:4000])
+        match = LOG.match(line[:4000].lstrip("\ufeff"))
         if not match:
             return
         level, source, message = match.group("level", "source", "message")
@@ -70,7 +70,9 @@ class ModDiagnostics:
             )
             if version:
                 self.version = version[1]
-            loading = re.match(r"Loading " + IDENTITY + r"$", message)
+            loading = re.match(
+                r"Loading " + IDENTITY + r"(?: \([A-Za-z0-9._-]{1,200}\))?$", message
+            )
             failure = re.match(r"(?:Error loading|Could not load|Skipping) " + IDENTITY, message)
             identity = loading or failure
             if identity:
@@ -83,7 +85,10 @@ class ModDiagnostics:
                         "version": key[1],
                         "state": "failed" if failed else "loading_reported",
                     }
-            if message == "Chainloader startup complete":
+            if re.fullmatch(
+                r"Chainloader startup complete(?: \([0-9]+ loaded, [0-9]+ skipped, [0-9]+ failed\))?",
+                message,
+            ):
                 self.complete = True
             if level in {"warning", "error", "fatal"}:
                 self.add_issue(level, source, message)

@@ -147,3 +147,22 @@ def test_inventory_permission_error_does_not_block_diagnosis(tmp_path):
     mods.consume("[Message : BepInEx] BepInEx 5.4.23 - valheim")
     assert mods.describe(True, True)["version"] == "5.4.23"
     assert mods.file_state(tmp_path / "mods/BepInEx/plugins/a.dll", True) == "unknown"
+
+
+def test_valheim_pack_real_console_format_with_guid_and_counts(tmp_path):
+    mods = ModDiagnostics(tmp_path)
+    mods.begin(True)
+    mods.consume("\ufeff[Message:   BepInEx] BepInEx 5.4.23.6 - valheim_server")
+    mods.consume(
+        "[Info   :   BepInEx] Loading [Newtonsoft.Json Detector 1.0.0] (com.ValheimModding.NewtonsoftJsonDetector)"
+    )
+    mods.consume("[Info   :   BepInEx] Loading [Server Info 2.2.7] (Odin_Sons.ServerInfo)")
+    mods.consume(
+        "[Message:   BepInEx] Chainloader startup complete (2 loaded, 0 skipped, 0 failed)"
+    )
+    result = mods.describe(True, True)
+    assert result["version"] == "5.4.23.6"
+    assert result["state"] == "complete"
+    assert len(result["plugins"]) == 2
+    assert result["plugins"][1]["name"] == "Server Info"
+    assert not result["issues"]

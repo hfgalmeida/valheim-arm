@@ -19,11 +19,13 @@ Execute os comandos do servidor na pasta da instalação: `cd ~/valheim-arm`. Aj
 
 Use **Configurações do jogo** para mundo, acesso e regras; **Configurações do servidor** para salvamento, rotina automática e alertas; e **Mods** para BepInEx e plugins. Cada aba salva seus próprios ajustes. Ajustes do painel prevalecem sobre o `.env`; **Usar Compose** remove essa substituição. Alterações do jogo são aplicadas na próxima inicialização; horários são lidos pelo agendador. Trocar o nome do mundo seleciona ou cria outro save, preservando o anterior.
 
-Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose up -d`. Isso pode recriar os contêineres; faça um backup e solicite a parada pelo painel antes. `VALHEIM_IMAGE`, `SERVER_IP` e opções `FEX_*` são configurados somente pelo `.env`.
+Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose up -d`. Isso pode recriar os contêineres; faça um backup e solicite a parada pelo painel antes. `VALHEIM_IMAGE`, `SERVER_IP`, limites `VALHEIM_MEMORY_*` e opções `FEX_*` são configurados somente pelo `.env`.
 
 | Variável | Padrão | Efeito |
 |---|---|---|
 | `VALHEIM_IMAGE` | hfgalmeida/valheim-arm:latest | Imagem publicada no Docker Hub, por exemplo `hfgalmeida/valheim-arm:latest`; aceita digest para fixar versão |
+| `VALHEIM_MEMORY_LIMIT` | 10g | Máximo de RAM do contêiner Valheim |
+| `VALHEIM_MEMORY_SWAP_LIMIT` | 14g | Máximo combinado de RAM + swap; depende de swap disponível no host |
 | `SERVER_IP` | obrigatório | IPv4 público do painel/certificado; alterar exige recriar ambos os serviços |
 | `SERVER_NAME` | Valheim ARM | Nome exibido pelo servidor |
 | `WORLD_NAME` | Dedicated | Seleciona/cria mundo; preserva os anteriores |
@@ -41,6 +43,35 @@ Para alterar o `.env`, use `sudo nano .env` e aplique com `sudo docker compose u
 | `BEPINEX` | false | Habilita o BepInEx padrão incluído na imagem, com plugins locais |
 
 A porta do jogo é fixada em 2456 no Compose, com UDP 2456–2457 publicado. O painel usa TCP 443; a API 8080 não é publicada.
+
+### Memória e swap
+
+Os padrões permitem até **10 GiB de RAM** e **14 GiB no total de RAM + swap**, ou seja, até **4 GiB de swap**. Os limites abrangem jogo, FEX e painel; não reservam memória antecipadamente. Na instância de 12 GiB, o teto de RAM deixa margem para Ubuntu, Docker e proxy.
+
+O Docker não cria swap. Confira a disponível na instância:
+
+```bash
+swapon --show
+free -h
+```
+
+Para ajustar, edite o `.env`:
+
+```dotenv
+VALHEIM_MEMORY_LIMIT=10g
+VALHEIM_MEMORY_SWAP_LIMIT=14g
+```
+
+O total de RAM + swap deve ser maior ou igual ao limite de RAM; valores iguais desabilitam swap para o contêiner. Sem swap no host, o limite de RAM continua valendo. Swap pode reduzir o risco de falta de memória, mas seu uso intenso causa lentidão e não garante proteção contra OOM.
+
+Crie um backup e pare o jogo pelo painel antes de aplicar:
+
+```bash
+sudo docker compose config --quiet
+sudo docker compose up -d --no-deps valheim
+```
+
+Isso recria o contêiner quando necessário, preservando os dados. Reiniciar somente o jogo pelo painel não aplica limites do Docker. Instalações antigas precisam também atualizar as linhas `mem_limit` e `memswap_limit` do serviço `valheim` em `compose.yaml` para as expressões deste projeto; atualizar apenas a imagem não substitui o Compose local.
 
 ### Modificadores do mundo
 
@@ -267,6 +298,10 @@ Para parar ou reiniciar só o jogo, use o painel. Comandos Docker podem deixar o
 A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT`. Se estiver desativado, usa `BACKUP_AT`; com ambos desativados, usa 05:00. Horários usam `TIMEZONE`. Backup e reinício coincidentes são combinados; uma atualização disponível aproveita a mesma parada.
 
 Manutenções automáticas aguardam dois minutos de zero jogadores confirmado; no modo Steam, exigem também A2S. Informações desconhecidas adiam a tarefa. As ações manuais do painel dispensam essas verificações, preservando a confirmação de salvamento. A aba **Atividade** mostra o resultado.
+
+Se o jogo registrar sinal fatal na primeira cena e permanecer ativo, o painel mostra a falha e o supervisor tenta encerrá-lo com SIGINT por até 30 segundos. Somente quando a primeira cena foi reconhecida e ainda não houve indício de carregamento do mundo, pode encerrar o processo travado com SIGKILL e agendar uma nova tentativa. Essa saída não é tratada como salvamento confirmado e não gera backup.
+
+Se o mundo já começou a carregar ou a fase é desconhecida, o supervisor suspende essa recuperação e pede intervenção pelo painel/SSH. Um carregamento demorado, sozinho, não autoriza encerramento forçado. A recuperação não restaura nem substitui saves automaticamente.
 
 Depois de cinco falhas consecutivas, a recuperação automática fica suspensa; corrija a causa e use **Iniciar**. Uma parada manual não é desfeita pela recuperação automática. Não há restauração automática de backups.
 
