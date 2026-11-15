@@ -1,3 +1,4 @@
+import pytest
 import asyncio
 from unittest.mock import patch
 
@@ -84,3 +85,21 @@ def test_client_preserves_unknown_inflight_update_until_status_is_confirmed():
     ):
         assert client.status()["state"] == "succeeded"
     assert not client.busy
+
+
+@pytest.mark.parametrize(
+    "error,message",
+    [
+        (FileNotFoundError(), "não está instalada"),
+        (PermissionError(), "não tem permissão"),
+        (ConnectionRefusedError(), "não está respondendo"),
+    ],
+)
+def test_host_agent_diagnostics_distinguish_missing_mount_and_stopped_service(error, message):
+    from app.host_updates import HostUpdates
+
+    updates = HostUpdates()
+    with patch.object(updates, "request", side_effect=error):
+        status = updates.status()
+    assert not status["available"]
+    assert message in status["message"]

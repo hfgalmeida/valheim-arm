@@ -1180,3 +1180,68 @@ def test_diagnostics_keeps_redacted_failure_after_recovery(runtime):
     assert result["phase"] == "ready"
     assert result["last_failure"]["message"] == "Falha [senha]"
     assert result["last_failure"]["time"] > 0
+
+
+@pytest.mark.parametrize("crossplay", [True, False])
+def test_world_ready_without_final_loading_message_after_live_activity(runtime, crossplay):
+    async def scenario():
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
+        runtime.state = "iniciando"
+        lines = [
+            b"Loading first scene!\n",
+            b"Loading: Done, Total time: -11.281965\n",
+            b"Game server connected\n",
+            b"Loading: ZNet Start\n",
+            b"ZNet.LoadWorld: Test\n",
+            b"ZDOMan.LoadChunks - Starting to load 100 zdos from 5 Chunks.\n",
+            b"ZDOMan.LoadChunks => Loading ZDOs done [378ms]\n",
+            b"ZDOMan.LoadChunks done [436ms]\n",
+            b'Session "Test" registered with join code 123456\n',
+            b'Session "Test" with join code 123456 and IP 192.0.2.1:2456 is active with 0 player(s)\n',
+            b"Connections 0 ZDOS:13884  sent:0 recv:0\n",
+            b"",
+        ]
+        observed = []
+
+        async def readline():
+            observed.append(runtime.game_ready)
+            return lines.pop(0)
+
+        runtime.process = SimpleNamespace(
+            returncode=None,
+            stdout=SimpleNamespace(readline=readline),
+            wait=AsyncMock(return_value=0),
+        )
+        await runtime.read_game(runtime.process)
+        assert not any(observed[:10])
+        assert observed[10] == crossplay
+        assert observed[11]
+
+    asyncio.run(scenario())
+
+
+def test_heartbeat_before_world_start_never_marks_ready(runtime):
+    async def scenario():
+        runtime.state = "iniciando"
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
+        lines = iter(
+            [
+                b"Game server connected\n",
+                b"Loading: Done, Total time: 1\n",
+                b"Connections 0 ZDOS:0  sent:0 recv:0\n",
+                b"",
+            ]
+        )
+
+        async def readline():
+            assert not runtime.game_ready
+            return next(lines)
+
+        runtime.process = SimpleNamespace(
+            returncode=None,
+            stdout=SimpleNamespace(readline=readline),
+            wait=AsyncMock(return_value=0),
+        )
+        await runtime.read_game(runtime.process)
+
+    asyncio.run(scenario())

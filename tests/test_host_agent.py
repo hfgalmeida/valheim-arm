@@ -208,3 +208,51 @@ def test_rollback_outcome_refers_only_to_current_operation(tmp_path, recent):
         agent.request("a" * 32)
         agent.worker.join(3)
     assert agent.status()["state"] == ("rolled_back" if recent else "failed")
+
+
+def test_install_writes_service_and_permissions_without_touching_host(tmp_path):
+    root = tmp_path / "installation"
+    root.mkdir()
+    (root / ".env").write_text('SERVER_PASSWORD="keep"\n')
+    (root / "compose.yaml").write_text("services: {}\n")
+    managed = tmp_path / "managed"
+    (managed / "etc/systemd/system").mkdir(parents=True)
+    real_path = Path
+    real_stat = Path.stat
+    parents = {root, *root.parents}
+
+    def paths(value, *parts):
+        text = str(value)
+        if text.startswith(("/usr/local/lib/", "/etc/")):
+            return real_path(managed, text.lstrip("/"), *parts)
+        return real_path(value, *parts)
+
+    def stat(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        if path in parents:
+            values = list(result)
+            values[0] = (values[0] & ~0o777) | 0o755
+            values[4] = values[5] = 0
+            return os.stat_result(values)
+        return result
+
+    with (
+        patch.object(agent_module, "Path", side_effect=paths),
+        patch.object(Path, "stat", stat),
+        patch.object(agent_module.os, "geteuid", return_value=0, create=True),
+        patch.object(agent_module.os, "chown", create=True) as chown,
+        patch.object(agent_module, "update_lock", return_value=Lock()),
+        patch.object(agent_module.subprocess, "run") as systemctl,
+    ):
+        agent_module.install(root)
+    assert chown.call_count >= 4
+    assert 'SERVER_PASSWORD="keep"' in (root / ".env").read_text()
+    assert 'COMPOSE_FILE="compose.yaml:compose.update-agent.yaml"' in (root / ".env").read_text()
+    unit = next((managed / "etc/systemd/system").glob("*.service"))
+    assert "WantedBy=multi-user.target" in unit.read_text()
+    assert [call.args[0][1] for call in systemctl.call_args_list] == [
+        "daemon-reload",
+        "enable",
+        "restart",
+    ]
+    assert (root / "compose.update-agent.yaml").read_text().endswith("/run/valheim-update:ro\n")

@@ -55,11 +55,19 @@ class HostUpdates:
         with self.lock:
             try:
                 self.current = self.request("GET", "/status")
-            except (OSError, ValueError, http.client.HTTPException):
+            except (OSError, ValueError, http.client.HTTPException) as exc:
+                if isinstance(exc, FileNotFoundError):
+                    message = "A conexão com o atualizador não está instalada neste contêiner. Execute o instalador atualizado e aplique a integração indicada por ele."
+                elif isinstance(exc, PermissionError):
+                    message = "O painel não tem permissão para acessar o atualizador. Reaplique o instalador atualizado no host."
+                elif isinstance(exc, ConnectionRefusedError):
+                    message = "A conexão está montada, mas o serviço de atualização não está respondendo no host. Verifique o serviço systemd."
+                else:
+                    message = "Serviço de atualização indisponível. Prepare ou verifique o serviço no host."
                 self.current = {
                     **self.current,
                     "available": False,
-                    "message": "Serviço de atualização indisponível. Prepare ou verifique o serviço no host.",
+                    "message": message,
                 }
             return self.current.copy()
 

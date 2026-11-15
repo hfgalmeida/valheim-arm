@@ -8,7 +8,9 @@ FATAL_SIGNAL = re.compile(r"^Caught fatal signal - signo:(?:4|6|7|8|11)\b")
 
 def world_ready(line):
     # Unity also prints "Loading: Done, Total time" before ZNet loads the world.
-    return "Loading: Done." in line
+    return "Loading: Done." in line or bool(
+        re.search(r"Loading: Done,? Total seconds sin[cz]e ZNet start:", line)
+    )
 
 
 class StartupWatchdog:
@@ -19,9 +21,13 @@ class StartupWatchdog:
         self.process = process
         self.scene_started = False
         self.world_started = False
+        self.chunks_loaded = False
         self.fatal = None
 
     def consume(self, line, *, ready=False, allow_fatal=True):
+        if re.search(r"ZDOMan\.LoadChunks done \[\d+ms\]", line):
+            self.chunks_loaded = True
+            self.world_started = True
         if "Loading first scene!" in line:
             self.scene_started = True
         if (

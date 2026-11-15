@@ -333,12 +333,12 @@ def install(root):
         for path in (library, config_dir, runtime):
             path.mkdir(parents=True, exist_ok=True)
         for path in (library, config_dir):
-            path.chown(0, 0)
+            os.chown(path, 0, 0)
             path.chmod(0o700)
-        runtime.chown(0, 10001)
+        os.chown(runtime, 0, 10001)
         runtime.chmod(0o750)
         for name in files:
-            (root / name).chown(0, 0)
+            os.chown(root / name, 0, 0)
             (root / name).chmod(0o600)
         override = root / "compose.update-agent.yaml"
         if (
@@ -352,7 +352,7 @@ def install(root):
         override.write_text(
             "services:\n  valheim:\n    volumes:\n      - ./.update-agent:/run/valheim-update:ro\n"
         )
-        override.chown(0, 0)
+        os.chown(override, 0, 0)
         override.chmod(0o600)
         files.append("compose.update-agent.yaml")
         lines = [
@@ -406,7 +406,7 @@ def serve(config_path):
         path.unlink()
     with Server(str(path), Handler) as server:
         server.agent = agent
-        path.chown(0, 10001)
+        os.chown(path, 0, 10001)
         path.chmod(0o660)
         server.serve_forever()
 

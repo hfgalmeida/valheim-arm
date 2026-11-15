@@ -868,7 +868,29 @@ class Runtime:
                     self.transport_ready = True
                 if save_completed(text):
                     self.last_save = time.monotonic()
-                if world_ready(text):
+                # Some builds omit the final ZNet loading message. Require either
+                # live world activity or completed chunks plus an active PlayFab
+                # session; scene loading and early backend registration are insufficient.
+                world_activity = bool(
+                    re.search(r"\bConnections \d+ ZDOS:\d+\s+sent:\d+\s+recv:\d+\s*$", text)
+                    or re.search(r"\bGot character ZDOID from .+ : \d+:\d+", text)
+                )
+                active_session = bool(
+                    re.search(
+                        r'\bSession ".*" with join code [0-9]{6}(?![0-9]).* is active with \d+ player\(s\)',
+                        text,
+                    )
+                )
+                if (
+                    world_ready(text)
+                    or (self.startup_watchdog.world_started and world_activity)
+                    or (
+                        self.startup_watchdog.chunks_loaded
+                        and self.running
+                        and self.running.crossplay
+                        and active_session
+                    )
+                ):
                     self.world_loaded = True
                 if (
                     self.world_loaded

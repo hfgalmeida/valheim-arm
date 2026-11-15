@@ -102,4 +102,5 @@
 - [x] Reutilizar backup, verificação, preferência de execução e retorno à imagem anterior do atualizador; impedir operações simultâneas e pausar manutenção durante atualização.
 - [x] Testar navegador, API e comunicação Unix em contêiner descartável no Linux, sem instalar serviço permanente nem executar atualização real.
 - [x] Integrar criação/habilitação automática do serviço privilegiado ao instalador; preservar configurações e não reiniciar o mundo ao reexecutar o script.
+- [x] Instalar e habilitar o agente no host de testes, recriar o contêiner com socket somente leitura e confirmar resposta disponível pelo cliente do painel (15/11/2026).
 - [ ] Validar uma atualização real pelo painel após instalar o agente e publicar a nova imagem.
