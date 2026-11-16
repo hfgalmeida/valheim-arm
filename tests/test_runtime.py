@@ -1220,6 +1220,40 @@ def test_world_ready_without_final_loading_message_after_live_activity(runtime, 
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("opened_first", [False, True])
+def test_steam_ready_after_chunks_and_server_open_without_final_message(runtime, opened_first):
+    async def scenario():
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": False})
+        runtime.state = "iniciando"
+        chunks = b"11/16/2026 22:10:24: ZDOMan.LoadChunks done [332ms]\n"
+        opened = b"11/16/2026 22:10:39: Opened Steam server\n"
+        lines = iter(
+            [
+                b"Loading: Done, Total time: -12.075521\n",
+                b"Game server connected\n",
+                opened if opened_first else chunks,
+                chunks if opened_first else opened,
+                b"",
+            ]
+        )
+        observed = []
+
+        async def readline():
+            observed.append(runtime.game_ready)
+            return next(lines)
+
+        runtime.process = SimpleNamespace(
+            returncode=None,
+            stdout=SimpleNamespace(readline=readline),
+            wait=AsyncMock(return_value=0),
+        )
+        await runtime.read_game(runtime.process)
+        assert observed == [False, False, False, False, True]
+        assert runtime.players.last_count is None
+
+    asyncio.run(scenario())
+
+
 def test_heartbeat_before_world_start_never_marks_ready(runtime):
     async def scenario():
         runtime.state = "iniciando"
@@ -1227,6 +1261,7 @@ def test_heartbeat_before_world_start_never_marks_ready(runtime):
         lines = iter(
             [
                 b"Game server connected\n",
+                b"Opened Steam server\n",
                 b"Loading: Done, Total time: 1\n",
                 b"Connections 0 ZDOS:0  sent:0 recv:0\n",
                 b"",

@@ -870,6 +870,7 @@ class Runtime:
             return
         if self.startup_watchdog.process is not process:
             self.startup_watchdog.reset(process)
+        steam_server_opened = False
         try:
             while line := await process.stdout.readline():
                 if self.process is not None and self.process is not process:
@@ -899,6 +900,8 @@ class Runtime:
                         self.transport_ready = True
                 elif "Game server connected" in text or "Opened Steam server" in text:
                     self.transport_ready = True
+                    if re.search(r"(?:^|:\s)Opened Steam server\s*$", text):
+                        steam_server_opened = True
                 if save_completed(text):
                     self.last_save = time.monotonic()
                 # Some builds omit the final ZNet loading message. Require either
@@ -917,6 +920,12 @@ class Runtime:
                 if (
                     world_ready(text)
                     or (self.startup_watchdog.world_started and world_activity)
+                    or (
+                        self.startup_watchdog.chunks_loaded
+                        and self.running
+                        and not self.running.crossplay
+                        and steam_server_opened
+                    )
                     or (
                         self.startup_watchdog.chunks_loaded
                         and self.running

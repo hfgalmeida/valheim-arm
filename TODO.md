@@ -40,6 +40,8 @@
 - [x] Carregamento real na Oracle do pacote embutido 5.4.2360 (engine 5.4.23.6), ServerInfo 2.2.7 e JsonDotNET 13.0.4: 2 plugins carregados, 0 falhas, API interna funcional e mundo online com crossplay. Conexão pelo cliente posteriormente confirmada nos dois modos.
 - [x] Melhorar o diagnóstico de presença: fonte, horário/idade, última contagem, expiração, consulta Steam da manutenção e invalidação de conexões/desconexões Steam/PlayFab; desconhecido não autoriza manutenção automática.
 - [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
+- [x] Validar ciclo básico de presença sem crossplay em 16/11/2026: entrada com 1 jogador no log/painel/A2S, desconexão Steam, retorno a zero no log/painel/A2S e janela de 120 segundos transcorrida sem novos eventos. Reconexão durante a janela e manutenção protegida real continuam pendentes.
+- [x] Validar ciclo básico de presença com crossplay em 16/11/2026: entrada e 1 jogador no log/painel, saída e presença desconhecida no painel, retorno a zero no log/painel e janela de 120 segundos transcorrida sem novos eventos. Reconexão durante a janela e manutenção protegida real permanecem pendentes.
 - [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
 
 ### Instalação pública simplificada
@@ -106,7 +108,7 @@
 - [x] Instalar e habilitar o agente no host de testes, recriar o contêiner com socket somente leitura e confirmar resposta disponível pelo cliente do painel (15/11/2026).
 - [x] Restaurar o override gerenciado ausente e reconciliar o estado antigo no host após validar imagens, jogo e proxy, sem reiniciar contêineres (16/11/2026).
 - [x] Consultar versões a cada 15 minutos e pela aba/botão do painel, com limite de frequência, data da consulta e indicação de informação desatualizada.
-- [ ] Revalidar atualização real pelo painel: o relato inicial de sucesso em 15/11/2026 foi corrigido em 16/11/2026; o journal mostrou timeout de prontidão, reaplicação da imagem anterior e recuperação sem confirmação, deixando novas tentativas bloqueadas. Confirmar imagem final e resultado terminal antes de marcar como validado.
+- [x] Revalidar atualização real da imagem pelo painel: administrador confirmou instalação concluída com sucesso em 16/11/2026, após as correções do atualizador.
 
 
 ### Etapa final do escopo: validação de desempenho

@@ -36,6 +36,34 @@ def test_crossplay_and_restart_never_infer_zero():
     assert players.current() is None
 
 
+def test_ten_minute_snapshots_require_new_empty_window_after_departure():
+    now = [0.0]
+    players = Players(lambda: now[0])
+    players.consume("Connections 0 ZDOS:123 sent:0 recv:0")
+    now[0] = 120
+    assert players.idle()
+    players.consume("Got handshake from client ANON")
+    assert players.current() is None and not players.idle()
+    now[0] = 600
+    players.consume("Connections 1 ZDOS:123 sent:0 recv:0")
+    assert players.current() == 1 and not players.idle()
+    now[0] = 650
+    players.consume("ZRpc timeout detected")
+    assert players.current() is None and not players.idle()
+    now[0] = 1200
+    players.consume("Connections 0 ZDOS:123 sent:0 recv:0")
+    assert players.status()["idle_wait_seconds"] == 120
+    now[0] = 1319
+    assert not players.idle()
+    now[0] = 1320
+    assert players.idle()
+    now[0] = 1800
+    players.consume("Connections 0 ZDOS:123 sent:0 recv:0")
+    assert players.idle()
+    now[0] = 2460
+    assert players.current() is None and not players.idle()
+
+
 def test_a2s_challenge_and_malformed():
     info = b"\xff\xff\xff\xffI\x11Name\0Map\0Folder\0Game\0\x00\x00\x03"
     with patch("app.players.socket.socket") as cls:
