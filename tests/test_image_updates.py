@@ -33,3 +33,30 @@ def test_image_version_distinguishes_newer_from_rollback():
     assert version.describe()["update_available"] is False
     version.available = None
     assert version.describe()["update_available"] is None
+
+
+def test_version_check_is_fresh_rate_limited_and_preserves_last_known_on_failure():
+    version = ImageVersion()
+    version.installed = "0.22.0"
+    with patch("app.image_version.published_version", return_value="0.23.0") as check:
+        first = version.check()
+        assert first["available"] == "0.23.0" and first["update_available"]
+        assert not first["checking"] and not first["stale"]
+        version.check()
+        check.assert_called_once()
+    version.last_attempt -= 61
+    with patch("app.image_version.published_version", side_effect=OSError("offline")):
+        value = version.check()
+    assert value["available"] == "0.23.0" and value["stale"]
+    assert value["error"] and value["attempted"]
+
+
+def test_version_lookup_does_not_block_while_another_lookup_is_running():
+    version = ImageVersion()
+    version.check_lock.acquire()
+    try:
+        with patch("app.image_version.published_version") as fetch:
+            assert version.check()["checking"]
+            fetch.assert_not_called()
+    finally:
+        version.check_lock.release()

@@ -5,6 +5,7 @@ let csrf = "",
   samples = [],
   currentConfig = null;
 let panelUser = null;
+let lastPanelState = null;
 function isAdmin() {
   return panelUser?.role === "admin";
 }
@@ -46,6 +47,8 @@ const labels = {
 };
 function notice(text) {
   $("notice").textContent = text;
+  if (text && window.matchMedia("(max-width: 760px)").matches)
+    requestAnimationFrame(() => $("notice").scrollIntoView({ block: "nearest" }));
 }
 async function api(path, method = "GET", body) {
   const headers = { "Content-Type": "application/json" };
@@ -71,6 +74,8 @@ function signedOut() {
   events = null;
   csrf = "";
   panelUser = null;
+  lastPanelState = null;
+  $("mobile-section").replaceChildren();
   currentConfig = null;
   samples = [];
   maintenanceJobs = [];
@@ -131,8 +136,16 @@ function bytes(v) {
 function chart(id, values, ceiling) {
   const c = $(id),
     x = c.getContext("2d"),
-    w = c.width,
-    h = c.height;
+    rect = c.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const scale = Math.min(window.devicePixelRatio || 1, 3);
+  const w = rect.width,
+    h = rect.height;
+  const width = Math.round(w * scale),
+    height = Math.round(h * scale);
+  if (c.width !== width) c.width = width;
+  if (c.height !== height) c.height = height;
+  x.setTransform(scale, 0, 0, scale, 0, 0);
   x.clearRect(0, 0, w, h);
   x.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--line").trim();
   x.beginPath();
@@ -142,7 +155,7 @@ function chart(id, values, ceiling) {
   if (values.length < 2) return;
   const max = ceiling || Math.max(...values, 1);
   x.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
-  x.lineWidth = 3;
+  x.lineWidth = 2;
   x.beginPath();
   values.forEach((v, i) => {
     const a = (i / (values.length - 1)) * w,
@@ -256,6 +269,7 @@ function modDiagnostics(d) {
   }
 }
 function update(s) {
+  lastPanelState = s;
   if (s.server_name) $("server-name").textContent = s.server_name;
   if (isAdmin() && s.audit_error) $("audit-warning").textContent = s.audit_error;
   if (s.run_intent) {
@@ -344,18 +358,7 @@ function update(s) {
     (s.installed_build || "—") +
     " · Disponível: " +
     (s.available_build || "—");
-  if (s.image_version) {
-    const version = s.image_version;
-    $("image-version").textContent =
-      "Imagem: " +
-      (version.installed || "não identificada") +
-      (version.update_available
-        ? " · Nova versão pública: " +
-          version.available +
-          ". Atualize pelo SSH: sudo python3 update-server.py"
-        : "") +
-      (version.error ? " · " + version.error : "");
-  }
+  if (s.image_version) renderImageVersion(s.image_version);
   $("pending").textContent = s.pending_config ? "Alterações aguardam reinício" : "";
   $("logs").textContent = s.logs
     .map((l) => new Date(l.time * 1000).toLocaleTimeString() + "  " + l.message)
@@ -618,6 +621,7 @@ async function signedIn() {
     if (element.getAttribute("role") !== "tabpanel") element.hidden = !isAdmin();
     else if (!isAdmin()) element.hidden = true;
   });
+  refreshMobileNavigation();
   selectTab($("tab-overview"));
   $("history-title").textContent = isAdmin() ? "Histórico de manutenção" : "Suas operações";
   $("action-policy").textContent = isAdmin()
@@ -844,15 +848,57 @@ $("cloud-file").onchange = () =>
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTab(tab, focus = false) {
   if (tab.hidden) return;
+  $("dashboard").dataset.section = tab.id;
   if (tab.id === "tab-administration" && isAdmin()) guard(loadAudit);
+  if (tab.id === "tab-server" && isAdmin())
+    guard(async () => renderImageVersion(await api("/image-version")));
   tabs.forEach((item) => {
     const selected = item === tab && !item.hidden;
     item.setAttribute("aria-selected", String(selected));
     item.tabIndex = selected ? 0 : -1;
     $(item.getAttribute("aria-controls")).hidden = !selected;
   });
+  $("mobile-section").value = tab.id;
   if (focus) tab.focus();
+  if (tab.id === "tab-overview" && lastPanelState)
+    requestAnimationFrame(() => lastPanelState && update(lastPanelState));
 }
+function refreshMobileNavigation() {
+  $("mobile-section").replaceChildren();
+  for (const tab of tabs.filter((item) => !item.hidden)) {
+    const option = document.createElement("option");
+    option.value = tab.id;
+    option.textContent = tab.textContent.trim();
+    $("mobile-section").append(option);
+  }
+}
+$("mobile-section").onchange = () => {
+  const tab = $($("mobile-section").value);
+  if (!tab || tab.hidden) return;
+  selectTab(tab);
+  const target =
+    tab.id === "tab-overview"
+      ? document.querySelector(".overview")
+      : $(tab.getAttribute("aria-controls"));
+  target.scrollIntoView({ block: "start" });
+};
+let phoneLayout = null;
+function syncResponsiveLayout() {
+  const mobile = window.matchMedia(
+    "(max-width: 760px), (max-width: 960px) and (max-height: 500px)",
+  ).matches;
+  if (mobile !== phoneLayout) $("server-details").open = !mobile;
+  phoneLayout = mobile;
+}
+syncResponsiveLayout();
+let resizeFrame = null;
+window.addEventListener("resize", () => {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(() => {
+    syncResponsiveLayout();
+    if (lastPanelState) update(lastPanelState);
+  });
+});
 tabs.forEach((tab) => {
   tab.onclick = () => selectTab(tab);
   tab.onkeydown = (event) => {
@@ -1394,3 +1440,31 @@ $("audit-filter-form").onsubmit = (event) => {
   event.preventDefault();
   guard(loadAudit);
 };
+
+function renderImageVersion(version) {
+  const text =
+    "Instalada: " +
+    (version.installed || "não identificada") +
+    " · Disponível no Docker Hub: " +
+    (version.available || "a consultar") +
+    (version.update_available ? " · Nova versão disponível" : "") +
+    (version.checked
+      ? " · Última consulta: " +
+        new Date(version.checked * 1000).toLocaleString("pt-BR", {
+          timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+        })
+      : "") +
+    (version.error ? " · " + version.error : "") +
+    (version.stale && !version.error ? " · Informação aguardando atualização" : "");
+  $("image-version").textContent = text + (version.checking ? " · Consulta em andamento" : "");
+  $("image-version-status").textContent = $("image-version").textContent;
+}
+$("check-image-version").onclick = () =>
+  guard(async () => {
+    $("check-image-version").disabled = true;
+    try {
+      renderImageVersion(await api("/image-version"));
+    } finally {
+      $("check-image-version").disabled = false;
+    }
+  });

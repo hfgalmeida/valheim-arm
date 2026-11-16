@@ -103,3 +103,20 @@ def test_host_agent_diagnostics_distinguish_missing_mount_and_stopped_service(er
         status = updates.status()
     assert not status["available"]
     assert message in status["message"]
+
+
+def test_manual_image_version_check_is_authenticated_without_starting_update(runtime, monkeypatch):
+    client = client_fixture(runtime, monkeypatch)
+    with (
+        patch.object(
+            runtime.image_version,
+            "check",
+            return_value={"installed": "0.22.0", "available": "0.23.0"},
+        ) as check,
+        patch.object(runtime.host_updates, "start") as update,
+    ):
+        assert client.get("/api/v1/image-version").json()["available"] == "0.23.0"
+        check.assert_called_once()
+        update.assert_not_called()
+        client.cookies.clear()
+        assert client.get("/api/v1/image-version").status_code == 401

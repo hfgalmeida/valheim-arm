@@ -5,9 +5,12 @@ import json
 from pathlib import Path
 import re
 import time
+import threading
 import urllib.request
 
 REPOSITORY = "hfgalmeida/valheim-arm"
+CHECK_INTERVAL = 15 * 60
+RETRY_INTERVAL = 60
 
 
 def arm_digest(tag):
@@ -56,6 +59,9 @@ class ImageVersion:
         self.available = None
         self.checked = None
         self.error = None
+        self.attempted = None
+        self.last_attempt = None
+        self.check_lock = threading.Lock()
 
     def describe(self):
         newer = None
@@ -73,13 +79,34 @@ class ImageVersion:
             "checked": self.checked,
             "error": self.error,
             "repository": REPOSITORY,
+            "attempted": self.attempted,
+            "checking": self.check_lock.locked(),
+            "stale": bool(self.error)
+            or self.checked is None
+            or time.time() - self.checked >= CHECK_INTERVAL,
         }
+
+    def check(self):
+        # Do not block the event loop or duplicate concurrent manual/background requests.
+        if not self.check_lock.acquire(blocking=False):
+            return self.describe()
+        try:
+            due = (
+                self.last_attempt is None or time.monotonic() - self.last_attempt >= RETRY_INTERVAL
+            )
+            if due:
+                self.last_attempt = time.monotonic()
+                self.attempted = time.time()
+                try:
+                    self.available = published_version()
+                    self.checked, self.error = time.time(), None
+                except Exception:
+                    self.error = "Não foi possível consultar a imagem pública no Docker Hub. A última versão conhecida pode estar desatualizada."
+        finally:
+            self.check_lock.release()
+        return self.describe()
 
     async def run(self):
         while True:
-            try:
-                self.available = await asyncio.to_thread(published_version)
-                self.checked, self.error = time.time(), None
-            except Exception:
-                self.error = "Não foi possível consultar a imagem pública no Docker Hub."
-            await asyncio.sleep(6 * 3600)
+            await asyncio.to_thread(self.check)
+            await asyncio.sleep(RETRY_INTERVAL if self.error else CHECK_INTERVAL)

@@ -112,6 +112,7 @@ def test_first_access_allows_only_password_change_session_and_logout(runtime, mo
         ),
         ("get", "/audit", None),
         ("get", "/image-update", None),
+        ("get", "/image-version", None),
         ("post", "/image-update", {"confirm": True, "request_id": "a" * 32}),
         ("post", "/actions", {"action": "backup"}),
         ("post", "/actions", {"action": "update"}),

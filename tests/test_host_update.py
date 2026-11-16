@@ -220,3 +220,68 @@ def test_unverified_rollback_is_distinguished_and_blocks_new_updates(updater):
         updater.update("public/image:latest")
     assert error.value.code == "recovery_required"
     assert len(updater.commands) == commands
+
+
+class ReconcileUpdater(FakeUpdater):
+    def run(self, *args, capture=False):
+        self.commands.append(args)
+        if args == ("compose", "config", "--format", "json"):
+            return json.dumps(
+                {"services": {s: {"image": "configured:image"} for s in ("valheim", "proxy")}}
+            )
+        if args[:3] == ("compose", "ps", "--quiet"):
+            return args[3] + "-id"
+        if args[0] == "inspect":
+            return json.dumps([{"Id": args[1], "Image": "sha256:live", "State": {"Running": True}}])
+        if args[:2] == ("image", "inspect"):
+            return json.dumps([{"Id": "sha256:live"}])
+        raise AssertionError("Reconciliation must not mutate Docker: " + str(args))
+
+
+def reconciliation_fixture(updater):
+    value = ReconcileUpdater(updater.root)
+    value.save({"phase": "switching", "previous": "old:image", "target": "failed:image"})
+    status = updater.root / ".update-agent/status.json"
+    status.parent.mkdir()
+    status.write_text(json.dumps({"state": "failed", "message": "old failure"}))
+    return value, status
+
+
+def test_reconcile_verifies_current_deployment_and_preserves_old_record_without_restart(updater):
+    value, status = reconciliation_fixture(updater)
+    assert value.reconcile()
+    assert value.readiness == 1
+    record = json.loads(value.state.read_text())
+    assert record["phase"] == "reconciled" and not record["rollback_eligible"]
+    assert record["verified_image"] == "sha256:live"
+    archive = list(value.root.glob(".image-update-recovery-*.json"))
+    assert len(archive) == 1 and json.loads(archive[0].read_text())["phase"] == "switching"
+    assert json.loads(status.read_text())["state"] == "reconciled"
+    with pytest.raises(host_update.UpdateFailure):
+        value.restore(record)
+
+
+@pytest.mark.parametrize("failure", ["health", "changed", "running", "image"])
+def test_reconcile_refuses_uncertain_state_without_clearing_recovery(updater, failure):
+    value, status = reconciliation_fixture(updater)
+    if failure == "health":
+        value.wait_ready = lambda: (_ for _ in ()).throw(RuntimeError("not ready"))
+    elif failure == "changed":
+        value.deployment_identity = __import__("unittest.mock", fromlist=["Mock"]).Mock(
+            side_effect=[[("old",)], [("changed",)]]
+        )
+    elif failure == "running":
+        status.write_text(json.dumps({"state": "running"}))
+    elif failure == "image":
+        original = value.run
+
+        def run(*args, **kwargs):
+            if args[:2] == ("image", "inspect"):
+                return json.dumps([{"Id": "sha256:different"}])
+            return original(*args, **kwargs)
+
+        value.run = run
+    with pytest.raises(RuntimeError):
+        value.reconcile()
+    assert json.loads(value.state.read_text())["phase"] == "switching"
+    assert not list(value.root.glob(".image-update-recovery-*.json"))

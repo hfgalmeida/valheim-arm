@@ -428,6 +428,10 @@ def create_app(data=None, runtime=None, lifecycle=True):
         except (ValueError, asyncio.QueueFull) as exc:
             raise HTTPException(409, str(exc) or "Fila cheia")
 
+    @app.get("/api/v1/image-version", dependencies=[Depends(session)])
+    async def check_image_version():
+        return await asyncio.to_thread(rt.image_version.check)
+
     @app.get("/api/v1/image-update", dependencies=[Depends(session)])
     async def image_update_status():
         return await asyncio.to_thread(rt.host_updates.status)

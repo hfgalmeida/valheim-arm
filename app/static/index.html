@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <title>Valheim · Sala de comando</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/panel.js" defer></script>
@@ -79,6 +79,10 @@
         <button id="close-password-change" type="button">Voltar ao painel</button>
       </section>
       <div id="dashboard" hidden>
+        <nav class="mobile-navigation" aria-label="Navegação do painel no celular">
+          <label for="mobile-section">Seção do painel</label>
+          <select id="mobile-section"></select>
+        </nav>
         <section class="overview">
           <div>
             <span class="eyebrow">SEU MUNDO, SEMPRE À VISTA</span>
@@ -89,9 +93,12 @@
               <p id="game-detail"></p>
               <p id="last-failure" hidden></p>
             </div>
-            <p id="versions" data-admin-only></p>
-            <p id="run-intent" data-admin-only aria-live="polite"></p>
-            <p id="image-version" data-admin-only></p>
+            <details id="server-details" class="overview-extra" data-admin-only open>
+              <summary>Detalhes do servidor</summary>
+              <p id="versions" data-admin-only></p>
+              <p id="run-intent" data-admin-only aria-live="polite"></p>
+              <p id="image-version" data-admin-only></p>
+            </details>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
             </p>
@@ -280,9 +287,13 @@
               Atualiza painel, FEX e proxy com backup e verificação. O painel pode desconectar
               durante a troca; a preferência de manter o jogo ligado ou parado será preservada.
             </p>
-            <button type="button" id="update-image" class="primary" disabled>
-              Atualizar imagem
-            </button>
+            <p id="image-version-status" role="status" aria-live="polite"></p>
+            <div class="editor-actions">
+              <button type="button" id="check-image-version">Verificar nova versão</button>
+              <button type="button" id="update-image" class="primary" disabled>
+                Atualizar imagem
+              </button>
+            </div>
             <p id="image-update-status" role="status" aria-live="polite">
               Consultando serviço de atualização…
             </p>

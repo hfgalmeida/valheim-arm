@@ -83,9 +83,9 @@
 - [x] Histórico persistente de manutenção com início, término, duração em execução, origem, resultado, tentativas e backup associado; filtros por origem, resultado e período, retenção de 30 dias/200 operações concluídas e preservação das pendentes.
 - [ ] Concluir validação da contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
 
-### Melhoria futura: versão mobile do painel
+### Painel para celular
 
-- [ ] Criar uma experiência mobile dedicada, com navegação, métricas, formulários e operações adaptados a telas pequenas; validar acessibilidade e uso por toque.
+- [x] Adaptar o painel ao celular, com navegação compacta por perfil, detalhes recolhíveis, gráficos ajustados à densidade da tela, formulários em coluna e alvos de toque maiores. Testar administrador/operador, troca obrigatória de senha, confirmação e ausência de rolagem horizontal em 320–844 px, tablet e paisagem no navegador com emulação de toque.
 
 ### Recuperação de falha fatal durante inicialização
 
@@ -103,6 +103,8 @@
 - [x] Testar navegador, API e comunicação Unix em contêiner descartável no Linux, sem instalar serviço permanente nem executar atualização real.
 - [x] Integrar criação/habilitação automática do serviço privilegiado ao instalador; preservar configurações e não reiniciar o mundo ao reexecutar o script.
 - [x] Instalar e habilitar o agente no host de testes, recriar o contêiner com socket somente leitura e confirmar resposta disponível pelo cliente do painel (15/11/2026).
+- [x] Restaurar o override gerenciado ausente e reconciliar o estado antigo no host após validar imagens, jogo e proxy, sem reiniciar contêineres (16/11/2026).
+- [x] Consultar versões a cada 15 minutos e pela aba/botão do painel, com limite de frequência, data da consulta e indicação de informação desatualizada.
 - [ ] Revalidar atualização real pelo painel: o relato inicial de sucesso em 15/11/2026 foi corrigido em 16/11/2026; o journal mostrou timeout de prontidão, reaplicação da imagem anterior e recuperação sem confirmação, deixando novas tentativas bloqueadas. Confirmar imagem final e resultado terminal antes de marcar como validado.
 
 

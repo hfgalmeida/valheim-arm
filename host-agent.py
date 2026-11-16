@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler
 
 log = logging.getLogger("valheim-host-agent")
 PHASES = {
+    "reconciling": "Validando a instalação atual, sem trocar a imagem.",
     "queued": "Atualização solicitada.",
     "downloading": "Baixando a imagem Docker.",
     "preflight": "Validando a nova imagem.",
@@ -77,6 +78,7 @@ class Agent:
                 state = json.loads(self.path.read_text())
                 if not isinstance(state, dict) or state.get("state") not in (
                     "idle",
+                    "reconciled",
                     "running",
                     "succeeded",
                     "failed",
@@ -329,6 +331,11 @@ def install(root):
             raise ValueError(
                 "A pasta da instalação e seus pais não podem ser graváveis pelo UID/GID do contêiner ou por todos."
             )
+    for path in (root / "update-server.py", root / ".update-server.py.previous"):
+        if path.is_symlink():
+            raise ValueError(
+                "O atualizador local e sua cópia anterior não podem ser links simbólicos."
+            )
     env_text, files = compose_sources(root)
     identity = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     library = Path("/usr/local/lib/valheim-arm") / identity
@@ -376,6 +383,26 @@ def install(root):
         for name in ("host-agent.py", "update-server.py"):
             shutil.copyfile(source / name, library / name)
             (library / name).chmod(0o600)
+        # Keep the documented CLI consistent with the service's managed copy.
+        local_cli = root / "update-server.py"
+        content = (source / "update-server.py").read_bytes()
+        if local_cli.exists() and local_cli.read_bytes() != content:
+            previous_cli = root / ".update-server.py.previous"
+            shutil.copyfile(local_cli, previous_cli)
+            os.chown(previous_cli, 0, 0)
+            previous_cli.chmod(0o600)
+        if not local_cli.exists() or local_cli.read_bytes() != content:
+            fd, temporary = tempfile.mkstemp(dir=root, prefix=".agent-cli-")
+            try:
+                with os.fdopen(fd, "wb") as output:
+                    output.write(content)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, local_cli)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        os.chown(local_cli, 0, 0)
+        local_cli.chmod(0o600)
         config = config_dir / (identity + ".json")
         atomic_json(
             config,

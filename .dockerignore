@@ -16,3 +16,9 @@ tests
 
 .update-agent/
 compose.update-agent.yaml
+
+.image-update-recovery-*.json
+
+.agent-*-backup-*/
+
+.update-server.py.previous

@@ -193,7 +193,92 @@ class Updater:
             "readiness_timeout",
         )
 
+    def deployment_identity(self):
+        model = json.loads(self.compose("config", "--format", "json", capture=True))
+        result = []
+        for service in ("valheim", "proxy"):
+            container = self.compose("ps", "--quiet", service, capture=True)
+            if not container:
+                raise UpdateFailure(
+                    "Contêiner esperado não está em execução; reconciliação recusada.",
+                    "recovery_required",
+                )
+            info = json.loads(self.run("inspect", container, capture=True))[0]
+            reference = model["services"][service]["image"]
+            expected = json.loads(self.run("image", "inspect", reference, capture=True))[0]["Id"]
+            if not info.get("State", {}).get("Running") or info["Image"] != expected:
+                raise UpdateFailure(
+                    "Imagem em execução difere da configuração; reconciliação recusada.",
+                    "recovery_required",
+                )
+            result.append((service, info["Id"], info["Image"]))
+        if result[0][2] != result[1][2]:
+            raise UpdateFailure(
+                "Valheim e proxy usam imagens diferentes; reconciliação recusada.",
+                "recovery_required",
+            )
+        return result
+
+    def reconcile(self):
+        if not self.state.exists():
+            return False
+        state = json.loads(self.state.read_text())
+        if state.get("phase") not in (
+            "prepared",
+            "switching",
+            "rollback-verifying",
+            "rollback-unverified",
+        ):
+            return False
+        if not state.get("previous") or not state.get("target"):
+            raise UpdateFailure(
+                "Registro de recuperação incompleto; reconciliação recusada.", "recovery_required"
+            )
+        status_path = self.root / ".update-agent/status.json"
+        status = json.loads(status_path.read_text()) if status_path.exists() else None
+        if status and status.get("state") == "running":
+            raise UpdateFailure(
+                "Agente indica operação em andamento; confira o host.", "recovery_required"
+            )
+        self.progress("reconciling")
+        identity = self.deployment_identity()
+        self.wait_ready()
+        if identity != self.deployment_identity():
+            raise UpdateFailure(
+                "A instalação mudou durante a validação; reconciliação recusada.",
+                "recovery_required",
+            )
+        old = dict(state)
+        archive = self.root / (".image-update-recovery-" + str(time.time_ns()) + ".json")
+        atomic_write(archive, json.dumps(old))
+        state.update(
+            phase="reconciled",
+            previous_phase=old["phase"],
+            verified_image=identity[0][2],
+            reconciled_at=time.time(),
+            rollback_eligible=False,
+        )
+        self.save(state)
+        if status is not None:
+            status.update(
+                state="reconciled",
+                phase="reconciling",
+                finished=time.time(),
+                message="Estado antigo encerrado após validar a instalação atual. Pronto para uma nova atualização; nenhuma imagem foi trocada nesta verificação.",
+            )
+            atomic_write(status_path, json.dumps(status, ensure_ascii=False))
+        print(
+            "Instalação atual validada; registro antigo reconciliado sem reiniciar contêineres.",
+            flush=True,
+        )
+        return True
+
     def restore(self, state):
+        if state.get("rollback_eligible") is False:
+            raise UpdateFailure(
+                "O registro antigo foi reconciliado; não representa um retorno da instalação atual.",
+                "recovery_required",
+            )
         self.progress("rollback")
         self.run("image", "inspect", state["previous"], capture=True)
         self.require_intent_support(state["previous"])
@@ -364,6 +449,14 @@ def main():
     parser.add_argument("--image", default="hfgalmeida/valheim-arm:latest")
     parser.add_argument("--rollback", action="store_true")
     parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Validar a instalação atual e encerrar um registro antigo, sem reiniciar contêineres",
+    )
+    parser.add_argument(
+        "--directory", type=Path, help="Pasta da instalação, para uso pelo agente no host"
+    )
+    parser.add_argument(
         "--timeout", type=int, default=900, help="Prazo de inicialização em segundos (padrão: 900)."
     )
     args = parser.parse_args()
@@ -371,7 +464,9 @@ def main():
         parser.error("--timeout deve ser pelo menos 60")
     import fcntl
 
-    root = Path(__file__).resolve().parent
+    if args.rollback and args.reconcile:
+        parser.error("Escolha --rollback ou --reconcile")
+    root = args.directory.resolve() if args.directory else Path(__file__).resolve().parent
     os.umask(0o077)
     if not (root / ".env").is_file() or not (root / "compose.yaml").is_file():
         parser.error("Execute o script na pasta da instalação, junto ao compose.yaml e .env.")
@@ -381,7 +476,11 @@ def main():
         except BlockingIOError:
             parser.error("Outra atualização já está em andamento.")
         try:
-            Updater(root, args.timeout).update(args.image, args.rollback)
+            updater = Updater(root, args.timeout)
+            if args.reconcile:
+                updater.reconcile()
+            else:
+                updater.update(args.image, args.rollback)
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
             raise SystemExit(str(exc)) from None
 

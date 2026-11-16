@@ -48,7 +48,7 @@ header {
   gap: 20px;
   border-bottom: 1px solid var(--line);
 }
-header > div {
+header > div:first-child {
   padding-left: 20px;
   border-left: 3px solid var(--accent);
 }
@@ -468,128 +468,6 @@ footer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 640px) {
-  header,
-  main,
-  footer {
-    padding: 20px 16px;
-  }
-  header {
-    gap: 12px;
-  }
-  header > div {
-    padding-left: 12px;
-  }
-  h1 {
-    font-size: 19px;
-  }
-  .eyebrow {
-    font-size: 9px;
-  }
-  .overview {
-    padding: 24px 20px;
-    gap: 18px;
-    align-items: flex-start;
-  }
-  .overview:before {
-    left: 20px;
-  }
-  .overview h2 {
-    font-size: 25px;
-  }
-  .player-count {
-    min-width: 80px;
-    max-width: 30%;
-    padding: 8px 0 8px 14px;
-  }
-  .player-count strong {
-    font-size: 40px;
-  }
-  .player-count > span {
-    font-size: 9px;
-    letter-spacing: 0.06em;
-  }
-  .player-count small {
-    font-size: 10px;
-  }
-  #status {
-    font-size: 11px;
-    padding: 4px 9px;
-  }
-  #versions {
-    font-size: 11px;
-  }
-  #crossplay-info {
-    font-size: 11px;
-  }
-  #join-code {
-    margin-left: 0;
-    display: block;
-    font-size: 19px;
-    margin-top: 5px;
-  }
-  .tabs {
-    gap: 4px;
-    padding: 4px;
-  }
-  .tabs [role="tab"] {
-    flex: 1 1 30%;
-    padding: 9px 6px;
-    font-size: 11px;
-  }
-  .card {
-    padding: 22px 18px;
-  }
-  .login {
-    margin: 30px auto;
-  }
-  .settings {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-  .metrics {
-    gap: 10px;
-  }
-  .metrics .card {
-    padding: 18px 12px 10px;
-  }
-  .metrics strong {
-    font-size: 16px;
-    margin: 8px 0 14px;
-  }
-  .metrics span {
-    font-size: 10px;
-    min-height: 32px;
-  }
-  #actions button {
-    flex: 1 1 40%;
-    font-size: 12px;
-  }
-  #actions + .muted {
-    font-size: 11px;
-    margin-bottom: 22px;
-  }
-  .section-title {
-    align-items: flex-start;
-  }
-  h2 {
-    font-size: 19px;
-  }
-  .settings-heading {
-    font-size: 13px;
-  }
-  .backup button {
-    margin-top: 8px;
-  }
-  #notice {
-    font-size: 12px;
-    padding: 12px 14px;
-  }
-  pre {
-    padding: 14px;
-    font-size: 11px;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   button {
     transition: none;
@@ -803,4 +681,360 @@ button:disabled {
 #audit-list pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.mobile-navigation {
+  display: none;
+}
+.overview-extra > summary {
+  display: none;
+}
+button {
+  touch-action: manipulation;
+}
+
+@media (max-width: 760px), (max-width: 960px) and (max-height: 500px) {
+  body {
+    font-size: 15px;
+    background-attachment: scroll;
+  }
+  header,
+  main,
+  footer {
+    padding: 20px 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  main {
+    padding-bottom: max(28px, env(safe-area-inset-bottom));
+  }
+  header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  header > div:first-child {
+    padding-left: 12px;
+  }
+  h1 {
+    font-size: 23px;
+  }
+  h2 {
+    font-size: 20px;
+    overflow-wrap: anywhere;
+  }
+  .eyebrow {
+    font-size: 10px;
+  }
+  .session-tools {
+    gap: 10px;
+    padding: 0;
+    border: 0;
+  }
+  .session-tools span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .session-tools button {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+  }
+  .card {
+    padding: 22px 18px;
+    min-width: 0;
+  }
+  .login {
+    margin: 24px auto;
+  }
+  .overview {
+    padding: 24px 20px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+  }
+  .overview:before {
+    left: 20px;
+  }
+  .overview h2 {
+    font-size: 27px;
+  }
+  #dashboard:not([data-section="tab-overview"]) > .overview {
+    display: none;
+  }
+  .overview {
+    scroll-margin-top: calc(112px + env(safe-area-inset-top));
+  }
+  .overview-extra > summary {
+    display: list-item;
+    min-height: 44px;
+    padding: 10px 0;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .overview-extra {
+    border-top: 1px solid var(--line);
+    margin-top: 12px;
+  }
+  .overview p,
+  .diagnostics {
+    overflow-wrap: anywhere;
+  }
+  .player-count {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 18px;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    text-align: left;
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    align-items: center;
+  }
+  .player-count strong {
+    grid-row: span 2;
+    font-size: 46px;
+  }
+  .player-count > span {
+    margin: 0 0 6px;
+    font-size: 11px;
+  }
+  .player-count small {
+    grid-column: 2;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  #join-code {
+    margin-left: 0;
+    display: block;
+    font-size: 23px;
+  }
+  .tabs {
+    display: none;
+  }
+  .mobile-navigation {
+    display: block;
+    position: sticky;
+    top: max(8px, env(safe-area-inset-top));
+    z-index: 8;
+    margin: 0 0 24px;
+    padding: 10px 12px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 8px 20px #0005;
+  }
+  .mobile-navigation label {
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .mobile-navigation select {
+    margin-top: 4px;
+    border-color: #a3874f;
+    background: var(--wood);
+  }
+  [role="tabpanel"] {
+    scroll-margin-top: calc(112px + env(safe-area-inset-top));
+    min-width: 0;
+  }
+  #actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  #actions button {
+    width: 100%;
+  }
+  #actions + .muted {
+    font-size: 13px;
+  }
+  button,
+  .reset,
+  .backup button,
+  .player-entry button,
+  .plugin-entry button {
+    min-height: 44px;
+    font-size: 14px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+  }
+  input[type="file"] {
+    padding: 8px;
+  }
+  input::file-selector-button {
+    min-height: 44px;
+    font: inherit;
+  }
+  label {
+    font-size: 13px;
+    min-width: 0;
+  }
+  .muted,
+  small {
+    font-size: 13px;
+  }
+  .settings {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .setting small {
+    font-size: 12px;
+  }
+  .settings-heading {
+    font-size: 15px;
+  }
+  .metrics {
+    gap: 14px;
+  }
+  .metrics .card {
+    padding: 20px 16px 14px;
+  }
+  .metrics span {
+    font-size: 12px;
+    min-height: 0;
+  }
+  .metrics strong {
+    font-size: 20px;
+    margin: 10px 0 18px;
+  }
+  canvas {
+    height: 100px;
+  }
+  .history-filters,
+  .account-form,
+  .account-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .account-row {
+    padding: 18px 0;
+  }
+  .account-row input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+    margin: 0;
+    flex-shrink: 0;
+  }
+  .account-row label {
+    min-height: 44px;
+  }
+  .account-form button,
+  .account-row button {
+    width: 100%;
+  }
+  .section-title {
+    align-items: stretch;
+  }
+  .section-title > button {
+    width: 100%;
+  }
+  .player-picker,
+  .player-add,
+  .plugin-entry {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .player-entry {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .player-entry code {
+    font-size: 13px;
+  }
+  .player-entry button,
+  .plugin-entry button,
+  .editor-actions button {
+    width: 100%;
+  }
+  .backup a {
+    display: block;
+    margin: 0 0 12px;
+  }
+  .backup button {
+    width: 100%;
+  }
+  .bulk-players {
+    padding: 14px;
+  }
+  .bulk-players summary {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .editor-actions {
+    flex-direction: column;
+  }
+  #mod-config-content {
+    font-size: 16px;
+    min-height: 240px;
+  }
+  pre {
+    padding: 14px;
+    font-size: 12px;
+    max-height: 50dvh;
+  }
+  #notice {
+    position: static;
+    font-size: 14px;
+    padding: 12px 14px;
+    overflow-wrap: anywhere;
+  }
+  #action-confirmation {
+    width: calc(100% - 24px);
+    padding: 20px;
+    max-height: calc(100dvh - 24px);
+  }
+  #action-confirmation h2 {
+    font-size: 21px;
+  }
+  .confirmation-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    position: sticky;
+    bottom: -16px;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding: 14px 4px 4px;
+    margin: 20px -4px -4px;
+  }
+  .confirmation-actions button {
+    min-height: 48px;
+  }
+}
+@media (max-width: 420px) {
+  .metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 960px) and (max-height: 500px) {
+  .confirmation-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  .reset,
+  .backup button,
+  .player-entry button,
+  .plugin-entry button {
+    min-height: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }

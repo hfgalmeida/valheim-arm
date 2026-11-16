@@ -414,3 +414,21 @@ Solicitações do operador são independentes das do administrador na deduplica�
 `app/audit.py` grava atomicamente `data/config/audit.json`, limitado a 2.000 eventos, 90 dias e 8 MiB. Registra solicitação/resultado HTTP e transições das tarefas com correlação e responsável; tarefas automáticas usam identidade de sistema. O resultado da atualização de imagem é reconciliado pelo request ID do agente após reconexão/reinício. Corpos de requisição, erros brutos, senhas, tokens, hashes de autenticação e conteúdo de arquivos de plugins não são registrados; mudanças de arquivos usam revisões. Contas e auditoria permanecem privadas no controle de acesso do host e fora dos backups de mundos.
 
 API administrativa: GET/POST `/api/v1/accounts`, PATCH `/api/v1/accounts/{id}`, POST `/api/v1/accounts/{id}/password`, GET `/api/v1/audit` (filtros `user`, `operation`, `since`, `until`, `limit`). Todos os perfis usam POST `/api/v1/password` com `current_password`/`password`. A auditoria exige escrita antes de novas alterações; falhas após efeitos ou em tarefas em execução aparecem como aviso, sem interromper salvamento/desligamento. Auditoria corrompida falha fechada e exige inspeção/recuperação do arquivo pelo administrador no host; não é descartada silenciosamente.
+
+
+### Interface em celulares
+
+A mesma página adapta o layout para larguras até 760 px e paisagem até 960 × 500 px. O seletor nativo `mobile-section` é preenchido a partir das abas visíveis do perfil e compartilha a seleção com a navegação desktop. Em telas pequenas, o resumo do mundo aparece na Visão geral e informações secundárias ficam recolhíveis. Alvos de toque têm ao menos 44 px, campos usam 16 px, a página respeita safe areas e mantém o zoom do navegador disponível. O editor de plugins conserva rolagem horizontal interna para linhas longas; a página não deve rolar horizontalmente.
+
+Os gráficos dimensionam o canvas conforme o espaço visível e a densidade de pixels, redesenhando ao voltar à Visão geral ou redimensionar a janela. Testes com API real e navegador emulado cobrem administrador/operador, primeiro acesso, navegação, formulários, confirmações e gráficos em 320, 390, 430, 768 e 844 px, com toque e orientação retrato/paisagem. Essa emulação não substitui uma verificação visual em dispositivos físicos Android/iOS.
+
+
+### Consulta de versão e reconciliação do agente
+
+A consulta pública usa o digest ARM64 de `latest` para identificar a tag semântica publicada. O cache é atualizado a cada 15 minutos, ao abrir a aba do servidor ou por GET autenticado `/api/v1/image-version` (administrador). Consultas concorrentes não bloqueiam o supervisor nem duplicam a requisição; um intervalo mínimo de 60 segundos limita o acesso ao Docker Hub. Falhas preservam a última informação, marcada como desatualizada. Consultar a versão não solicita atualização.
+
+Se uma implantação manual posterior já substituiu uma atualização incompleta, o script atual oferece `--reconcile --directory /CAMINHO/DA/INSTALACAO`. A reconciliação usa o mesmo bloqueio do atualizador, verifica IDs dos contêineres e imagens configuradas antes/depois, exige jogo/painel estáveis por 30 segundos e valida o proxy. Não executa pull, stop, up ou restauração de saves. A configuração Compose precisa ser válida; o instalador regenera o override gerenciado ausente. A cópia anterior do registro é preservada em `.image-update-recovery-*.json`, e o estado vira `reconciled`, sem afirmar que a tentativa antiga teve sucesso. Um registro reconciliado não serve para `--rollback` da instalação atual. Após o CLI atualizar o status, reinicie somente o serviço do agente para recarregar seu estado em memória.
+
+Em 16/11/2026, a instalação de testes estava online na 0.22.0, com 0.23.0 publicada. O override gerenciado ausente foi restaurado e o estado antigo `switching` foi reconciliado após validar a instalação, sem troca de imagem nem reinício dos contêineres. O fluxo real de atualizar para outra versão continua pendente de revalidação.
+
+O instalador do agente também atualiza o `update-server.py` da instalação para manter o CLI e o serviço na mesma revisão, preservando a cópia anterior em `.update-server.py.previous`. Isso não sobrescreve o Compose nem as configurações do jogo.

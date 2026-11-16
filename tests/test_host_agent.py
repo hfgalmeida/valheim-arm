@@ -246,6 +246,9 @@ def test_install_writes_service_and_permissions_without_touching_host(tmp_path):
     ):
         agent_module.install(root)
     assert chown.call_count >= 4
+    assert (root / "update-server.py").read_bytes() == (
+        Path(__file__).resolve().parents[1] / "update-server.py"
+    ).read_bytes()
     assert 'SERVER_PASSWORD="keep"' in (root / ".env").read_text()
     assert 'COMPOSE_FILE="compose.yaml:compose.update-agent.yaml"' in (root / ".env").read_text()
     unit = next((managed / "etc/systemd/system").glob("*.service"))

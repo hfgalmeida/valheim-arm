@@ -138,6 +138,8 @@ A publicação do Docker pode passar antes do UFW. Para restringir o painel por 
 
 Acesse **https://SEU_IP** com seu usuário e senha. O administrador tem acesso às abas **Visão geral**, **Configurações do jogo**, **Configurações do servidor**, **Mods**, **Jogadores**, **Backups**, **Administração** e **Atividade**. O operador vê apenas **Visão geral** e suas operações em **Atividade**. Ações do administrador solicitam a parada imediatamente; paradas e reinícios do operador aguardam zero jogadores. Ambos preservam o salvamento e o encerramento gracioso.
 
+No celular, use **Seção do painel** para navegar. O menu acompanha a rolagem e respeita o perfil da conta. Na **Visão geral**, abra **Detalhes do servidor** para consultar versões e preferência de inicialização. Os mesmos controles e confirmações estão disponíveis, sem instalar outro aplicativo.
+
 Para redefinir a senha administrativa:
 
 ```sh
@@ -384,7 +386,7 @@ Detalhes do protocolo: [webhooks do Discord](https://docs.discord.com/developers
 <a id="atualizacao-da-imagem"></a>
 ## Atualização da imagem Docker
 
-Na aba **Configurações do servidor → Atualização da imagem Docker**, clique em **Atualizar imagem** e confirme. O painel acompanha download, validação, backup, troca, verificação e eventual retorno à imagem anterior. A conexão pode cair e exigir novo login; o progresso e o resultado continuam disponíveis depois de entrar novamente. A preferência de manter o jogo ligado ou parado é preservada.
+Na aba **Configurações do servidor → Atualização da imagem Docker**, use **Verificar nova versão** para consultar o Docker Hub e **Atualizar imagem** para instalar. A consulta também ocorre ao abrir a aba e automaticamente a cada 15 minutos, com intervalo mínimo de um minuto entre consultas. A data da última consulta fica visível; falhas identificam a informação como desatualizada. Na aba **Configurações do servidor → Atualização da imagem Docker**, clique em **Atualizar imagem** e confirme. O painel acompanha download, validação, backup, troca, verificação e eventual retorno à imagem anterior. A conexão pode cair e exigir novo login; o progresso e o resultado continuam disponíveis depois de entrar novamente. A preferência de manter o jogo ligado ou parado é preservada.
 
 O instalador prepara automaticamente o serviço local necessário ao botão. Em instalações anteriores, execute novamente o instalador atualizado; ele preserva as configurações e o jogo em execução. Quando puder interromper o jogo, execute `sudo docker compose up -d --no-deps valheim` na pasta da instalação para conectar o contêiner existente ao serviço. É necessário usar uma imagem que já contenha o botão. Nenhuma porta adicional precisa ser liberada na OCI ou no firewall. Detalhes técnicos: [agente local](MAINTAINER.md#agente-local-de-atualizacao).
 

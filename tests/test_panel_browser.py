@@ -140,6 +140,8 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                 }
             elif endpoint == "/audit":
                 value = {"events": [], "error": None}
+            elif endpoint == "/image-version":
+                value = state["image_version"] | {"checked": time.time()}
             elif endpoint == "/image-update":
                 if method == "POST":
                     assert payload["confirm"] is True and len(payload["request_id"]) == 32
@@ -234,8 +236,8 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.evaluate("s => update(s)", state | {"run_intent": {"running": False, "error": None}})
         assert "manter o jogo parado" in page.locator("#run-intent").inner_text()
         page.evaluate("s => update(s)", state)
-        assert "Nova versão pública: 0.15.0" in page.locator("#image-version").inner_text()
-        assert "sudo python3 update-server.py" in page.locator("#image-version").inner_text()
+        assert "Disponível no Docker Hub: 0.15.0" in page.locator("#image-version").inner_text()
+        assert "Nova versão disponível" in page.locator("#image-version").inner_text()
         # No disruptive action is submitted before explicit HTML confirmation.
         for action in ("restart", "stop", "update", "backup"):
             before = len(requests)
@@ -306,6 +308,8 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             == "0"
         )
         page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.get_by_role("button", name="Verificar nova versão", exact=True).click()
+        assert "0.15.0" in page.locator("#image-version-status").inner_text()
         assert page.locator("#setting-server_name").is_hidden()
         page.locator("#setting-restart_at").fill("04:00")
         page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
@@ -499,15 +503,18 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.get_by_role("tab", name="Visão geral", exact=True).click()
         page.screenshot(path=str(artifact), full_page=True)
         page.set_viewport_size({"width": 390, "height": 844})
-        for tab in page.get_by_role("tab").all():
-            tab.click()
-            assert tab.get_attribute("aria-selected") == "true"
+        assert page.locator("#mobile-section").is_visible()
+        for option in page.locator("#mobile-section option").all():
+            value = option.get_attribute("value")
+            page.locator("#mobile-section").select_option(value)
+            assert page.locator("#" + value).get_attribute("aria-selected") == "true"
             assert page.get_by_role("tabpanel").count() == 1
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-        page.get_by_role("tab", name="Jogadores", exact=True).click()
+        page.locator("#mobile-section").select_option("tab-players")
         page.screenshot(path=str(artifact.with_name("panel-players-mobile.png")), full_page=True)
-        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
+        page.locator("#mobile-section").select_option("tab-settings")
         page.screenshot(path=str(artifact.with_name("panel-mobile.png")), full_page=True)
+        page.set_viewport_size({"width": 1280, "height": 900})
         page.route(
             "https://panel.test/api/v1/plugins",
             lambda request: request.fulfill(
@@ -564,6 +571,7 @@ def test_accounts_first_login_operator_view_and_admin_management(runtime, monkey
 
     static = Path(__file__).resolve().parents[1] / "app/static"
     monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    monkeypatch.setattr("app.image_version.published_version", lambda: "0.24.0")
     set_password(runtime.data, "browser-admin-password")
     app = create_app(runtime.data, runtime, lifecycle=False)
     operator = app.state.auth.accounts.create(
@@ -665,4 +673,179 @@ def test_accounts_first_login_operator_view_and_admin_management(runtime, monkey
             "document.querySelector('#audit-list').textContent.includes('Contas')"
         )
         assert "admin" in page.locator("#audit-list").inner_text()
+        browser.close()
+
+
+@pytest.mark.parametrize("role", ["admin", "operator"])
+def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, role):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastapi.testclient import TestClient
+    from app.auth import set_password
+    from app.web import create_app
+
+    static = Path(__file__).resolve().parents[1] / "app/static"
+    monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    monkeypatch.setattr("app.image_version.published_version", lambda: "0.24.0")
+    set_password(runtime.data, "mobile-panel-password")
+    app = create_app(runtime.data, runtime, lifecycle=False)
+    if role == "operator":
+        app.state.auth.accounts.create("mobile-operator", "operator", "mobile-panel-password")
+    metric = {
+        "time": time.time(),
+        "cpu_percent": 33,
+        "memory_bytes": 3 * 1024**3,
+        "memory_limit": 10 * 1024**3,
+        "network_in_bps": 2048,
+        "network_out_bps": 4096,
+        "disk_used": 8 * 1024**3,
+        "disk_total": 50 * 1024**3,
+        "scope": "contêiner",
+    }
+    app.state.metrics.history.extend([metric | {"time": metric["time"] - 10}, metric])
+    client = TestClient(app, base_url="https://panel.test")
+    errors = []
+    actions = []
+
+    def route(request):
+        path = request.request.url.removeprefix("https://panel.test")
+        if path.startswith("/api/v1"):
+            if path == "/api/v1/actions":
+                actions.append(request.request.post_data_json)
+            headers = {
+                k: v
+                for k, v in request.request.headers.items()
+                if k in ("origin", "x-csrf-token", "content-type", "cookie")
+            }
+            result = client.request(
+                request.request.method,
+                path,
+                content=request.request.post_data_buffer,
+                headers=headers,
+            )
+            request.fulfill(
+                status=result.status_code, body=result.content, headers=dict(result.headers)
+            )
+        else:
+            file = static / ("index.html" if path == "/" else path.lstrip("/"))
+            request.fulfill(
+                path=str(file),
+                content_type=(
+                    "text/html"
+                    if file.suffix == ".html"
+                    else (
+                        "text/javascript"
+                        if file.suffix == ".js"
+                        else "text/css" if file.suffix == ".css" else "font/ttf"
+                    )
+                ),
+            )
+
+    def no_horizontal_scroll(page):
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= window.innerWidth"
+        ), page.evaluate("({width:innerWidth,scroll:document.documentElement.scrollWidth})")
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=os.environ.get("BROWSER_CHANNEL") or None, headless=True
+        )
+        context = browser.new_context(
+            viewport={"width": 320, "height": 740},
+            is_mobile=True,
+            has_touch=True,
+            device_scale_factor=2,
+        )
+        page = context.new_page()
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.add_init_script("window.EventSource = class { close() {} };")
+        page.route("https://panel.test/**", route)
+        page.goto("https://panel.test/")
+        no_horizontal_scroll(page)
+        assert (
+            float(
+                page.locator("#username")
+                .evaluate("element => getComputedStyle(element).fontSize")
+                .removesuffix("px")
+            )
+            >= 16
+        )
+        page.locator("#username").fill("admin" if role == "admin" else "mobile-operator")
+        page.locator("#password").fill("mobile-panel-password")
+        page.get_by_role("button", name="Entrar", exact=True).tap()
+        if role == "operator":
+            page.locator("#password-change").wait_for(state="visible")
+            assert page.locator("#dashboard").is_hidden()
+            page.set_viewport_size({"width": 320, "height": 520})
+            page.locator("#current-password").fill("mobile-panel-password")
+            page.locator("#new-password").fill("mobile-personal-password")
+            page.locator("#repeat-password").fill("mobile-personal-password")
+            no_horizontal_scroll(page)
+            page.get_by_role("button", name="Salvar minha senha", exact=True).tap()
+            page.locator("#login").wait_for(state="visible")
+            page.locator("#password").fill("mobile-personal-password")
+            page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        for width, height in [(320, 740), (390, 844), (430, 932), (768, 1024), (844, 390)]:
+            page.set_viewport_size({"width": width, "height": height})
+            mobile = width <= 760 or height <= 500
+            if mobile:
+                assert page.locator("#mobile-section").is_visible()
+                assert page.locator("#mobile-section option").count() == (
+                    8 if role == "admin" else 2
+                )
+                sections = [
+                    option.get_attribute("value")
+                    for option in page.locator("#mobile-section option").all()
+                ]
+                for section in sections:
+                    page.locator("#mobile-section").select_option(section)
+                    assert page.get_by_role("tabpanel").count() == 1
+                    no_horizontal_scroll(page)
+                    for button in page.locator("button:visible:not(:disabled)").all():
+                        assert button.bounding_box()["height"] >= 43
+            else:
+                for tab in page.get_by_role("tab").all():
+                    tab.tap()
+                    no_horizontal_scroll(page)
+            if mobile:
+                page.locator("#mobile-section").select_option("tab-overview")
+            else:
+                page.get_by_role("tab", name="Visão geral", exact=True).tap()
+            page.wait_for_timeout(50)
+            assert page.locator("#cpu-chart").evaluate(
+                "c => Math.abs(c.width - c.getBoundingClientRect().width * devicePixelRatio) < 2"
+            )
+            page.get_by_role("button", name="Reiniciar", exact=True).tap()
+            assert page.locator("#action-confirmation").is_visible()
+            no_horizontal_scroll(page)
+            page.get_by_role("button", name="Cancelar", exact=True).tap()
+            assert actions == []
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.locator("#mobile-section").select_option("tab-overview")
+        page.evaluate("scrollTo(0,0)")
+        artifact = (
+            Path(__file__).resolve().parents[1] / ".artifacts" / ("panel-phone-" + role + ".png")
+        )
+        artifact.parent.mkdir(exist_ok=True)
+        page.screenshot(path=str(artifact))
+        page.get_by_role("button", name="Reiniciar", exact=True).tap()
+        page.locator("#action-confirm-submit").tap()
+        page.wait_for_function(
+            "document.querySelector('#notice').textContent.includes('Operação enviada')"
+        )
+        assert actions == [{"action": "restart"}]
+        assert bool(runtime.jobs[-1].get("requires_idle")) == (role == "operator")
+        if role == "admin":
+            page.locator("#mobile-section").select_option("tab-administration")
+            page.locator("#account-username").fill("mobile-helper")
+            page.locator("#account-password").fill("helper-temporary-password")
+            page.get_by_role("button", name="Cadastrar usuário", exact=True).tap()
+            page.wait_for_function(
+                "document.querySelector('#account-list').textContent.includes('mobile-helper')"
+            )
+            no_horizontal_scroll(page)
+        assert not errors
+        context.close()
         browser.close()
