@@ -40,7 +40,7 @@ def test_busy_image_update_blocks_game_writes_and_scheduled_jobs(runtime, monkey
         )
         assert client.get("/api/v1/state").status_code == 200
     asyncio.run(runtime.tick())
-    assert runtime.queue.empty()
+    assert [job["action"] for job in runtime.jobs] == ["start"]
 
 
 def test_active_game_job_blocks_image_update(runtime, monkeypatch):

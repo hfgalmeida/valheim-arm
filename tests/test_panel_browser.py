@@ -48,7 +48,13 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         running=True,
         crossplay=True,
         join_code="012345",
-        players={"count": 2, "reason": "snapshot do jogo"},
+        players={
+            "count": 2,
+            "reason": "snapshot do jogo",
+            "source": "game_log",
+            "updated_at": 1794643216,
+            "age_seconds": 12,
+        },
         mods={
             "state": "complete",
             "version": "5.4.23",
@@ -369,6 +375,36 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         )
         assert requests[-1] == ("/actions", {"action": "backup"})
         assert page.locator("#players").inner_text() == "2"
+        assert "Fonte: log do jogo (Connections)" in page.locator("#player-reason").inner_text()
+        assert "Há 12s" in page.locator("#player-reason").inner_text()
+        unknown = state | {
+            "players": {
+                "count": None,
+                "reason": "Conexão alterada; aguardando novo snapshot",
+                "source": "game_log",
+                "last_count": 0,
+                "age_seconds": 40,
+                "updated_at": 1794643216,
+            }
+        }
+        page.evaluate("value => update(value)", unknown)
+        assert page.locator("#players").inner_text() == "?"
+        assert (
+            "Última contagem: 0 (sem confirmação atual)"
+            in page.locator("#player-reason").inner_text()
+        )
+        expired = unknown | {
+            "players": unknown["players"]
+            | {"reason": "Snapshot ausente ou expirado", "age_seconds": 661}
+        }
+        page.evaluate("value => update(value)", expired)
+        assert page.locator("#players").inner_text() == "?"
+        assert "expirado" in page.locator("#player-reason").inner_text()
+        empty = state | {"players": state["players"] | {"count": 0, "idle_wait_seconds": 120}}
+        page.evaluate("value => update(value)", empty)
+        assert "aguardando 120s" in page.locator("#player-reason").inner_text()
+        page.evaluate("value => update(value)", state)
+
         page.get_by_role("tab", name="Jogadores", exact=True).click()
         assert page.locator("#users-form").is_visible()
         page.locator("#known-player").select_option("Steam_76561198000000001")

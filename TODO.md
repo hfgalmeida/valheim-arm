@@ -37,6 +37,7 @@
 - [x] Conexão e jogo normal confirmados com os mesmos plugins sem crossplay; edição de configuração via backend do painel e recuperação da versão anterior verificadas.
 - [x] Desativação do BepInEx confirmada com preservação de DLLs/configuração e retorno online ao estado original após reinício controlado; falha fatal da primeira partida registrada na seção de recuperação abaixo.
 - [x] Carregamento real na Oracle do pacote embutido 5.4.2360 (engine 5.4.23.6), ServerInfo 2.2.7 e JsonDotNET 13.0.4: 2 plugins carregados, 0 falhas, API interna funcional e mundo online com crossplay. Conexão pelo cliente posteriormente confirmada nos dois modos.
+- [x] Melhorar o diagnóstico de presença: fonte, horário/idade, última contagem, expiração, consulta Steam da manutenção e invalidação de conexões/desconexões Steam/PlayFab; desconhecido não autoriza manutenção automática.
 - [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
 - [ ] Medições e ajustes de desempenho no Ampere A1.
 - [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
@@ -103,4 +104,4 @@
 - [x] Testar navegador, API e comunicação Unix em contêiner descartável no Linux, sem instalar serviço permanente nem executar atualização real.
 - [x] Integrar criação/habilitação automática do serviço privilegiado ao instalador; preservar configurações e não reiniciar o mundo ao reexecutar o script.
 - [x] Instalar e habilitar o agente no host de testes, recriar o contêiner com socket somente leitura e confirmar resposta disponível pelo cliente do painel (15/11/2026).
-- [ ] Validar uma atualização real pelo painel após instalar o agente e publicar a nova imagem.
+- [ ] Revalidar atualização real pelo painel: o relato inicial de sucesso em 15/11/2026 foi corrigido em 16/11/2026; o journal mostrou timeout de prontidão, reaplicação da imagem anterior e recuperação sem confirmação, deixando novas tentativas bloqueadas. Confirmar imagem final e resultado terminal antes de marcar como validado.

@@ -206,3 +206,17 @@ def test_old_image_rollback_is_refused_before_stopping_when_intent_is_stopped(up
         with pytest.raises(RuntimeError, match="não suporta"):
             updater.restore({"previous": "old:image"})
     assert not any(command[:2] == ("compose", "stop") for command in updater.commands)
+
+
+def test_unverified_rollback_is_distinguished_and_blocks_new_updates(updater):
+    updater.wait_ready = lambda: (_ for _ in ()).throw(RuntimeError("not ready"))
+    state = {"previous": "old:image", "target": "new:image", "phase": "switching"}
+    with pytest.raises(host_update.UpdateFailure) as error:
+        updater.restore(state)
+    assert error.value.code == "rollback_unverified"
+    assert json.loads(updater.state.read_text())["phase"] == "rollback-unverified"
+    commands = len(updater.commands)
+    with pytest.raises(host_update.UpdateFailure) as error:
+        updater.update("public/image:latest")
+    assert error.value.code == "recovery_required"
+    assert len(updater.commands) == commands

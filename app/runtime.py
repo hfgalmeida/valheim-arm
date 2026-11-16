@@ -484,9 +484,7 @@ class Runtime:
             "mods": self.mod_diagnostics.describe(self.live, self.config.effective().bepinex),
             "state": self.state,
             "running": self.live,
-            "players": (
-                self.players.status() if self.live else {"count": 0, "reason": "Servidor parado"}
-            ),
+            "players": (self.players.status() if self.live else self.players.stopped_status()),
             "crossplay": crossplay,
             "join_code": self.join_code if self.live and crossplay else None,
             "pending_config": self.running is not None and self.running != self.config.effective(),
@@ -1028,6 +1026,7 @@ class Runtime:
                     )
                 if not self.running.crossplay:
                     count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
+                    self.players.observe_steam(count)
                     if count is None:
                         raise MaintenanceDeferred(
                             f"Consulta Steam indisponível (UDP {self.running.server_port + 1}); parada não solicitada ao jogo. Confira os logs ou solicite a parada pelo Docker"
@@ -1038,7 +1037,7 @@ class Runtime:
                         )
             pid = process.pid
             if safe:
-                # Scheduled/panel operations still freeze admissions and drain
+                # Automatic maintenance freezes admissions and drains
                 # captured connection events before requesting a clean save.
                 os.killpg(pid, signal.SIGSTOP)
             try:
@@ -1139,6 +1138,14 @@ class Runtime:
 
     async def execute(self, job):
         action = job["action"]
+        if (
+            self.host_updates.busy
+            and job.get("scheduled")
+            and action in ("restart", "backup", "update")
+        ):
+            raise MaintenanceDeferred(
+                "Atualização da imagem em andamento; manutenção automática adiada"
+            )
         if job.get("scheduled") and (not self.want_running or not self.run_intent.running):
             job["result"] = "Tarefa automática dispensada: servidor deve permanecer parado"
             return
@@ -1352,7 +1359,7 @@ class Runtime:
         if time.monotonic() >= self.next_history_prune:
             self.persist_history()
             self.next_history_prune = time.monotonic() + 3600
-        if self.active is not None or self.closing or self.host_updates.busy:
+        if self.active is not None or self.closing:
             return
         if (
             self.live
@@ -1373,6 +1380,10 @@ class Runtime:
             self.next_recovery = time.monotonic() + 300
             self.emit("Tentando iniciar o servidor automaticamente")
             self.schedule_once("start")
+        # Image verification must allow startup/crash recovery, while daily
+        # maintenance remains paused so it cannot interrupt the new game.
+        if self.host_updates.busy:
+            return
         settings = self.config.effective()
         now = datetime.now(ZoneInfo(settings.timezone))
         if self.live and self.game_ready and self.want_running and self.run_intent.running:

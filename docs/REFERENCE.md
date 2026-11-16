@@ -297,6 +297,8 @@ Para parar ou reiniciar só o jogo, use o painel. Comandos Docker podem deixar o
 
 A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT`. Se estiver desativado, usa `BACKUP_AT`; com ambos desativados, usa 05:00. Horários usam `TIMEZONE`. Backup e reinício coincidentes são combinados; uma atualização disponível aproveita a mesma parada.
 
+A indicação de jogadores mostra a contagem do último registro `Connections` do jogo, a fonte, o horário e a idade da observação. Durante conexões, desconexões ou reconexões, aparece `?` até chegar um novo registro completo; a última contagem fica apenas como referência. Registros sem renovação por 11 minutos expiram. Mensagens de saída ou contagens temporárias do PlayFab não confirmam que o servidor está vazio.
+
 Manutenções automáticas aguardam dois minutos de zero jogadores confirmado; no modo Steam, exigem também A2S. Informações desconhecidas adiam a tarefa. As ações manuais do painel dispensam essas verificações, preservando a confirmação de salvamento. A aba **Atividade** mostra o resultado.
 
 Se o jogo registrar sinal fatal na primeira cena e permanecer ativo, o painel mostra a falha e o supervisor tenta encerrá-lo com SIGINT por até 30 segundos. Somente quando a primeira cena foi reconhecida e ainda não houve indício de carregamento do mundo, pode encerrar o processo travado com SIGKILL e agendar uma nova tentativa. Essa saída não é tratada como salvamento confirmado e não gera backup.

@@ -256,3 +256,28 @@ def test_install_writes_service_and_permissions_without_touching_host(tmp_path):
         "restart",
     ]
     assert (root / "compose.update-agent.yaml").read_text().endswith("/run/valheim-update:ro\n")
+
+
+@pytest.mark.parametrize(
+    "code,expected",
+    [
+        ("recovery_required", "anterior ficou incompleta"),
+        ("rollback_unverified", "anterior foi reaplicada"),
+    ],
+)
+def test_update_errors_have_safe_actionable_message(tmp_path, code, expected):
+    def factory(root, progress):
+        def update(image):
+            error = RuntimeError("private credentials must not appear")
+            error.code = code
+            raise error
+
+        return type("Updater", (), {"update": staticmethod(update)})()
+
+    agent = agent_module.Agent(tmp_path, tmp_path / "status.json", factory)
+    with patch.object(agent_module, "update_lock", return_value=Lock()):
+        agent.request("c" * 32)
+        agent.worker.join(3)
+    assert agent.status()["state"] == "failed"
+    assert expected in agent.status()["message"]
+    assert "private" not in agent.status()["message"]

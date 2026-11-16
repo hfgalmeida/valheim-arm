@@ -158,12 +158,18 @@ class Agent:
                 "succeeded",
                 "Atualização concluída; estado desejado do jogo preservado.",
             )
-        except Exception:
+        except Exception as exc:
             log.exception("Atualização da imagem não foi concluída")
             outcome, message = (
                 "failed",
                 "Atualização não concluída. Consulte os logs do serviço no host.",
             )
+            messages = {
+                "readiness_timeout": "O jogo não confirmou prontidão no prazo. Confira o diagnóstico do jogo e os logs do serviço.",
+                "rollback_unverified": "A imagem anterior foi reaplicada, mas o jogo não confirmou prontidão. É necessário concluir a recuperação no host antes de tentar novamente.",
+                "recovery_required": "Uma atualização anterior ficou incompleta. É necessário concluir a recuperação no host antes de tentar novamente.",
+            }
+            message = messages.get(getattr(exc, "code", None), message)
             try:
                 result = self.root / ".image-update.json"
                 if (

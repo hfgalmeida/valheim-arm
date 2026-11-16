@@ -26,6 +26,12 @@ with (root / 'config/supervisor.lock').open('a') as lock:
 HEALTH_CODE = "import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3))))"
 
 
+class UpdateFailure(RuntimeError):
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
+
+
 def atomic_write(path, content):
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".update-")
     try:
@@ -118,12 +124,36 @@ class Updater:
     def wait_ready(self):
         deadline = time.monotonic() + self.timeout
         stable_since = None
+        last_detail = None
         while time.monotonic() < deadline:
             expected_running = self.desired_running()
             try:
                 status = json.loads(
-                    self.compose("exec", "-T", "valheim", "python", "-c", HEALTH_CODE, capture=True)
+                    self.compose(
+                        "exec",
+                        "-T",
+                        "valheim",
+                        "/opt/venv/bin/python",
+                        "-c",
+                        HEALTH_CODE,
+                        capture=True,
+                    )
                 )
+                game = status.get("game")
+                game = (
+                    game
+                    if game in ("online", "parado", "iniciando", "falha", "parando", "instalando")
+                    else "desconhecido"
+                )
+                detail = (
+                    "Verificação: jogo="
+                    + game
+                    + "; esperado="
+                    + ("online" if expected_running else "parado")
+                )
+                if detail != last_detail:
+                    print(detail, flush=True)
+                    last_detail = detail
                 ready = (
                     status.get("supervisor") == "ok"
                     and not status.get("run_intent_error")
@@ -137,6 +167,8 @@ class Updater:
                 if ready:
                     stable_since = stable_since or time.monotonic()
                     if time.monotonic() - stable_since >= 30:
+                        last_detail = "Jogo estável; validando o proxy HTTPS"
+                        print(last_detail, flush=True)
                         self.compose(
                             "exec",
                             "-T",
@@ -155,8 +187,10 @@ class Updater:
             except (RuntimeError, ValueError):
                 stable_since = None
             time.sleep(5)
-        raise RuntimeError(
-            "O jogo não ficou pronto e estável no estado solicitado dentro do prazo."
+        raise UpdateFailure(
+            "O jogo não ficou pronto e estável no estado solicitado dentro do prazo. "
+            + (last_detail or "Painel ou verificação de saúde indisponível."),
+            "readiness_timeout",
         )
 
     def restore(self, state):
@@ -167,7 +201,17 @@ class Updater:
         # Keep the newer saves. Never restore an older world automatically.
         set_image(self.root / ".env", state["previous"])
         self.compose("up", "-d", "--no-build", "--pull", "never")
-        self.wait_ready()
+        state["phase"] = "rollback-verifying"
+        self.save(state)
+        try:
+            self.wait_ready()
+        except Exception as exc:
+            state["phase"] = "rollback-unverified"
+            self.save(state)
+            raise UpdateFailure(
+                "Imagem anterior reaplicada, mas sua prontidão não foi confirmada. A recuperação precisa ser concluída no host.",
+                "rollback_unverified",
+            ) from exc
         state["phase"] = "rolled-back"
         self.save(state)
         print("Imagem anterior restaurada. Saves e configurações preservados.")
@@ -181,9 +225,12 @@ class Updater:
         if self.state.exists() and json.loads(self.state.read_text()).get("phase") in (
             "prepared",
             "switching",
+            "rollback-verifying",
+            "rollback-unverified",
         ):
-            raise RuntimeError(
-                "Atualização interrompida. Execute --rollback antes de tentar novamente."
+            raise UpdateFailure(
+                "Atualização interrompida. Execute --rollback antes de tentar novamente.",
+                "recovery_required",
             )
         self.desired_running()
         container = self.compose("ps", "--quiet", "valheim", capture=True)

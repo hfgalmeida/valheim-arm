@@ -1245,3 +1245,52 @@ def test_heartbeat_before_world_start_never_marks_ready(runtime):
         await runtime.read_game(runtime.process)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("action", ["restart", "backup", "update"])
+@pytest.mark.parametrize("crossplay", [False, True])
+@pytest.mark.parametrize(
+    "event", ["ZRpc timeout detected", "ZPlayFabSocket::Dispose. State: CLOSED"]
+)
+def test_disconnect_unknown_presence_blocks_automatic_maintenance(
+    runtime, action, crossplay, event
+):
+    async def scenario():
+        runtime.process = SimpleNamespace(pid=42, returncode=None)
+        runtime.game_ready = True
+        runtime.running = runtime.config.effective().model_copy(update={"crossplay": crossplay})
+        runtime.players.consume("Connections 0 ZDOS:1")
+        runtime.players.empty_since -= 121
+        runtime.players.consume(event)
+        runtime.schedule_once(action)
+        with patch("app.runtime.os.killpg", create=True) as kill:
+            await finish_worker(runtime)
+        assert runtime.jobs[-1]["state"] == "adiado"
+        assert runtime.status()["players"]["count"] is None
+        kill.assert_not_called()
+
+    asyncio.run(scenario())
+
+
+def test_image_update_allows_startup_recovery_without_daily_maintenance(runtime):
+    runtime.host_updates.current = {"state": "running"}
+    asyncio.run(runtime.tick())
+    assert [job["action"] for job in runtime.jobs] == ["start"]
+
+
+def test_image_update_defers_restored_maintenance_before_stop(runtime):
+    runtime.host_updates.current = {"state": "running"}
+    runtime.stop = AsyncMock()
+    with pytest.raises(MaintenanceDeferred, match="imagem"):
+        asyncio.run(runtime.execute({"action": "restart", "scheduled": True}))
+    runtime.stop.assert_not_awaited()
+
+
+def test_image_verification_does_not_suppress_fatal_startup_recovery(runtime):
+    runtime.host_updates.current = {"state": "running"}
+    runtime.process = SimpleNamespace(pid=42, returncode=None)
+    runtime.startup_watchdog.reset(runtime.process)
+    runtime.startup_watchdog.consume("Loading first scene!")
+    runtime.startup_watchdog.consume("Caught fatal signal - signo:11 code:2 errno:0 addr:0x1234")
+    asyncio.run(runtime.tick())
+    assert [job["action"] for job in runtime.jobs] == ["recover-startup"]

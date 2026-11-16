@@ -249,7 +249,40 @@ function update(s) {
       : "";
   }
   $("players").textContent = s.players.count === null ? "?" : s.players.count;
-  $("player-reason").textContent = s.players.reason;
+  const presence = s.players;
+  const presenceDetails = [presence.reason];
+  if (presence.source === "game_log") {
+    presenceDetails.push("Fonte: log do jogo (Connections)");
+    if (typeof presence.updated_at === "number") {
+      presenceDetails.push(
+        "Observado em " +
+          new Date(presence.updated_at * 1000).toLocaleString("pt-BR", {
+            timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+            hourCycle: "h23",
+          }),
+      );
+    }
+    if (typeof presence.age_seconds === "number")
+      presenceDetails.push("Há " + presence.age_seconds + "s");
+    if (presence.count === null && typeof presence.last_count === "number")
+      presenceDetails.push("Última contagem: " + presence.last_count + " (sem confirmação atual)");
+    if (presence.count === 0 && typeof presence.idle_wait_seconds === "number")
+      presenceDetails.push(
+        presence.idle_wait_seconds > 0
+          ? "Zero no log: aguardando " + presence.idle_wait_seconds + "s para manutenção automática"
+          : "Zero no log há pelo menos 2 min; demais verificações ainda se aplicam",
+      );
+  }
+  if (!s.crossplay && presence.steam?.updated_at) {
+    presenceDetails.push(
+      "Última consulta Steam da manutenção: " +
+        (presence.steam.count === null ? "indisponível" : presence.steam.count + " jogador(es)") +
+        " · há " +
+        presence.steam.age_seconds +
+        "s",
+    );
+  }
+  $("player-reason").textContent = presenceDetails.join(" · ");
   $("versions").textContent =
     "Build instalado: " +
     (s.installed_build || "—") +
