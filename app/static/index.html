@@ -397,6 +397,13 @@
             </form>
             <p id="plugin-upload-status" role="status" aria-live="polite"></p>
             <div id="plugin-list"></div>
+            <h3>Plugins excluídos</h3>
+            <p class="muted">
+              A exclusão preserva uma cópia fora da pasta carregada pelo BepInEx e mantém as
+              configurações. Essas cópias continuam ocupando espaço em disco até serem removidas dos
+              arquivos compartilhados.
+            </p>
+            <div id="deleted-plugin-list"></div>
             <p class="muted">
               O envio aceita DLLs individuais, sem ZIP ou arquivos auxiliares. Substituições exigem
               confirmação e preservam uma cópia anterior fora da pasta carregada pelo BepInEx.
@@ -733,6 +740,21 @@
         <div class="confirmation-actions">
           <button value="cancel" autofocus>Cancelar</button>
           <button value="confirm" id="action-confirm-submit" class="primary"></button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      id="plugin-confirmation"
+      aria-labelledby="plugin-confirm-title"
+      aria-describedby="plugin-confirm-description"
+    >
+      <form method="dialog">
+        <span class="eyebrow">GERENCIAMENTO DE PLUGINS</span>
+        <h2 id="plugin-confirm-title"></h2>
+        <p id="plugin-confirm-description"></p>
+        <div class="confirmation-actions">
+          <button value="cancel" autofocus>Cancelar</button
+          ><button id="plugin-confirm-submit" value="confirm" class="primary"></button>
         </div>
       </form>
     </dialog>

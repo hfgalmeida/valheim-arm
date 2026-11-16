@@ -1,13 +1,19 @@
-"""Bounded, atomic uploads of managed DLLs into BepInEx/plugins."""
+"""Bounded plugin uploads, recoverable deletion and safe restoration."""
 
 import hashlib
+import json
+import logging
+import math
 import os
 import re
 import struct
 import tempfile
+import time
+import uuid
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
+from .config import atomic_json
 from .mod_configs import Conflict
 
 MAX_PLUGIN_SIZE = 16 * 1024 * 1024
@@ -61,6 +67,7 @@ class Plugins:
         self.root = data / "mods/BepInEx/plugins"
         self.backups = data / "mods/plugin-backups"
         self.incoming = data / "mods/plugin-staging"
+        self.trash = data / "mods/plugin-trash"
 
     def safe(self, path):
         if any(part.is_symlink() for part in (path, *path.parents)):
@@ -170,3 +177,150 @@ class Plugins:
             os.fsync(file.fileno())
             file.close()
             return self.commit(name, temporary, revision)
+
+    def removable_target(self, name):
+        relative = PurePosixPath(name)
+        if (
+            not name
+            or len(name) > 512
+            or relative.is_absolute()
+            or str(relative) != name
+            or len(relative.parts) > 8
+            or any(part in (".", "..") for part in relative.parts)
+            or "\\" in name
+            or ":" in name
+            or any(ord(c) < 32 for c in name)
+            or relative.suffix.lower() != ".dll"
+        ):
+            raise ValueError(
+                "Selecione uma DLL dentro da pasta de plugins, sem caminhos absolutos ou atalhos"
+            )
+        path = self.root.joinpath(*relative.parts)
+        self.safe(path)
+        for part in (path, *path.parents):
+            if part == self.root:
+                break
+            if part.parent.is_dir() and any(
+                item.name.casefold() == part.name.casefold() and item.name != part.name
+                for item in part.parent.iterdir()
+            ):
+                raise Conflict("O caminho mudou de capitalização; atualize a lista de plugins")
+        if path.exists() and not path.is_file():
+            raise ValueError("O plugin não é um arquivo regular")
+        return path
+
+    def deleted_info(self, entry_id):
+        if not re.fullmatch(r"[a-f0-9]{32}", entry_id):
+            raise ValueError("Identificador de plugin excluído inválido")
+        entry = self.trash / entry_id
+        metadata, payload = entry / "metadata.json", entry / "plugin.dll"
+        self.safe(metadata)
+        self.safe(payload)
+        if (
+            not metadata.is_file()
+            or metadata.stat().st_size > 4096
+            or not payload.is_file()
+            or payload.stat().st_size > MAX_PLUGIN_SIZE
+        ):
+            raise ValueError("Cópia do plugin excluído indisponível")
+        record = json.loads(metadata.read_text(encoding="utf-8"))
+        if (
+            not isinstance(record, dict)
+            or not isinstance(record.get("name"), str)
+            or not isinstance(record.get("revision"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", record["revision"])
+            or not isinstance(record.get("deleted_at"), (int, float))
+            or not math.isfinite(record["deleted_at"])
+        ):
+            raise ValueError("Registro de plugin excluído inválido")
+        self.removable_target(record["name"])
+        revision = hashlib.sha256(payload.read_bytes()).hexdigest()
+        if revision != record["revision"]:
+            raise Conflict("A cópia do plugin excluído foi alterada; confira os arquivos no host")
+        return {
+            "id": entry_id,
+            "name": record["name"],
+            "revision": revision,
+            "deleted_at": record["deleted_at"],
+            "bytes": payload.stat().st_size,
+        }
+
+    def list_deleted(self):
+        self.safe(self.trash)
+        if not self.trash.exists():
+            return []
+        result = []
+        for entry in self.trash.iterdir():
+            if (
+                not re.fullmatch(r"[a-f0-9]{32}", entry.name)
+                or entry.is_symlink()
+                or not entry.is_dir()
+            ):
+                continue
+            try:
+                result.append(self.deleted_info(entry.name))
+            except (OSError, ValueError, KeyError):
+                logging.getLogger("valheim").warning(
+                    "Cópia excluída de plugin indisponível; preservada para inspeção no host"
+                )
+        return sorted(result, key=lambda item: item["deleted_at"], reverse=True)
+
+    def delete(self, name, revision):
+        target = self.removable_target(name)
+        if not target.is_file():
+            raise Conflict("O plugin não está mais instalado; atualize a lista")
+        if target.stat().st_size > MAX_PLUGIN_SIZE:
+            raise ValueError("A DLL ultrapassa 16 MiB; gerencie-a pelos arquivos compartilhados")
+        if hashlib.sha256(target.read_bytes()).hexdigest() != revision:
+            raise Conflict("A DLL mudou desde a confirmação; atualize a lista antes de excluir")
+        self.safe(self.trash)
+        self.trash.mkdir(parents=True, exist_ok=True)
+        entry_id = uuid.uuid4().hex
+        entry = self.trash / entry_id
+        entry.mkdir(mode=0o700)
+        metadata, payload = entry / "metadata.json", entry / "plugin.dll"
+        record = {"name": name, "revision": revision, "deleted_at": time.time()}
+        try:
+            atomic_json(metadata, record)
+            self.safe(target)
+            if (
+                not target.is_file()
+                or target.stat().st_size > MAX_PLUGIN_SIZE
+                or hashlib.sha256(target.read_bytes()).hexdigest() != revision
+            ):
+                raise Conflict("A DLL mudou durante a exclusão; atualize a lista")
+            os.replace(target, payload)
+        except BaseException:
+            if not payload.exists():
+                metadata.unlink(missing_ok=True)
+                entry.rmdir()
+            raise
+        return {"id": entry_id, **record}
+
+    def restore_deleted(self, entry_id, revision):
+        record = self.deleted_info(entry_id)
+        if record["revision"] != revision:
+            raise Conflict("A cópia excluída mudou; atualize a lista")
+        target = self.removable_target(record["name"])
+        if target.exists():
+            raise Conflict(
+                "Já existe uma DLL nesse caminho; a restauração não sobrescreve plugins instalados"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        self.safe(target)
+        entry = self.trash / entry_id
+        payload = entry / "plugin.dll"
+        # Publish the complete file atomically and never overwrite a concurrent upload.
+        try:
+            os.link(payload, target, follow_symlinks=False)
+        except FileExistsError:
+            raise Conflict("Uma DLL foi instalada nesse caminho; restauração cancelada") from None
+        try:
+            payload.unlink()
+            (entry / "metadata.json").unlink()
+            entry.rmdir()
+        except OSError:
+            logging.getLogger("valheim").warning(
+                "Plugin restaurado; cópia excluída remanescente preservada"
+            )
+        return {"name": record["name"], "revision": revision}

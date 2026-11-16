@@ -595,7 +595,8 @@ button:disabled {
   }
 }
 
-#action-confirmation {
+#action-confirmation,
+#plugin-confirmation {
   width: min(560px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
@@ -607,11 +608,13 @@ button:disabled {
   box-shadow: 0 24px 80px #0009;
   font: inherit;
 }
-#action-confirmation::backdrop {
+#action-confirmation::backdrop,
+#plugin-confirmation::backdrop {
   background: #090c09cc;
   backdrop-filter: blur(4px);
 }
-#action-confirmation h2 {
+#action-confirmation h2,
+#plugin-confirmation h2 {
   margin-top: 10px;
 }
 .confirmation-warning {
@@ -990,12 +993,14 @@ button {
     padding: 12px 14px;
     overflow-wrap: anywhere;
   }
-  #action-confirmation {
+  #action-confirmation,
+  #plugin-confirmation {
     width: calc(100% - 24px);
     padding: 20px;
     max-height: calc(100dvh - 24px);
   }
-  #action-confirmation h2 {
+  #action-confirmation h2,
+  #plugin-confirmation h2 {
     font-size: 21px;
   }
   .confirmation-actions {

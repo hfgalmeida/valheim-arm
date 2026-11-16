@@ -849,3 +849,107 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
         assert not errors
         context.close()
         browser.close()
+
+
+def test_plugin_delete_confirmation_and_restore_on_phone(runtime, monkeypatch):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastapi.testclient import TestClient
+    from app.auth import set_password
+    from app.web import create_app
+    from tests.plugin_fixture import dll
+
+    static = Path(__file__).resolve().parents[1] / "app/static"
+    monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    monkeypatch.setattr("app.image_version.published_version", lambda: "0.24.0")
+    set_password(runtime.data, "plugin-admin-password")
+    plugin = runtime.data / "mods/BepInEx/plugins/Author-Plugin/example.dll"
+    plugin.parent.mkdir(parents=True)
+    plugin.write_bytes(dll())
+    config = runtime.data / "mods/BepInEx/config/example.cfg"
+    config.parent.mkdir(parents=True)
+    config.write_text("custom-config")
+    app = create_app(runtime.data, runtime, lifecycle=False)
+    client = TestClient(app, base_url="https://panel.test")
+    writes = []
+
+    def route(request):
+        path = request.request.url.removeprefix("https://panel.test")
+        if path.startswith("/api/v1"):
+            if request.request.method == "POST" and path.startswith("/api/v1/plugins/"):
+                writes.append(path)
+            headers = {
+                k: v
+                for k, v in request.request.headers.items()
+                if k in ("origin", "x-csrf-token", "content-type", "cookie")
+            }
+            result = client.request(
+                request.request.method,
+                path,
+                content=request.request.post_data_buffer,
+                headers=headers,
+            )
+            request.fulfill(
+                status=result.status_code, body=result.content, headers=dict(result.headers)
+            )
+        else:
+            file = static / ("index.html" if path == "/" else path.lstrip("/"))
+            request.fulfill(
+                path=str(file),
+                content_type=(
+                    "text/html"
+                    if file.suffix == ".html"
+                    else (
+                        "text/javascript"
+                        if file.suffix == ".js"
+                        else "text/css" if file.suffix == ".css" else "font/ttf"
+                    )
+                ),
+            )
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=os.environ.get("BROWSER_CHANNEL") or None, headless=True
+        )
+        context = browser.new_context(
+            viewport={"width": 320, "height": 640}, is_mobile=True, has_touch=True
+        )
+        page = context.new_page()
+        page.add_init_script("window.EventSource = class { close() {} };")
+        page.route("https://panel.test/**", route)
+        page.goto("https://panel.test/")
+        page.locator("#password").fill("plugin-admin-password")
+        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        page.locator("#mobile-section").select_option("tab-mods")
+        button = page.get_by_role(
+            "button", name="Excluir plugin Author-Plugin/example.dll", exact=True
+        )
+        assert button.is_enabled()
+        button.tap()
+        assert (
+            "Author-Plugin/example.dll" in page.locator("#plugin-confirm-description").inner_text()
+        )
+        page.get_by_role("button", name="Cancelar", exact=True).tap()
+        assert plugin.exists() and not writes
+        button.tap()
+        page.locator("#plugin-confirm-submit").tap()
+        page.wait_for_function(
+            "document.querySelector('#deleted-plugin-list').textContent.includes('example.dll')"
+        )
+        assert not plugin.exists()
+        assert config.read_text() == "custom-config"
+        restore = page.get_by_role(
+            "button", name="Restaurar plugin excluído Author-Plugin/example.dll", exact=True
+        )
+        restore.tap()
+        page.locator("#plugin-confirm-submit").tap()
+        page.wait_for_function(
+            "document.querySelector('#plugin-list').textContent.includes('example.dll')"
+        )
+        assert plugin.read_bytes() == dll()
+        assert config.read_text() == "custom-config"
+        assert writes == ["/api/v1/plugins/delete", "/api/v1/plugins/restore-deleted"]
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        browser.close()

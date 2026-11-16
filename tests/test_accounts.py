@@ -98,6 +98,8 @@ def test_first_access_allows_only_password_change_session_and_logout(runtime, mo
         ("put", "/cloud", {"enabled": False, "folder": "world"}),
         ("get", "/plugins", None),
         ("post", "/plugins", {}),
+        ("post", "/plugins/delete", {}),
+        ("post", "/plugins/restore-deleted", {}),
         ("get", "/mod-configs", None),
         ("get", "/mod-config?path=private.cfg", None),
         ("get", "/alerts", None),

@@ -94,6 +94,7 @@ function signedOut() {
     "logs",
     "jobs",
     "plugin-list",
+    "deleted-plugin-list",
     "mod-config-file",
     "mod-session-plugins",
     "mod-session-issues",
@@ -270,6 +271,7 @@ function modDiagnostics(d) {
 }
 function update(s) {
   lastPanelState = s;
+  syncDeletedPluginControls();
   if (s.server_name) $("server-name").textContent = s.server_name;
   if (isAdmin() && s.audit_error) $("audit-warning").textContent = s.audit_error;
   if (s.run_intent) {
@@ -1076,8 +1078,82 @@ async function loadPlugins() {
         });
       row.append(restore);
     }
+    if (file.revision) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.pluginWrite = "true";
+      remove.disabled = !pluginsEditable();
+      remove.textContent = "Excluir";
+      remove.setAttribute("aria-label", "Excluir plugin " + file.name);
+      remove.onclick = () =>
+        guard(async () => {
+          if (!(await confirmPluginChange("delete", file.name))) return;
+          pluginMutationPending = true;
+          syncDeletedPluginControls();
+          try {
+            await api("/plugins/delete", "POST", {
+              name: file.name,
+              revision: file.revision,
+              confirm: true,
+            });
+            await loadPlugins();
+            notice(
+              "Plugin excluído. Configurações preservadas; a cópia está em Plugins excluídos.",
+            );
+          } finally {
+            pluginMutationPending = false;
+            syncDeletedPluginControls();
+          }
+        });
+      row.append(remove);
+    }
     $("plugin-list").append(row);
   });
+  $("deleted-plugin-list").replaceChildren();
+  for (const file of data.deleted || []) {
+    const row = document.createElement("div");
+    row.className = "plugin-entry";
+    const label = document.createElement("span");
+    label.textContent =
+      file.name +
+      " · Excluído em " +
+      new Date(file.deleted_at * 1000).toLocaleString("pt-BR", {
+        timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+      });
+    const restore = document.createElement("button");
+    restore.textContent = "Restaurar excluído";
+    restore.dataset.pluginWrite = "true";
+    restore.dataset.restoreConflict = String(
+      data.files.some(
+        (active) => active.name.toLocaleLowerCase() === file.name.toLocaleLowerCase(),
+      ),
+    );
+    restore.disabled = !pluginsEditable() || restore.dataset.restoreConflict === "true";
+    restore.setAttribute("aria-label", "Restaurar plugin excluído " + file.name);
+    restore.onclick = () =>
+      guard(async () => {
+        if (!(await confirmPluginChange("restore", file.name))) return;
+        pluginMutationPending = true;
+        syncDeletedPluginControls();
+        try {
+          await api("/plugins/restore-deleted", "POST", {
+            id: file.id,
+            revision: file.revision,
+            confirm: true,
+          });
+          await loadPlugins();
+          notice("Plugin restaurado. Inicie o jogo para carregá-lo.");
+        } finally {
+          pluginMutationPending = false;
+          syncDeletedPluginControls();
+        }
+      });
+    row.append(label, restore);
+    $("deleted-plugin-list").append(row);
+  }
+  if (!(data.deleted || []).length)
+    $("deleted-plugin-list").textContent = "Nenhum plugin excluído disponível para restaurar.";
+  syncDeletedPluginControls();
   return data.files;
 }
 $("refresh-plugins").onclick = () => guard(loadPlugins);
@@ -1468,3 +1544,49 @@ $("check-image-version").onclick = () =>
       $("check-image-version").disabled = false;
     }
   });
+
+function confirmPluginChange(action, name) {
+  const dialog = $("plugin-confirmation");
+  if (dialog.open) return Promise.resolve(false);
+  $("plugin-confirm-title").textContent =
+    action === "delete" ? "Excluir plugin?" : "Restaurar plugin excluído?";
+  $("plugin-confirm-description").textContent =
+    action === "delete"
+      ? "Excluir “" +
+        name +
+        "”? O jogo precisa estar parado. Será preservada uma cópia recuperável e as configurações serão mantidas. Plugins dependentes podem deixar de funcionar."
+      : "Restaurar “" +
+        name +
+        "”? O jogo precisa estar parado. Uma DLL já instalada nesse caminho não será sobrescrita.";
+  $("plugin-confirm-submit").textContent =
+    action === "delete" ? "Excluir plugin" : "Restaurar plugin";
+  dialog.returnValue = "cancel";
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {
+      once: true,
+    });
+    dialog.showModal();
+  });
+}
+
+let pluginMutationPending = false;
+function pluginsEditable() {
+  return (
+    isAdmin() &&
+    lastPanelState &&
+    !lastPanelState.running &&
+    !pluginMutationPending &&
+    !(lastPanelState.jobs || []).some((job) => ["fila", "executando", "adiado"].includes(job.state))
+  );
+}
+function syncDeletedPluginControls() {
+  document.querySelectorAll("[data-plugin-write]").forEach((button) => {
+    const conflict = button.dataset.restoreConflict === "true";
+    button.disabled = !pluginsEditable() || conflict;
+    if (conflict) {
+      button.title = "Já existe uma DLL instalada nesse caminho; ela não será sobrescrita";
+      return;
+    }
+    button.title = button.disabled ? "Pare o jogo e aguarde as operações pendentes terminarem" : "";
+  });
+}

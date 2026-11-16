@@ -26,6 +26,7 @@
 - [x] Integração opcional BepInEx com pacote verificado e plugins locais.
 - [x] Incluir BepInExPack_Valheim padrão na imagem Docker, com versão/hash fixos e ativação pelo painel sem URL ou SHA256.
 - [x] Upload de DLLs pelo painel com jogo parado, confirmação de substituição e restauração da versão anterior.
+- [x] Exclusão recuperável de DLLs pelo administrador, incluindo subpastas, com jogo parado, confirmação visual, verificação de revisão, restauração sem sobrescrita, configurações preservadas e auditoria.
 - [x] Editor de configurações de plugins pelo painel, com gravação com jogo parado, detecção de conflitos e recuperação da versão anterior.
 - [x] Documentação de instalação, configuração, API e recuperação.
 - [x] Testes locais de configuração, jogadores, autenticação, backups e manutenção.

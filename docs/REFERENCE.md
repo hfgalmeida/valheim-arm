@@ -446,3 +446,10 @@ O acesso existente continua funcionando com **admin** e a senha da instalação.
 Desativar uma conta, alterar seu perfil ou redefinir a senha encerra suas sessões e cancela solicitações ainda na fila ou adiadas. Uma operação que já enviou o sinal de parada continua o encerramento gracioso. Redefinir a senha exige nova troca no próximo acesso. A conta **admin** principal não pode ser desativada ou mudar de perfil; permanece disponível para recuperação pelo comando de senha existente.
 
 Em **Administração → Auditoria**, filtre por usuário, operação e período. O registro identifica responsável, horário, resultado, alterações e a tarefa associada, inclusive nas operações em segundo plano. São mantidos até 2.000 registros dos últimos 90 dias, com limite de 8 MiB. Campos secretos aparecem apenas como alterados; configurações de plugins são identificadas pela revisão do arquivo, sem registrar seu conteúdo. A auditoria e as contas persistem ao remover os contêineres e não são incluídas nos backups dos mundos.
+
+
+### Excluir ou restaurar plugins
+
+Como administrador, pare o jogo e aguarde as operações pendentes terminarem. Em **Mods**, use **Excluir** ao lado da DLL e confirme o nome do arquivo. Também são aceitos plugins em subpastas; somente a DLL selecionada é retirada. Configurações e outros plugins são preservados, mas dependências podem deixar de funcionar.
+
+A cópia aparece em **Plugins excluídos**, com data da exclusão. Use **Restaurar excluído** e confirme para devolvê-la ao caminho original. A restauração nunca sobrescreve uma DLL instalada; se necessário, exclua primeiro a atual. Cópias de exclusões distintas são preservadas separadamente em `data/mods/plugin-trash`, fora da pasta carregada pelo BepInEx. Elas persistem ao remover contêineres e continuam ocupando espaço em disco; não há limpeza automática. DLLs acima de 16 MiB continuam sendo gerenciadas pelos arquivos compartilhados. Exclusões e restaurações são registradas na auditoria.

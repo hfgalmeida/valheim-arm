@@ -79,6 +79,20 @@ class PluginRestore(BaseModel):
     revision: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class PluginDelete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=512)
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirm: bool = False
+
+
+class PluginDeletedRestore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirm: bool = False
+
+
 class ModConfigChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     path: str = Field(max_length=256)
@@ -481,9 +495,14 @@ def create_app(data=None, runtime=None, lifecycle=True):
         )
 
     def plugin_stopped():
-        if rt.live or rt.active or not rt.queue.empty():
+        if (
+            rt.live
+            or rt.active
+            or not rt.queue.empty()
+            or any(j["state"] in ("fila", "executando", "adiado") for j in rt.jobs)
+        ):
             raise HTTPException(
-                409, "Pare o jogo e aguarde as operações terminarem antes de enviar plugins"
+                409, "Pare o jogo e aguarde as operações terminarem antes de alterar plugins"
             )
 
     @app.get("/api/v1/plugins", dependencies=[Depends(session)])
@@ -496,6 +515,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 )
             return {
                 "files": files,
+                "deleted": await asyncio.to_thread(plugins.list_deleted),
                 "diagnostics": rt.mod_diagnostics.describe(rt.live, rt.config.effective().bepinex),
             }
         except (OSError, ValueError) as exc:
@@ -542,6 +562,40 @@ def create_app(data=None, runtime=None, lifecycle=True):
             request.state.audit_resource = "Plugin " + result["name"]
             request.state.audit_changes = {
                 "revisão": {"antes": body.revision, "depois": result["revision"]}
+            }
+            return result
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.post("/api/v1/plugins/delete", dependencies=[Depends(session)])
+    async def delete_plugin(body: PluginDelete, request: Request):
+        if not body.confirm:
+            raise HTTPException(422, "Confirme a exclusão do plugin")
+        plugin_stopped()
+        try:
+            result = plugins.delete(body.name, body.revision)
+            request.state.audit_resource = "Plugin " + body.name
+            request.state.audit_changes = {
+                "arquivo": {"antes": "instalado", "depois": "excluído recuperável"},
+                "revisão": body.revision,
+                "cópia": result["id"],
+            }
+            return result
+        except (OSError, ValueError) as exc:
+            config_error(exc)
+
+    @app.post("/api/v1/plugins/restore-deleted", dependencies=[Depends(session)])
+    async def restore_deleted_plugin(body: PluginDeletedRestore, request: Request):
+        if not body.confirm:
+            raise HTTPException(422, "Confirme a restauração do plugin excluído")
+        plugin_stopped()
+        try:
+            result = plugins.restore_deleted(body.id, body.revision)
+            request.state.audit_resource = "Plugin " + result["name"]
+            request.state.audit_changes = {
+                "arquivo": {"antes": "excluído", "depois": "instalado"},
+                "revisão": result["revision"],
+                "cópia": body.id,
             }
             return result
         except (OSError, ValueError) as exc:

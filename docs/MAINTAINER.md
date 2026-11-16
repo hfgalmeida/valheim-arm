@@ -432,3 +432,10 @@ Se uma implantação manual posterior já substituiu uma atualização incomplet
 Em 16/11/2026, a instalação de testes estava online na 0.22.0, com 0.23.0 publicada. O override gerenciado ausente foi restaurado e o estado antigo `switching` foi reconciliado após validar a instalação, sem troca de imagem nem reinício dos contêineres. O fluxo real de atualizar para outra versão continua pendente de revalidação.
 
 O instalador do agente também atualiza o `update-server.py` da instalação para manter o CLI e o serviço na mesma revisão, preservando a cópia anterior em `.update-server.py.previous`. Isso não sobrescreve o Compose nem as configurações do jogo.
+
+
+### Exclusão recuperável de plugins
+
+POST `/api/v1/plugins/delete` exige `name` relativo à pasta de plugins, `revision` SHA256 e `confirm:true`. POST `/api/v1/plugins/restore-deleted` exige `id` da cópia, revisão e confirmação. As rotas são administrativas e passam por sessão, CSRF, auditoria e bloqueio com jogo ativo ou tarefas pendentes. GET `/plugins` acrescenta `deleted` com ID, nome, tamanho, data e revisão; uploads continuam limitados à pasta principal.
+
+A exclusão valida o caminho e a revisão, grava metadados antes de mover a DLL para `data/mods/plugin-trash/UUID/plugin.dll` e não remove pastas nem configurações. Subpastas são aceitas apenas dentro de `BepInEx/plugins`; caminhos absolutos, atalhos, links simbólicos e arquivos não DLL são recusados. Cada exclusão tem cópia independente, sem sobrescrever versões excluídas anteriores. Restaurar exige integridade da cópia e publica o arquivo por hard link sem sobrescrever um destino concorrente; se o sistema de arquivos não suportar hard links, a cópia excluída é mantida e a operação falha. Falhas de limpeza após restaurar preservam os arquivos restantes. A lixeira está no bind persistente de dados e não é parte dos backups de mundos.
