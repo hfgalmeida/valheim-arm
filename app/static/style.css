@@ -678,7 +678,8 @@ button:disabled {
   align-items: center;
   gap: 0.5rem;
 }
-.account-row input[type="checkbox"] {
+.account-row input[type="checkbox"],
+#directory-confirm {
   width: auto;
 }
 #audit-list pre {

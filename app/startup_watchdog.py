@@ -22,6 +22,7 @@ class StartupWatchdog:
         self.scene_started = False
         self.world_started = False
         self.chunks_loaded = False
+        self.phase_unknown = False
         self.fatal = None
 
     def consume(self, line, *, ready=False, allow_fatal=True):
@@ -54,4 +55,6 @@ class StartupWatchdog:
     def safe_to_terminate(self):
         # Unknown startup formats fail closed. A generic loading timeout is not
         # evidence that it is safe to kill a game process.
-        return bool(self.fatal and self.scene_started and not self.world_started)
+        return bool(
+            self.fatal and self.scene_started and not self.world_started and not self.phase_unknown
+        )

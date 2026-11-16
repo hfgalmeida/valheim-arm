@@ -22,6 +22,8 @@ from .maintenance_history import MaintenanceHistory, origin, prune
 from .host_updates import HostUpdates
 from .run_intent import RunIntent
 from .startup_watchdog import StartupWatchdog, world_ready
+from .startup_diagnostics import StartupDiagnostics
+from .game_logs import read_game_line
 from .image_version import ImageVersion
 from .mod_diagnostics import ModDiagnostics
 from .audit import Audit
@@ -332,6 +334,7 @@ class Runtime:
         self.players = Players()
         self.player_directory = PlayerDirectory(data / "config/known-players.json")
         self.startup_watchdog = StartupWatchdog()
+        self.startup_diagnostics = StartupDiagnostics(data)
         self.process = None
         self.reader = None
         self.running = None
@@ -489,6 +492,7 @@ class Runtime:
         ).crossplay
         return {
             "diagnostics": self.diagnostics(),
+            "startup": self.startup_diagnostics.describe(),
             "mods": self.mod_diagnostics.describe(self.live, self.config.effective().bepinex),
             "state": self.state,
             "running": self.live,
@@ -849,20 +853,32 @@ class Runtime:
         if self.closing or not self.want_running or not self.run_intent.running:
             self.state = "parado"
             return
+        profile, game_environment = self.startup_diagnostics.environment()
         self.clean_stop = False
         atomic_json(self.clean_marker, {"started": time.time(), "world": settings.world_name})
-        self.process = await asyncio.create_subprocess_exec(
-            "FEXInterpreter",
-            "/usr/bin/env",
-            *guest_env,
-            str(install / "valheim_server.x86_64"),
-            *settings.arguments(self.data / "saves"),
-            cwd=install,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-            start_new_session=True,
-            limit=1024 * 1024,
-        )
+        self.startup_diagnostics.begin(profile, settings)
+        self.emit("Inicializando jogo com perfil FEX: " + profile)
+        if profile == "compatible":
+            self.emit(
+                "Perfil de compatibilidade FEX: verificação completa de código; impacto de desempenho ainda em validação"
+            )
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                "FEXInterpreter",
+                "/usr/bin/env",
+                *guest_env,
+                str(install / "valheim_server.x86_64"),
+                *settings.arguments(self.data / "saves"),
+                cwd=install,
+                env=game_environment,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                start_new_session=True,
+                limit=1024 * 1024,
+            )
+        except BaseException:
+            self.startup_diagnostics.finish(None, self.startup_watchdog, spawn_failed=True)
+            raise
         self.reader = asyncio.create_task(self.read_game(self.process))
 
     async def read_game(self, process):
@@ -871,8 +887,20 @@ class Runtime:
         if self.startup_watchdog.process is not process:
             self.startup_watchdog.reset(process)
         steam_server_opened = False
+
+        def oversized_line():
+            if self.process is not None and self.process is not process:
+                return
+            self.players.reset()
+            # A discarded line may have described world loading. Unknown phase
+            # cannot authorize forced first-scene cleanup.
+            self.startup_watchdog.phase_unknown = True
+            self.emit(
+                "Linha excessiva do jogo descartada; presença invalidada e encerramento forçado da inicialização bloqueado"
+            )
+
         try:
-            while line := await process.stdout.readline():
+            while line := await read_game_line(process.stdout, oversized_line):
                 if self.process is not None and self.process is not process:
                     break
                 text = line.decode(errors="replace").strip()
@@ -881,6 +909,7 @@ class Runtime:
                     ready=self.game_ready,
                     allow_fatal=not self.closing and self.stop_request is None,
                 )
+                self.startup_diagnostics.observe(text, self.startup_watchdog)
                 if fatal:
                     self.state = "falha"
                     self.game_ready = False
@@ -943,6 +972,7 @@ class Runtime:
                     self.game_ready = True
                     self.ready_since = time.monotonic()
                     self.state = "online"
+                    self.startup_diagnostics.ready()
                 self.emit(text)
                 self.mod_diagnostics.consume(self.logs[-1]["message"])
         except Exception as exc:
@@ -958,9 +988,15 @@ class Runtime:
                 self.players.reset()
                 self.emit(f"Processo do jogo encerrado: {code}")
                 expected = self.stop_request is not None and self.stop_request[0] is process
+                self.startup_diagnostics.finish(code, self.startup_watchdog, expected)
                 if not expected and self.want_running and not self.closing:
                     self.record_failure(
-                        "game", f"Processo do jogo encerrado inesperadamente: {code}"
+                        "game",
+                        (
+                            self.startup_watchdog.fatal + f"; saída do processo: {code}"
+                            if self.startup_watchdog.fatal
+                            else f"Processo do jogo encerrado inesperadamente: {code}"
+                        ),
                     )
                     if (
                         self.ready_since is not None

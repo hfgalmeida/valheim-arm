@@ -105,6 +105,7 @@ def test_first_access_allows_only_password_change_session_and_logout(runtime, mo
         ("get", "/alerts", None),
         ("post", "/alerts/test", {}),
         ("get", "/users/admins", None),
+        ("put", "/player-directory", {"id": "Xbox_12345", "name": "Player", "confirm": True}),
         ("put", "/users/admins", {"entries": []}),
         ("get", "/accounts", None),
         (
@@ -140,7 +141,9 @@ def test_operator_state_and_job_lookup_never_leak_other_users_or_private_details
     value = response.json()
     assert [j["id"] for j in value["jobs"]] == [own["id"]]
     assert value["logs"] == []
-    assert not any(key in value for key in ("cloud", "alerts", "mods", "image", "image_version"))
+    assert not any(
+        key in value for key in ("cloud", "alerts", "mods", "image", "image_version", "startup")
+    )
     assert "private" not in response.text and "secret-diagnostics" not in response.text
     assert "actor_credential" not in response.text
     assert operator.get("/api/v1/jobs/" + other["id"]).status_code == 404

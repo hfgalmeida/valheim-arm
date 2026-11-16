@@ -40,7 +40,8 @@
 - [x] Carregamento real na Oracle do pacote embutido 5.4.2360 (engine 5.4.23.6), ServerInfo 2.2.7 e JsonDotNET 13.0.4: 2 plugins carregados, 0 falhas, API interna funcional e mundo online com crossplay. Conexão pelo cliente posteriormente confirmada nos dois modos.
 - [x] Melhorar o diagnóstico de presença: fonte, horário/idade, última contagem, expiração, consulta Steam da manutenção e invalidação de conexões/desconexões Steam/PlayFab; desconhecido não autoriza manutenção automática.
 - [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
-- [x] Validar ciclo básico de presença sem crossplay em 16/11/2026: entrada com 1 jogador no log/painel/A2S, desconexão Steam, retorno a zero no log/painel/A2S e janela de 120 segundos transcorrida sem novos eventos. Reconexão durante a janela e manutenção protegida real continuam pendentes.
+- [x] Validar reconexão Steam durante a janela de segurança em 16/11/2026: nova conexão cerca de 15 segundos após snapshot zero, painel de 0 para desconhecido e A2S com 1 jogador. Manutenção protegida real e repetição da reconexão com crossplay permanecem pendentes.
+- [x] Validar ciclo básico de presença sem crossplay em 16/11/2026: entrada com 1 jogador no log/painel/A2S, desconexão Steam, retorno a zero no log/painel/A2S e janela de 120 segundos transcorrida sem novos eventos. Manutenção protegida real continua pendente; reconexão Steam durante a janela validada no item específico.
 - [x] Validar ciclo básico de presença com crossplay em 16/11/2026: entrada e 1 jogador no log/painel, saída e presença desconhecida no painel, retorno a zero no log/painel e janela de 120 segundos transcorrida sem novos eventos. Reconexão durante a janela e manutenção protegida real permanecem pendentes.
 - [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
 
@@ -53,9 +54,9 @@
 
 ### Melhoria futura: identificação de jogadores de outras plataformas
 
-- [ ] Descobrir automaticamente IDs de permissão de outras plataformas no crossplay, usando mensagens explícitas do servidor ou um plugin BepInEx validado.
-- [ ] Associar nome, plataforma e ID quando essa informação estiver disponível, sem deduzir permissões a partir de join codes, ZDOIDs ou identificadores temporários de conexão PlayFab.
-- [ ] Validar com clientes das plataformas atendidas e manter o cadastro manual como alternativa; separar histórico de IDs de presença online.
+- [x] Descobrir identidades explícitas Steam/crossplay nos logs; apresentar IDs de outras plataformas como observados, exigindo confirmação/correção administrativa pelo F2 antes de usá-los pelo seletor. Sem plugin adicional.
+- [x] Persistir nome e plataforma informados pelo administrador junto ao ID confirmado, com migração do histórico Steam, auditoria e seleção nas listas. Não associar nomes pela ordem dos logs nem deduzir permissões a partir de join codes, ZDOIDs ou handles PlayFab.
+- [ ] Validar com clientes reais das outras plataformas quando disponíveis; administrador informou indisponibilidade nesta etapa. Testes sintéticos e de navegador cobrem descoberta, confirmação, edição de nome/plataforma, persistência e restrições, sem comprovar validade de permissões em consoles. Cadastro manual preservado e histórico separado da presença online.
 
 ### Usuários e permissões do painel
 
@@ -92,6 +93,13 @@
 
 ### Recuperação de falha fatal durante inicialização
 
+- [x] Histórico privado e persistente das últimas 20 inicializações, com fase, perfil FEX, versão do emulador, sinal/código, assinatura PlatformInitializer, prontidão e saída; consulta administrativa no painel.
+- [x] Perfil de compatibilidade experimental para novas tentativas após falha fatal anterior ao mundo, isolado do SteamCMD e sem ampliar limites de recuperação; modos auto/standard/compatible.
+- [x] Leitor de logs tolerante a linhas excessivas: descarta a linha inteira, invalida presença e bloqueia encerramento forçado quando a fase foi perdida.
+- [x] Validar no Linux da Oracle a nova integração com processo sintético que ignora SIGINT: SIGKILL somente antes do mundo, uma falha contabilizada, próximo perfil compatível, save isolado intacto e nenhum backup criado (16/11/2026).
+- [ ] Validar eficácia do perfil de compatibilidade no Valheim real, com partidas repetidas e sem atribuir a causa do SIGSEGV ao FEX, Mono ou BepInEx antes de comprovação; medir seu impacto na etapa final de desempenho.
+
+
 - [x] Detectar sinal fatal mesmo quando o processo permanece ativo; mostrar a falha no painel em vez de manter iniciando. Não confundir o Loading: Done inicial do Unity com a conclusão do carregamento do mundo.
 - [x] Recuperação serializada da falha fatal na primeira cena, com SIGINT, prazo de 30 segundos e SIGKILL apenas antes de qualquer indício de carregamento do mundo; manter saves, marcador de saída incompleta e proibição de backup nessa saída.
 - [x] Compartilhar o limite de cinco falhas e intervalos de recuperação existentes, respeitar parada manual e suspender se a fase do mundo for desconhecida ou tiver avançado. Não persistir tarefas ligadas a um PID nem bloquear a limpeza por falha de persistência.
@@ -110,6 +118,13 @@
 - [x] Consultar versões a cada 15 minutos e pela aba/botão do painel, com limite de frequência, data da consulta e indicação de informação desatualizada.
 - [x] Revalidar atualização real da imagem pelo painel: administrador confirmou instalação concluída com sucesso em 16/11/2026, após as correções do atualizador.
 
+
+### Etapa penúltima: concluir validação de presença e manutenção protegida
+
+Adiada por decisão do administrador; executar após as melhorias funcionais e imediatamente antes da validação de desempenho. Os ciclos básicos com e sem crossplay e a reconexão Steam durante a janela já foram confirmados.
+
+- [ ] Repetir a reconexão durante a janela de segurança com crossplay ativo.
+- [ ] Validar uma parada ou reinício pelo operador: adiar com jogadores presentes ou presença desconhecida e executar somente após zero confirmado, consulta Steam quando aplicável e verificação final.
 
 ### Etapa final do escopo: validação de desempenho
 

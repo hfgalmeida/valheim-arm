@@ -48,6 +48,20 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         running=True,
         crossplay=True,
         join_code="012345",
+        startup={
+            "history": [
+                {
+                    "started": 1794643216,
+                    "outcome": "fatal",
+                    "profile": "compatible",
+                    "phase": "scene",
+                    "signal": 11,
+                    "exit_code": -11,
+                    "signature": "platform_initializer",
+                }
+            ],
+            "error": None,
+        },
         players={
             "count": 2,
             "reason": "snapshot do jogo",
@@ -236,6 +250,9 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.evaluate("s => update(s)", state | {"run_intent": {"running": False, "error": None}})
         assert "manter o jogo parado" in page.locator("#run-intent").inner_text()
         page.evaluate("s => update(s)", state)
+        assert "compatibilidade" in page.locator("#startup-summary").text_content()
+        assert "PlatformInitializer" in page.locator("#startup-history").text_content()
+        assert "sinal 11" in page.locator("#startup-history").text_content()
         assert "Disponível no Docker Hub: 0.15.0" in page.locator("#image-version").inner_text()
         assert "Nova versão disponível" in page.locator("#image-version").inner_text()
         # No disruptive action is submitted before explicit HTML confirmation.
@@ -848,6 +865,89 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
             no_horizontal_scroll(page)
         assert not errors
         context.close()
+        browser.close()
+
+
+def test_player_identification_confirmation_on_phone(runtime, monkeypatch):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastapi.testclient import TestClient
+    from app.auth import set_password
+    from app.web import create_app
+
+    static = Path(__file__).resolve().parents[1] / "app/static"
+    monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    monkeypatch.setattr("app.image_version.published_version", lambda: "0.25.0")
+    set_password(runtime.data, "identity-admin-password")
+    runtime.player_directory.consume(
+        "PlayFab socket with remote ID playfab/ABC123 received local Platform ID Xbox_12345"
+    )
+    client = TestClient(
+        create_app(runtime.data, runtime, lifecycle=False), base_url="https://panel.test"
+    )
+
+    def route(request):
+        path = request.request.url.removeprefix("https://panel.test")
+        if path.startswith("/api/v1"):
+            response = client.request(
+                request.request.method,
+                path,
+                content=request.request.post_data_buffer,
+                headers={
+                    k: v
+                    for k, v in request.request.headers.items()
+                    if k in ("origin", "x-csrf-token", "content-type", "cookie")
+                },
+            )
+            request.fulfill(
+                status=response.status_code, body=response.content, headers=dict(response.headers)
+            )
+        else:
+            file = static / ("index.html" if path == "/" else path.lstrip("/"))
+            mime = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}.get(
+                file.suffix, "font/ttf"
+            )
+            request.fulfill(path=str(file), content_type=mime)
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=os.environ.get("BROWSER_CHANNEL") or None, headless=True
+        )
+        page = browser.new_page(
+            viewport={"width": 320, "height": 640}, is_mobile=True, has_touch=True
+        )
+        page.add_init_script("window.EventSource = class { close() {} };")
+        page.route("https://panel.test/**", route)
+        page.goto("https://panel.test/")
+        page.locator("#password").fill("identity-admin-password")
+        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        page.locator("#mobile-section").select_option("tab-players")
+        page.locator("#known-player").select_option("Xbox_12345")
+        assert page.locator("#player-id").input_value() == ""
+        assert page.locator("#player-identity-form").is_visible()
+        assert not page.locator("#directory-confirm").is_checked()
+        # The F2 permission ID may differ from the transport ID: preserve the corrected value.
+        page.locator("#directory-id").fill("X_987654321")
+        page.locator("#directory-platform").fill("Xbox")
+        page.locator("#directory-name").fill("Jogador <img src=x onerror=alert(1)>")
+        page.get_by_role("button", name="Salvar identificação", exact=True).tap()
+        assert all(item["id"] != "X_987654321" for item in runtime.player_directory.describe())
+        page.locator("#directory-confirm").check()
+        page.get_by_role("button", name="Salvar identificação", exact=True).tap()
+        page.wait_for_function("document.querySelector('#player-id').value === 'X_987654321'")
+        assert client.get("/api/v1/users/admins").json()["entries"] == []
+        page.get_by_role("button", name="Adicionar à lista", exact=True).tap()
+        assert "Jogador <img" in page.locator("#user-list").inner_text()
+        assert page.locator("#user-list img").count() == 0
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        # Adding to the draft still must not grant permissions before saving the list.
+        assert client.get("/api/v1/users/admins").json()["entries"] == []
+        page.locator("#logout").tap()
+        assert page.locator("#directory-id").input_value() == ""
+        assert page.locator("#directory-name").input_value() == ""
+        assert page.locator("#directory-platform").input_value() == ""
         browser.close()
 
 

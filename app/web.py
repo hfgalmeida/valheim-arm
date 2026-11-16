@@ -73,6 +73,14 @@ class Action(BaseModel):
     confirm: bool = False
 
 
+class PlayerIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(default="", max_length=80)
+    platform: str = Field(default="", max_length=40)
+    confirm: bool = False
+
+
 class PluginRestore(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(max_length=124)
@@ -174,6 +182,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             "plugins": "plugins",
             "mod-config": "plugin-config",
             "users": "player-lists",
+            "player-directory": "player-directory",
             "alerts": "alerts",
             "cloud": "cloud",
             "image-update": "image-update",
@@ -701,11 +710,44 @@ def create_app(data=None, runtime=None, lifecycle=True):
             for entry in existing.read_text().splitlines() if existing.exists() else []:
                 entry = entry.strip()
                 if re.fullmatch(r"(?:[A-Za-z]+_)?[A-Za-z0-9:_-]{1,128}", entry):
-                    known.setdefault(entry, {"id": entry, "last_seen": None})
+                    known.setdefault(
+                        entry,
+                        {
+                            "id": entry,
+                            "last_seen": None,
+                            "name": "",
+                            "source": "list",
+                            "confirmed": True,
+                            "platform": entry.split("_", 1)[0] if "_" in entry else None,
+                        },
+                    )
         return {
             "entries": path.read_text().splitlines() if path.exists() else [],
             "known_players": sorted(known.values(), key=lambda entry: entry["id"]),
         }
+
+    @app.put("/api/v1/player-directory", dependencies=[Depends(session)])
+    async def register_player(body: PlayerIdentity, request: Request):
+        if not body.confirm:
+            raise HTTPException(422, "Confirme que o ID foi conferido no F2 do jogo")
+        try:
+            previous = {entry["id"]: entry for entry in rt.player_directory.describe()}
+            result = rt.player_directory.register(body.id, body.name, body.platform)
+            request.state.audit_resource = "Identificação de jogador " + result["id"]
+            request.state.audit_changes = {
+                "nome": {
+                    "antes": previous.get(result["id"], {}).get("name", ""),
+                    "depois": result["name"],
+                },
+                "origem": "confirmação administrativa",
+                "plataforma": {
+                    "antes": previous.get(result["id"], {}).get("platform"),
+                    "depois": result["platform"],
+                },
+            }
+            return result
+        except (OSError, ValueError) as exc:
+            config_error(exc)
 
     @app.put("/api/v1/users/{kind}", dependencies=[Depends(session)])
     async def put_users(kind: str, body: UserList, request: Request):

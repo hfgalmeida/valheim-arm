@@ -102,11 +102,16 @@ Mantenha os padrões até medir sua carga. O cache persistente fica desativado; 
 
 | Variável | Padrão | Efeito |
 |---|---|---|
+| `FEX_GAME_MODE` | auto | Perfil do jogo: `auto`, `standard` ou `compatible` |
 | `FEX_DISKCACHE` | 0 | Cache JIT persistente, opcional |
 | `FEX_DISKCACHEMAXFILESIZE` | 1073741824 | Limite do arquivo principal do cache; índice pode usar espaço adicional |
 | `FEX_MAXINST` | 5000 | Máximo de instruções por bloco |
 | `FEX_MULTIBLOCK` | 1 | Compilação multibloco |
 | `FEX_TSOENABLED` | 1 | Preserva ordenação de memória x86 |
+
+Em `auto`, a primeira tentativa usa as opções configuradas. Uma falha fatal comprovadamente anterior ao mundo seleciona o perfil de compatibilidade nas próximas partidas desse supervisor. Esse perfil usa SMC completo, desativa MonoHacks, multibloco e cache em disco, e mantém TSO. Pode reduzir o desempenho; sua eficácia no Valheim ainda está em validação. `standard` desativa a troca automática e `compatible` força o perfil desde a primeira partida. A troca só afeta processos novos do jogo; não altera saves nem os parâmetros do SteamCMD.
+
+Em **Visão geral → Detalhes do servidor → Inicializações e recuperação**, o administrador consulta as últimas 20 tentativas, fases, sinais e resultados, inclusive após recriar o contêiner.
 
 Alterar blocos ou desativar TSO pode comprometer a estabilidade. Consulte a [configuração do FEX](https://wiki.fex-emu.com/index.php/Development%3AConfiguring_FEX).
 
@@ -209,7 +214,9 @@ Se o navegador usar um repositório próprio de certificados, importe também na
 
 Na aba **Jogadores**, escolha **Administradores**, **Banidos** ou **Permitidos**. Selecione um ID conhecido ou informe um ID, clique em **Adicionar à lista** e **Salvar lista**. Há remoção por botão e edição em lote. **Atualizar jogadores** renova as sugestões sem descartar sua edição.
 
-As sugestões incluem IDs Steam identificados no log e IDs já cadastrados. Esse histórico não representa jogadores online. Para outras plataformas, cole o ID completo exibido no F2 ou no log, preservando maiúsculas e minúsculas. Não use join code, ZDOID ou identificador de conexão PlayFab. [IDs no Valheim](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/).
+As sugestões mostram nome cadastrado, plataforma e ID. Incluem identidades explícitas dos logs Steam/crossplay e IDs das listas, sem indicar presença online. Um **ID observado** de outra plataforma precisa ser conferido: selecione-o, abra **Identificar ou confirmar jogador**, copie/corrija o ID completo do F2, informe nome e plataforma se desejar, marque a confirmação e salve. O ID de transporte pode ser diferente do ID de permissões; não é convertido automaticamente. Também é possível cadastrar um jogador manualmente nesse formulário.
+
+Salvar a identificação não altera permissões: depois use **Adicionar à lista** e **Salvar lista**. O nome é informado pelo administrador; nomes de personagens não são associados pela proximidade de mensagens no log. Preserve o ID e sua capitalização exatamente como aparecem no jogo. Não use join code, ZDOID ou identificador de conexão PlayFab. [Orientação oficial sobre IDs](https://www.valheimgame.com/support/a-guide-to-dedicated-servers/).
 
 Preencher **Permitidos** restringe o acesso aos IDs dessa lista. Essas permissões são do jogo; não criam contas no painel web.
 

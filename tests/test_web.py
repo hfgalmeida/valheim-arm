@@ -140,6 +140,41 @@ def test_permission_picker_merges_known_ids_and_existing_lists(runtime, monkeypa
     assert client.get("/api/v1/users/admins").status_code == 401
 
 
+def test_player_identity_requires_confirmation_and_is_audited_without_changing_lists(
+    runtime, monkeypatch
+):
+    client = client_fixture(runtime, monkeypatch)
+    body = {"id": "Xbox_12345", "name": "Jogador <Xbox>", "platform": "Xbox", "confirm": True}
+    assert client.put("/api/v1/player-directory", json=body | {"confirm": False}).status_code == 422
+    assert (
+        client.put(
+            "/api/v1/player-directory", json=body, headers={"X-CSRF-Token": "wrong"}
+        ).status_code
+        == 403
+    )
+    assert (
+        client.put("/api/v1/player-directory", json=body | {"id": "playfab/ABC"}).status_code == 422
+    )
+    assert (
+        client.put("/api/v1/player-directory", json=body | {"name": "Bad\nName"}).status_code == 422
+    )
+    result = client.put("/api/v1/player-directory", json=body)
+    assert result.status_code == 200, result.text
+    assert result.json()["name"] == "Jogador <Xbox>"
+    assert result.json()["last_seen"] is None
+    assert result.json()["platform"] == "Xbox"
+    for kind in ("admins", "banned", "permitted"):
+        data = client.get("/api/v1/users/" + kind).json()
+        assert data["entries"] == []
+        assert data["known_players"][0]["confirmed"]
+    events = client.get("/api/v1/audit?operation=player-directory").json()["events"]
+    assert any(
+        event.get("changes", {}).get("nome", {}).get("depois") == body["name"] for event in events
+    )
+    client.cookies.clear()
+    assert client.put("/api/v1/player-directory", json=body).status_code == 401
+
+
 def test_mod_editor_requires_auth_csrf_and_stopped_game(runtime, monkeypatch):
     from types import SimpleNamespace
 

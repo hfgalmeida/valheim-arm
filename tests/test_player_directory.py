@@ -68,3 +68,75 @@ def test_directory_is_bounded_and_bad_metadata_does_not_prevent_boot(tmp_path):
             directory.consume("Got connection SteamID " + player_id)
     assert len(directory.describe()) == 2
     assert "Steam_76561198000000001" not in json.loads(path.read_text())
+
+
+def test_legacy_directory_migrates_and_crossplay_steam_identity_is_explicit(tmp_path):
+    path = tmp_path / "known.json"
+    path.write_text(json.dumps({"Steam_76561198000000001": 1000}))
+    directory = PlayerDirectory(path)
+    assert directory.describe()[0]["confirmed"]
+    directory.consume(
+        "11/16/2026 10:00:00: PlayFab socket with remote ID playfab/ABC123 received local Platform ID Steam_76561198000000002"
+    )
+    records = {item["id"]: item for item in directory.describe()}
+    assert len(records) == 2
+    assert records["Steam_76561198000000002"]["confirmed"]
+    assert PlayerDirectory(path).describe() == directory.describe()
+
+
+def test_other_platform_is_candidate_until_admin_confirms_and_names_it(tmp_path):
+    path = tmp_path / "known.json"
+    directory = PlayerDirectory(path)
+    event = "PlayFab socket with remote ID playfab/ABC123 received local Platform ID Xbox_12345"
+    directory.consume(event)
+    observed = directory.describe()[0]
+    assert observed["platform"] == "Xbox"
+    assert not observed["confirmed"] and observed["name"] == ""
+    seen = observed["last_seen"]
+    result = directory.register("Xbox_12345", "Jogador Xbox")
+    assert result["confirmed"] and result["source"] == "admin"
+    assert result["last_seen"] == seen
+    directory.consume(event)
+    result = PlayerDirectory(path).describe()[0]
+    assert result["name"] == "Jogador Xbox" and result["confirmed"]
+    assert result["source"] == "admin"
+
+
+def test_names_are_never_associated_by_adjacent_events_and_manual_id_is_unchanged(tmp_path):
+    directory = PlayerDirectory(tmp_path / "known.json")
+    directory.consume("Got connection SteamID 76561198000000001")
+    directory.consume("Got character ZDOID from Wrong Player : 123:1")
+    assert directory.describe()[0]["name"] == ""
+    result = directory.register("X_987654321", "Nome informado", "Xbox")
+    assert result["id"] == "X_987654321"
+    assert result["last_seen"] is None
+    assert result["platform"] == "Xbox"
+    restored = PlayerDirectory(tmp_path / "known.json")
+    assert (
+        next(item for item in restored.describe() if item["id"] == result["id"])["platform"]
+        == "Xbox"
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Error: PlayFab socket with remote ID playfab/ABC received local Platform ID Xbox_123",
+        "Got character ZDOID from PlayFab socket with remote ID playfab/ABC received local Platform ID Xbox_123",
+        "PlayFab socket with remote ID playfab/ABC received local Platform ID PlayFab_ABC",
+        "PlayFab socket with remote ID playfab/ABC received local Platform ID Xbox_123<script>",
+    ],
+)
+def test_crossplay_handles_and_embedded_text_never_become_candidates(tmp_path, line):
+    directory = PlayerDirectory(tmp_path / "known.json")
+    directory.consume(line)
+    assert directory.describe() == []
+
+
+def test_registration_disk_failure_preserves_in_memory_directory(tmp_path):
+    directory = PlayerDirectory(tmp_path / "known.json")
+    directory.register("Xbox_12345", "Original")
+    with patch("app.player_directory.atomic_json", side_effect=OSError("disk full")):
+        with pytest.raises(OSError):
+            directory.register("Xbox_12345", "Changed")
+    assert directory.describe()[0]["name"] == "Original"

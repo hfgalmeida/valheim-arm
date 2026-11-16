@@ -98,6 +98,15 @@
               <p id="versions" data-admin-only></p>
               <p id="run-intent" data-admin-only aria-live="polite"></p>
               <p id="image-version" data-admin-only></p>
+              <details>
+                <summary>Inicializações e recuperação</summary>
+                <p id="startup-summary" class="muted"></p>
+                <p class="muted">
+                  O perfil de compatibilidade tenta contornar falhas iniciais do FEX; a eficácia e o
+                  desempenho ainda dependem de validação.
+                </p>
+                <ul id="startup-history"></ul>
+              </details>
             </details>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
@@ -479,8 +488,44 @@
               ><button id="refresh-players" type="button">Atualizar jogadores</button>
             </div>
             <p class="muted">
-              IDs encontrados no log e nas listas. Este histórico não indica quem está online.
+              Nome, plataforma e IDs encontrados no log ou cadastrados pelo administrador. IDs
+              observados no crossplay podem exigir confirmação no F2. Este histórico não indica quem
+              está online.
             </p>
+            <details id="player-identity-details">
+              <summary>Identificar ou confirmar jogador</summary>
+              <form id="player-identity-form">
+                <label
+                  >ID completo do F2<input
+                    id="directory-id"
+                    required
+                    maxlength="128"
+                    spellcheck="false"
+                    autocomplete="off"
+                /></label>
+                <label
+                  >Nome do jogador (opcional)<input
+                    id="directory-name"
+                    maxlength="80"
+                    autocomplete="off"
+                /></label>
+                <label
+                  >Plataforma (opcional)<input
+                    id="directory-platform"
+                    maxlength="40"
+                    autocomplete="off"
+                /></label>
+                <label
+                  ><input id="directory-confirm" type="checkbox" required /> Conferi este ID no F2
+                  do jogo</label
+                >
+                <p class="muted">
+                  Use o ID exatamente como aparece no jogo. O nome é uma identificação cadastrada
+                  por você. Salvar aqui não concede permissões nem altera as listas.
+                </p>
+                <button type="submit">Salvar identificação</button>
+              </form>
+            </details>
             <form id="player-add-form" class="player-add">
               <label
                 >ID do jogador<input
@@ -671,6 +716,7 @@
                   <option value="plugins">Plugins</option>
                   <option value="plugin-config">Configurações de plugins</option>
                   <option value="player-lists">Listas de jogadores</option>
+                  <option value="player-directory">Identificação de jogadores</option>
                   <option value="alerts">Alertas</option>
                   <option value="cloud">Nuvem</option>
                 </select></label

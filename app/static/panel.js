@@ -79,6 +79,9 @@ function signedOut() {
   currentConfig = null;
   samples = [];
   maintenanceJobs = [];
+  knownPlayerRecords = [];
+  $("player-identity-form").reset();
+  $("player-identity-details").open = false;
   $("identity").textContent = "";
   $("own-password").hidden = true;
   $("password-change").hidden = true;
@@ -99,6 +102,7 @@ function signedOut() {
     "mod-session-plugins",
     "mod-session-issues",
     "known-player",
+    "startup-history",
     "account-reset-user",
   ])
     if ($(id)) $(id).replaceChildren();
@@ -121,6 +125,7 @@ function signedOut() {
     "mod-session-pending",
     "versions",
     "image-version",
+    "startup-summary",
     "run-intent",
   ])
     $(id).textContent = "";
@@ -271,6 +276,7 @@ function modDiagnostics(d) {
 }
 function update(s) {
   lastPanelState = s;
+  if (isAdmin()) renderStartup(s.startup);
   syncDeletedPluginControls();
   if (s.server_name) $("server-name").textContent = s.server_name;
   if (isAdmin() && s.audit_error) $("audit-warning").textContent = s.audit_error;
@@ -401,6 +407,50 @@ function update(s) {
     m.disk_total,
   );
 }
+function renderStartup(startup) {
+  const history = startup?.history || [];
+  const outcomes = {
+    starting: "Iniciando",
+    ready: "Online",
+    stopped: "Parada solicitada",
+    fatal: "Sinal fatal",
+    crashed: "Queda",
+    exited: "Encerrado",
+    spawn_failed: "Falha ao criar processo",
+    interrupted: "Supervisor interrompido",
+  };
+  const phases = {
+    before_scene: "antes da cena",
+    unknown: "fase desconhecida",
+    scene: "cena inicial",
+    world: "mundo",
+    ready: "pronto",
+  };
+  $("startup-summary").textContent =
+    startup?.error ||
+    (history.length
+      ? "Perfil da última tentativa: " +
+        (history[0].profile === "compatible" ? "compatibilidade" : "padrão")
+      : "Nenhuma inicialização registrada nesta versão.");
+  $("startup-history").replaceChildren();
+  for (const item of history) {
+    const row = document.createElement("li");
+    row.textContent = [
+      new Date(item.started * 1000).toLocaleString("pt-BR", {
+        timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+      }),
+      outcomes[item.outcome] || item.outcome,
+      item.profile === "compatible" ? "compatibilidade" : "padrão",
+      phases[item.phase] || item.phase,
+      typeof item.signal === "number" ? "sinal " + item.signal : "",
+      typeof item.exit_code === "number" ? "saída " + item.exit_code : "",
+      item.signature === "platform_initializer" ? "PlatformInitializer" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    $("startup-history").append(row);
+  }
+}
 function configGroup(key) {
   if (key.startsWith("bepinex")) return "mods";
   if (
@@ -513,6 +563,7 @@ function draftPlayers() {
     ),
   ];
 }
+let knownPlayerRecords = [];
 function renderPlayers() {
   const entries = draftPlayers();
   $("user-list-count").textContent = entries.length + " jogador(es) na lista";
@@ -527,7 +578,10 @@ function renderPlayers() {
     const row = document.createElement("div");
     row.className = "player-entry";
     const label = document.createElement("code");
-    label.textContent = id;
+    const player = knownPlayerRecords.find((item) => item.id === id);
+    label.textContent = player?.name
+      ? [player.name, player.platform, id].filter(Boolean).join(" · ")
+      : id;
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Remover";
@@ -544,6 +598,7 @@ function renderPlayers() {
   });
 }
 function knownPlayers(players) {
+  knownPlayerRecords = players;
   const selected = $("known-player").value;
   $("known-player").replaceChildren();
   const placeholder = document.createElement("option");
@@ -555,7 +610,17 @@ function knownPlayers(players) {
   players.forEach((player) => {
     const option = document.createElement("option");
     option.value = player.id;
-    option.textContent = player.id;
+    option.textContent = [
+      player.name,
+      player.platform,
+      player.id,
+      player.confirmed === false ? "ID observado: confirmar no F2" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    option.dataset.confirmed = String(player.confirmed !== false);
+    option.dataset.playerName = player.name || "";
+    option.dataset.playerPlatform = player.platform || "";
     $("known-player").append(option);
   });
   $("known-player").value = selected;
@@ -919,7 +984,40 @@ tabs.forEach((tab) => {
 });
 
 $("known-player").onchange = () => {
-  if ($("known-player").value) $("player-id").value = $("known-player").value;
+  const option = $("known-player").selectedOptions[0];
+  if (!option?.value) return;
+  $("directory-id").value = option.value;
+  $("directory-name").value = option.dataset.playerName || "";
+  $("directory-platform").value = option.dataset.playerPlatform || "";
+  $("directory-confirm").checked = false;
+  if (option.dataset.confirmed === "false") {
+    $("player-id").value = "";
+    $("player-identity-details").open = true;
+    notice(
+      "ID observado no transporte crossplay. Confira e corrija o ID no F2 antes de confirmar.",
+    );
+  } else $("player-id").value = option.value;
+};
+$("player-identity-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(async () => {
+    const result = await api("/player-directory", "PUT", {
+      id: $("directory-id").value.trim(),
+      name: $("directory-name").value.trim(),
+      platform: $("directory-platform").value.trim(),
+      confirm: $("directory-confirm").checked,
+    });
+    const data = await api("/users/" + $("user-kind").value);
+    knownPlayers(data.known_players || []);
+    $("known-player").value = result.id;
+    $("player-id").value = result.id;
+    $("directory-confirm").checked = false;
+    $("player-identity-details").open = false;
+    renderPlayers();
+    notice(
+      "Identificação salva. Adicione o jogador à lista desejada e salve para aplicar permissões.",
+    );
+  });
 };
 $("refresh-players").onclick = () =>
   guard(async () => {
