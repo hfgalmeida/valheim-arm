@@ -39,7 +39,6 @@
 - [x] Carregamento real na Oracle do pacote embutido 5.4.2360 (engine 5.4.23.6), ServerInfo 2.2.7 e JsonDotNET 13.0.4: 2 plugins carregados, 0 falhas, API interna funcional e mundo online com crossplay. Conexão pelo cliente posteriormente confirmada nos dois modos.
 - [x] Melhorar o diagnóstico de presença: fonte, horário/idade, última contagem, expiração, consulta Steam da manutenção e invalidação de conexões/desconexões Steam/PlayFab; desconhecido não autoriza manutenção automática.
 - [ ] Completar a validação da contagem de jogadores e dos formatos reais dos logs na Oracle.
-- [ ] Medições e ajustes de desempenho no Ampere A1.
 - [ ] Aceitação completa conforme [validação na Oracle](docs/MAINTAINER.md#validacao).
 
 ### Instalação pública simplificada
@@ -55,22 +54,22 @@
 - [ ] Associar nome, plataforma e ID quando essa informação estiver disponível, sem deduzir permissões a partir de join codes, ZDOIDs ou identificadores temporários de conexão PlayFab.
 - [ ] Validar com clientes das plataformas atendidas e manter o cadastro manual como alternativa; separar histórico de IDs de presença online.
 
-### Melhoria futura: usuários e permissões do painel
+### Usuários e permissões do painel
 
-- [ ] Adicionar contas individuais com login e senha e perfis de administrador e operador, separados das permissões dos usuários do jogo.
-- [ ] Permitir ao administrador cadastrar e desativar usuários e redefinir suas senhas, preservando o acesso administrativo existente na migração.
-- [ ] Exigir troca da senha temporária no primeiro acesso e após redefinição pelo administrador; bloquear as demais funcionalidades até a troca ser concluída.
-- [ ] Permitir ao operador visualizar estado, métricas e join code e solicitar início, parada e reinício do servidor, mantendo as verificações de zero jogadores para paradas e reinícios.
-- [ ] Restringir ao administrador alterações de mundo, modificadores, mods, nomes, senhas e demais configurações, além do gerenciamento de usuários, backups e envio para a nuvem.
-- [ ] Restringir logs completos e download/restauração de backups ao administrador.
-- [ ] Validar permissões na API e adaptar a interface de acordo com o perfil; ocultar botões não substitui a autorização no servidor.
-- [ ] Invalidar sessões ao desativar uma conta ou redefinir sua senha.
-- [ ] Manter logs persistentes de auditoria das ações dos usuários: início, parada, reinício, atualização, criação/restauração de backups, mudanças de configurações e gerenciamento de contas e permissões.
-- [ ] Registrar em cada ação o usuário responsável, data/hora, operação, recurso afetado e resultado (solicitado, concluído, falha ou cancelado), correlacionando a solicitação ao resultado das tarefas em segundo plano e distinguindo ações automáticas das ações dos usuários.
-- [ ] Registrar quais configurações mudaram e seus valores anteriores/novos, sem gravar senhas, tokens ou outras credenciais; para campos secretos, registrar apenas que foram alterados.
-- [ ] Disponibilizar consulta dos logs de auditoria ao administrador no painel, com filtros por usuário, período e operação e retenção definida para limitar o uso de disco.
-- [ ] Testar os perfis, o bloqueio de acesso direto à API, a troca obrigatória de senha e a migração do acesso administrativo atual.
-- [ ] Testar a persistência e a atribuição dos logs de auditoria, o registro de falhas, as restrições de acesso ao histórico e a ausência de credenciais nos registros.
+- [x] Adicionar contas individuais com login e senha e perfis de administrador e operador, separados das permissões dos usuários do jogo.
+- [x] Permitir ao administrador cadastrar e desativar usuários e redefinir suas senhas, preservando o acesso administrativo existente na migração.
+- [x] Exigir troca da senha temporária no primeiro acesso e após redefinição pelo administrador; bloquear as demais funcionalidades até a troca ser concluída.
+- [x] Permitir ao operador visualizar estado, métricas e join code e solicitar início, parada e reinício do servidor, mantendo as verificações de zero jogadores para paradas e reinícios; operador consulta somente suas próprias operações.
+- [x] Restringir ao administrador alterações de mundo, modificadores, mods, nomes, senhas e demais configurações, além do gerenciamento de usuários, backups e envio para a nuvem.
+- [x] Restringir logs completos e download/restauração de backups ao administrador.
+- [x] Validar permissões na API e adaptar a interface de acordo com o perfil; ocultar botões não substitui a autorização no servidor.
+- [x] Invalidar sessões ao desativar uma conta ou redefinir sua senha.
+- [x] Manter logs persistentes de auditoria das ações dos usuários: início, parada, reinício, atualização, criação/restauração de backups, mudanças de configurações e gerenciamento de contas e permissões.
+- [x] Registrar em cada ação o usuário responsável, data/hora, operação, recurso afetado e resultado (solicitado, concluído, falha ou cancelado), correlacionando a solicitação ao resultado das tarefas em segundo plano e distinguindo ações automáticas das ações dos usuários.
+- [x] Registrar quais configurações mudaram e seus valores anteriores/novos, sem gravar senhas, tokens ou outras credenciais; para campos secretos, registrar apenas que foram alterados.
+- [x] Disponibilizar consulta dos logs de auditoria ao administrador no painel, com filtros por usuário, período e operação e retenção definida para limitar o uso de disco.
+- [x] Testar os perfis, o bloqueio de acesso direto à API, a troca obrigatória de senha e a migração do acesso administrativo atual.
+- [x] Testar a persistência e a atribuição dos logs de auditoria, o registro de falhas, as restrições de acesso ao histórico e a ausência de credenciais nos registros.
 
 ### Melhorias de operação e diagnóstico
 
@@ -82,7 +81,7 @@
 - [x] Persistir a intenção de Iniciar/Parar pelo painel, preservando-a ao reiniciar contêiner/instância; manter painel disponível com jogo parado e respeitar a preferência durante manutenção e atualização da imagem.
 - [x] Diagnóstico BepInEx por sessão: versão, tentativas de carregamento dos plugins, conclusão do carregador, falhas/dependências e DLLs alteradas aguardando reinício; compatibilidade real continua pendente.
 - [x] Histórico persistente de manutenção com início, término, duração em execução, origem, resultado, tentativas e backup associado; filtros por origem, resultado e período, retenção de 30 dias/200 operações concluídas e preservação das pendentes.
-- [ ] Concluir validação de desempenho no Ampere A1, contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
+- [ ] Concluir validação da contagem de jogadores e compatibilidade de plugins BepInEx adicionais.
 
 ### Melhoria futura: versão mobile do painel
 
@@ -105,3 +104,10 @@
 - [x] Integrar criação/habilitação automática do serviço privilegiado ao instalador; preservar configurações e não reiniciar o mundo ao reexecutar o script.
 - [x] Instalar e habilitar o agente no host de testes, recriar o contêiner com socket somente leitura e confirmar resposta disponível pelo cliente do painel (15/11/2026).
 - [ ] Revalidar atualização real pelo painel: o relato inicial de sucesso em 15/11/2026 foi corrigido em 16/11/2026; o journal mostrou timeout de prontidão, reaplicação da imagem anterior e recuperação sem confirmação, deixando novas tentativas bloqueadas. Confirmar imagem final e resultado terminal antes de marcar como validado.
+
+
+### Etapa final do escopo: validação de desempenho
+
+Executar após concluir as melhorias funcionais, correções e validações funcionais previstas no escopo.
+
+- [ ] Realizar medições e ajustes de desempenho no Ampere A1, comparando uso de CPU/RAM e tempos de inicialização e salvamento, com e sem BepInEx/crossplay e sob carga de jogadores.

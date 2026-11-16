@@ -14,6 +14,8 @@ def data_tree(tmp_path):
     (tmp_path / "config/file-access.json").write_text(json.dumps({"uid": 12345}))
     for name in (
         "config/admin.json",
+        "config/panel-users.json",
+        "config/audit.json",
         "config/overrides.json",
         "cloud/token",
         "saves/world.db",
@@ -34,6 +36,8 @@ def test_only_editable_paths_are_shared_and_new_files_are_seen(tmp_path):
         assert str(tmp_path / "saves/world.db") in names
         assert str(tmp_path / "config/overrides.json") in names
         assert str(tmp_path / "config/admin.json") not in names
+        assert str(tmp_path / "config/panel-users.json") not in names
+        assert str(tmp_path / "config/audit.json") not in names
         assert str(tmp_path / "config/file-access.json") not in names
         assert str(tmp_path / "cloud/token") not in names
         for call in run.call_args_list:

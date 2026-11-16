@@ -4,6 +4,19 @@ let csrf = "",
   events = null,
   samples = [],
   currentConfig = null;
+let panelUser = null;
+function isAdmin() {
+  return panelUser?.role === "admin";
+}
+function acceptSession(value) {
+  csrf = value.csrf;
+  panelUser = value.user || {
+    id: "admin",
+    username: "admin",
+    role: "admin",
+    must_change_password: false,
+  };
+}
 const labels = {
   server_name: "Nome do servidor",
   world_name: "Nome do mundo",
@@ -57,6 +70,34 @@ function signedOut() {
   if (events) events.close();
   events = null;
   csrf = "";
+  panelUser = null;
+  currentConfig = null;
+  samples = [];
+  maintenanceJobs = [];
+  $("identity").textContent = "";
+  $("own-password").hidden = true;
+  $("password-change").hidden = true;
+  $("password-change-form").reset();
+  for (const id of [
+    "settings",
+    "server-settings",
+    "mods-settings",
+    "backup-list",
+    "user-list",
+    "account-list",
+    "audit-list",
+    "logs",
+    "jobs",
+    "plugin-list",
+    "mod-config-file",
+    "mod-session-plugins",
+    "mod-session-issues",
+    "known-player",
+    "account-reset-user",
+  ])
+    if ($(id)) $(id).replaceChildren();
+  for (const id of ["cloud-form", "alerts-form", "account-create-form", "account-reset-form"])
+    $(id)?.reset();
   $("dashboard").hidden = true;
   $("logout").hidden = true;
   $("login").hidden = false;
@@ -64,6 +105,19 @@ function signedOut() {
   modConfig = null;
   $("plugin-file").value = "";
   $("plugin-upload-status").textContent = "";
+  for (const id of ["user-entries", "player-id", "cloud-config", "alerts-url"]) $(id).value = "";
+  for (const id of [
+    "cloud-status",
+    "alerts-status",
+    "last-failure",
+    "mod-session-status",
+    "mod-session-version",
+    "mod-session-pending",
+    "versions",
+    "image-version",
+    "run-intent",
+  ])
+    $(id).textContent = "";
 }
 function bytes(v) {
   return v >= 1073741824
@@ -202,6 +256,8 @@ function modDiagnostics(d) {
   }
 }
 function update(s) {
+  if (s.server_name) $("server-name").textContent = s.server_name;
+  if (isAdmin() && s.audit_error) $("audit-warning").textContent = s.audit_error;
   if (s.run_intent) {
     $("run-intent").textContent =
       (s.run_intent.running
@@ -544,31 +600,60 @@ async function loadBackups() {
 }
 async function signedIn() {
   $("login").hidden = true;
-  $("dashboard").hidden = false;
   $("logout").hidden = false;
-  await Promise.all([
-    loadConfig(),
-    loadImageUpdateStatus(),
-    loadUsers(),
-    loadBackups(),
-    loadCloud(),
-    loadAlerts().catch((error) => notice("Não foi possível carregar os alertas: " + error.message)),
-    loadModConfigs().catch((error) =>
-      notice("Não foi possível carregar as configurações dos plugins: " + error.message),
-    ),
-    loadPlugins().catch((error) =>
-      notice("Não foi possível carregar a lista de plugins: " + error.message),
-    ),
-  ]);
+  $("identity").textContent =
+    panelUser.username + " · " + (isAdmin() ? "Administrador" : "Operador");
+  $("own-password").hidden = false;
+  if (panelUser.must_change_password) {
+    $("dashboard").hidden = true;
+    $("password-change").hidden = false;
+    $("close-password-change").hidden = true;
+    $("password-change-message").textContent =
+      "Troque a senha temporária para liberar o acesso ao painel.";
+    return;
+  }
+  $("password-change").hidden = true;
+  $("dashboard").hidden = false;
+  document.querySelectorAll("[data-admin-only]").forEach((element) => {
+    if (element.getAttribute("role") !== "tabpanel") element.hidden = !isAdmin();
+    else if (!isAdmin()) element.hidden = true;
+  });
+  selectTab($("tab-overview"));
+  $("history-title").textContent = isAdmin() ? "Histórico de manutenção" : "Suas operações";
+  $("action-policy").textContent = isAdmin()
+    ? "Ações administrativas solicitam a parada imediatamente e podem desconectar jogadores. O jogo salva antes de encerrar."
+    : "Iniciar é imediato. Parar e reiniciar aguardam o jogo pronto e zero jogadores confirmado por dois minutos; no modo Steam também exigem consulta Steam. Acompanhe suas solicitações na aba Atividade.";
+  if (isAdmin()) {
+    await Promise.all([
+      loadConfig(),
+      loadImageUpdateStatus(),
+      loadUsers(),
+      loadBackups(),
+      loadCloud(),
+      loadAlerts().catch((error) =>
+        notice("Não foi possível carregar os alertas: " + error.message),
+      ),
+      loadModConfigs().catch((error) =>
+        notice("Não foi possível carregar as configurações dos plugins: " + error.message),
+      ),
+      loadPlugins().catch((error) =>
+        notice("Não foi possível carregar a lista de plugins: " + error.message),
+      ),
+      loadAccounts(),
+      loadAudit(),
+    ]);
+  }
   const state = await api("/state");
+  if (!isAdmin()) currentConfig = { values: { timezone: state.timezone || "America/Sao_Paulo" } };
   samples = state.metrics;
   update(state);
   if (events) events.close();
   events = new EventSource("/api/v1/events");
   events.onmessage = (e) => update(JSON.parse(e.data));
   clearInterval(imageUpdateTimer);
-  imageUpdateTimer = setInterval(loadImageUpdateStatus, 3000);
+  if (isAdmin()) imageUpdateTimer = setInterval(loadImageUpdateStatus, 3000);
   events.onerror = () => {
+    api("/session").catch(() => {});
     $("panel-health").textContent = "Painel: conexão interrompida; reconectando…";
     $("status").textContent = "Jogo: estado sem atualização";
     notice("Conexão interrompida; tentando reconectar ao supervisor…");
@@ -584,9 +669,12 @@ async function guard(fn) {
 $("login-form").onsubmit = (e) => {
   e.preventDefault();
   guard(async () => {
-    const r = await api("/login", "POST", { password: $("password").value });
+    const r = await api("/login", "POST", {
+      username: $("username").value,
+      password: $("password").value,
+    });
     $("password").value = "";
-    csrf = r.csrf;
+    acceptSession(r);
     notice("");
     await signedIn();
   });
@@ -632,7 +720,11 @@ function confirmServerAction(action) {
   if (!info) return Promise.resolve(true);
   const dialog = $("action-confirmation");
   $("action-confirm-title").textContent = info.title;
-  $("action-confirm-description").textContent = info.description;
+  $("action-confirm-description").textContent =
+    info.description +
+    (!isAdmin() && ["stop", "restart"].includes(action)
+      ? " Sua solicitação aguardará a confirmação de zero jogadores antes de parar o jogo."
+      : "");
   $("action-confirm-submit").textContent = info.label;
   dialog.returnValue = "cancel";
   return new Promise((resolve) => {
@@ -721,7 +813,7 @@ $("users-form").onsubmit = (e) => {
 $("refresh-backups").onclick = () => guard(loadBackups);
 guard(async () => {
   try {
-    csrf = (await api("/session")).csrf;
+    acceptSession(await api("/session"));
     await signedIn();
   } catch (e) {
     signedOut();
@@ -751,25 +843,30 @@ $("cloud-file").onchange = () =>
 
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTab(tab, focus = false) {
+  if (tab.hidden) return;
+  if (tab.id === "tab-administration" && isAdmin()) guard(loadAudit);
   tabs.forEach((item) => {
-    const selected = item === tab;
+    const selected = item === tab && !item.hidden;
     item.setAttribute("aria-selected", String(selected));
     item.tabIndex = selected ? 0 : -1;
     $(item.getAttribute("aria-controls")).hidden = !selected;
   });
   if (focus) tab.focus();
 }
-tabs.forEach((tab, index) => {
+tabs.forEach((tab) => {
   tab.onclick = () => selectTab(tab);
   tab.onkeydown = (event) => {
+    const visibleTabs = tabs.filter((item) => !item.hidden);
+    const index = visibleTabs.indexOf(tab);
     let next;
-    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-    else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+    if (event.key === "ArrowRight") next = (index + 1) % visibleTabs.length;
+    else if (event.key === "ArrowLeft")
+      next = (index + visibleTabs.length - 1) % visibleTabs.length;
     else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = tabs.length - 1;
+    else if (event.key === "End") next = visibleTabs.length - 1;
     else return;
     event.preventDefault();
-    selectTab(tabs[next], true);
+    selectTab(visibleTabs[next], true);
   };
 });
 
@@ -1051,6 +1148,7 @@ function renderMaintenanceHistory() {
     }).format(new Date(timestamp * 1000));
   const origins = {
     administrator: "Administrador",
+    operator: "Operador",
     schedule: "Agendamento",
     recovery: "Recuperação",
   };
@@ -1084,7 +1182,11 @@ function renderMaintenanceHistory() {
       when.dateTime = new Date(job.created * 1000).toISOString();
     when.title = "Horários em " + zone;
     const heading = document.createElement("strong");
-    heading.textContent = (actions[job.action] || job.action) + " · " + job.state;
+    heading.textContent =
+      (actions[job.action] || job.action) +
+      " · " +
+      job.state +
+      (isAdmin() && job.actor ? " · " + job.actor.username : "");
     const details = document.createElement("p");
     details.className = "muted";
     const duration = typeof job.duration === "number" ? Math.round(job.duration) + "s" : "—";
@@ -1119,3 +1221,176 @@ function renderMaintenanceHistory() {
 for (const id of ["history-origin", "history-state", "history-from", "history-to"]) {
   $(id).addEventListener("change", renderMaintenanceHistory);
 }
+
+$("own-password").onclick = () => {
+  $("password-change").hidden = false;
+  $("close-password-change").hidden = panelUser.must_change_password;
+  $("password-change-message").textContent = panelUser.must_change_password
+    ? "Troque a senha temporária para liberar o painel."
+    : "Alterar a senha encerra suas sessões. Entre novamente depois de salvar.";
+};
+$("close-password-change").onclick = () => {
+  $("password-change").hidden = true;
+  $("password-change-form").reset();
+};
+$("password-change-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(async () => {
+    if ($("new-password").value !== $("repeat-password").value)
+      throw new Error("As novas senhas não conferem");
+    await api("/password", "POST", {
+      current_password: $("current-password").value,
+      password: $("new-password").value,
+    });
+    signedOut();
+    notice("Senha alterada. Entre novamente com sua nova senha.");
+  });
+};
+async function loadAccounts() {
+  const result = await api("/accounts");
+  $("account-list").replaceChildren();
+  $("account-reset-user").replaceChildren();
+  for (const user of result.users) {
+    const row = document.createElement("div");
+    row.className = "account-row";
+    const name = document.createElement("strong");
+    name.textContent = user.username;
+    const role = document.createElement("select");
+    role.setAttribute("aria-label", "Perfil de " + user.username);
+    for (const [value, label] of [
+      ["operator", "Operador"],
+      ["admin", "Administrador"],
+    ]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      role.append(option);
+    }
+    role.value = user.role;
+    const label = document.createElement("label");
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.setAttribute("aria-label", "Conta ativa de " + user.username);
+    enabled.checked = user.enabled;
+    label.append(enabled, document.createTextNode(" Conta ativa"));
+    const save = document.createElement("button");
+    save.textContent = "Salvar " + user.username;
+    role.disabled = enabled.disabled = save.disabled = user.id === "admin";
+    save.onclick = () =>
+      guard(async () => {
+        await api("/accounts/" + encodeURIComponent(user.id), "PATCH", {
+          role: role.value,
+          enabled: enabled.checked,
+        });
+        await loadAccounts();
+        await loadAudit();
+        notice("Conta atualizada; sessões e solicitações pendentes foram invalidadas.");
+      });
+    const info = document.createElement("small");
+    info.textContent = user.must_change_password
+      ? "Troca de senha pendente"
+      : "Senha pessoal definida";
+    row.append(name, role, label, save, info);
+    $("account-list").append(row);
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = user.username;
+    $("account-reset-user").append(option);
+  }
+}
+$("account-create-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(async () => {
+    try {
+      await api("/accounts", "POST", {
+        username: $("account-username").value,
+        role: $("account-role").value,
+        password: $("account-password").value,
+      });
+      $("account-create-form").reset();
+      await loadAccounts();
+      await loadAudit();
+      notice("Usuário cadastrado. Ele deverá trocar a senha temporária no primeiro acesso.");
+    } finally {
+      $("account-password").value = "";
+    }
+  });
+};
+$("account-reset-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(async () => {
+    try {
+      await api(
+        "/accounts/" + encodeURIComponent($("account-reset-user").value) + "/password",
+        "POST",
+        { password: $("account-reset-password").value },
+      );
+      await loadAccounts();
+      await loadAudit();
+      notice("Senha redefinida. Sessões encerradas; troca obrigatória no próximo acesso.");
+    } finally {
+      $("account-reset-password").value = "";
+    }
+  });
+};
+async function loadAudit() {
+  const query = new URLSearchParams();
+  for (const [field, id] of [
+    ["user", "audit-user"],
+    ["operation", "audit-operation"],
+    ["since", "audit-from"],
+    ["until", "audit-to"],
+  ])
+    if ($(id).value) query.set(field, $(id).value);
+  const data = await api("/audit?" + query);
+  $("audit-warning").textContent = data.error || "";
+  $("audit-list").replaceChildren();
+  const labels = {
+    configuration: "Configuração",
+    "server-action": "Solicitação de operação",
+    start: "Iniciar",
+    stop: "Parar",
+    restart: "Reiniciar",
+    backup: "Backup",
+    restore: "Restauração",
+    update: "Atualizar jogo",
+    "image-update": "Atualizar imagem",
+    "password-change": "Trocar senha",
+    accounts: "Contas",
+    plugins: "Plugins",
+    "plugin-config": "Configuração de plugin",
+    "player-lists": "Listas de jogadores",
+    alerts: "Alertas",
+    cloud: "Nuvem",
+    "backup-download": "Download de backup",
+    login: "Entrada",
+    logout: "Saída",
+  };
+  for (const entry of data.events) {
+    const row = document.createElement("div");
+    row.className = "job";
+    const title = document.createElement("strong");
+    title.textContent = (labels[entry.operation] || entry.operation) + " · " + entry.outcome;
+    const detail = document.createElement("p");
+    detail.textContent =
+      new Date(entry.time * 1000).toLocaleString("pt-BR", {
+        timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+      }) +
+      " · " +
+      entry.actor.username +
+      (entry.job_id ? " · Operação " + entry.job_id.slice(0, 8) : "");
+    row.append(title, detail);
+    if (entry.changes) {
+      const changes = document.createElement("pre");
+      changes.textContent = JSON.stringify(entry.changes, null, 2);
+      row.append(changes);
+    }
+    $("audit-list").append(row);
+  }
+  if (!data.events.length)
+    $("audit-list").textContent = "Nenhum registro com os filtros selecionados.";
+}
+$("audit-filter-form").onsubmit = (event) => {
+  event.preventDefault();
+  guard(loadAudit);
+};

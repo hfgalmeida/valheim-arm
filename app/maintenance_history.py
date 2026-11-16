@@ -10,6 +10,9 @@ LIMIT = 200
 RETENTION = 30 * 86400
 ACTIVE = {"fila", "executando", "adiado"}
 FIELDS = {
+    "actor",
+    "audit_request_id",
+    "requires_idle",
     "id",
     "action",
     "state",
@@ -30,7 +33,7 @@ FIELDS = {
 
 def origin(job):
     if not job.get("scheduled"):
-        return "administrator"
+        return "operator" if job.get("actor", {}).get("role") == "operator" else "administrator"
     return "recovery" if job["action"] in ("start", "recover-startup") else "schedule"
 
 

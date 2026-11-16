@@ -769,3 +769,38 @@ button:disabled {
   margin: 0.4rem 0;
   overflow-wrap: anywhere;
 }
+
+.session-tools {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.session-tools span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.account-form,
+.account-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+  margin: 1.3rem 0;
+}
+.account-row {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1rem;
+}
+.account-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.account-row input[type="checkbox"] {
+  width: auto;
+}
+#audit-list pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

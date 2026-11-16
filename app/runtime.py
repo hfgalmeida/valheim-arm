@@ -24,6 +24,7 @@ from .run_intent import RunIntent
 from .startup_watchdog import StartupWatchdog, world_ready
 from .image_version import ImageVersion
 from .mod_diagnostics import ModDiagnostics
+from .audit import Audit
 from .alerts import Alerts
 from .backups import Backups, digest
 from .cloud import Cloud
@@ -41,6 +42,10 @@ STOP_PROGRESS_INTERVAL = 15
 LOG_DRAIN_TIMEOUT = 2
 MAX_RECOVERY_FAILURES = 5
 STABLE_SESSION_SECONDS = 600
+
+
+class JobCancelled(RuntimeError):
+    """An account was revoked before its queued action could run."""
 
 
 class MaintenanceDeferred(RuntimeError):
@@ -310,6 +315,8 @@ class Runtime:
         for directory in ("config", "saves", "home", "cache", "installs", "mods"):
             (data / directory).mkdir(parents=True, exist_ok=True)
         self.config = config or ConfigStore(data)
+        self.audit = Audit(data)
+        self.account_authorizer = None
         self.host_updates = HostUpdates()
         self.host_update_task = None
         self.backups = Backups(data)
@@ -389,6 +396,7 @@ class Runtime:
                 job["finished"] = time.time()
             self.jobs.append(job)
         self.jobs = deque(sorted(self.jobs, key=lambda job: job.get("created", 0)))
+        self.audit.seed(self.jobs)
         self.persist_history()
 
     @property
@@ -492,6 +500,7 @@ class Runtime:
             "available_build": self.latest_build,
             "maintenance_persistence_error": self.persistence_error,
             "maintenance_history_error": self.maintenance_history.error,
+            "audit_error": self.audit.error,
             "automatic_recovery": self.want_running
             and self.run_intent.running
             and not self.closing,
@@ -504,19 +513,30 @@ class Runtime:
             "logs": list(self.logs),
         }
 
-    def submit(self, action, backup=None):
+    def submit(
+        self, action, backup=None, actor=None, require_idle=False, request_id=None, credential=None
+    ):
         if action not in ("start", "stop", "restart", "update", "backup", "restore"):
             raise ValueError("Ação desconhecida")
         if action == "restore":
             self.backups.resolve(backup or "")
+        operator_start = action == "start" and (actor or {}).get("role") == "operator"
         for pending in self.jobs:
             if (
                 not pending.get("scheduled")
+                and pending.get("actor", {}).get("id") == (actor or {}).get("id")
+                and pending.get("actor_credential") == credential
+                and bool(pending.get("requires_idle")) == require_idle
                 and pending["action"] == action
                 and pending.get("backup") == backup
-                and pending["state"] in ("fila", "executando")
+                and (
+                    pending["state"] in ("fila", "executando")
+                    or (require_idle and pending["state"] == "adiado")
+                )
                 and (
                     action not in ("start", "stop")
+                    or require_idle
+                    or operator_start
                     or pending.get("intent_revision") == self.run_intent.revision
                 )
             ):
@@ -524,10 +544,17 @@ class Runtime:
         if self.queue.full():
             raise asyncio.QueueFull
         revision = None
-        if action in ("start", "stop"):
+        if (
+            action in ("start", "stop")
+            and not operator_start
+            and not (require_idle and action == "stop")
+        ):
             revision = self.set_run_intent(action == "start")
             for pending in self.jobs:
-                if pending["action"] in ("start", "stop") and pending["state"] == "fila":
+                if pending["action"] in ("start", "stop") and pending["state"] in (
+                    "fila",
+                    "adiado",
+                ):
                     pending["state"] = "cancelado"
         job = {
             "id": uuid.uuid4().hex,
@@ -536,11 +563,15 @@ class Runtime:
             "state": "fila",
             "created": time.time(),
         }
+        if actor:
+            job.update(actor=actor, actor_credential=credential, audit_request_id=request_id)
+        if require_idle:
+            job["requires_idle"] = True
         if revision is not None:
             job["intent_revision"] = revision
         self.queue.put_nowait(job)
         self.jobs.append(job)
-        self.persist_history()
+        self.persist_pending()
         return job
 
     def trim_jobs(self):
@@ -564,6 +595,7 @@ class Runtime:
                     job[field] = job[field][:1000]
         self.trim_jobs()
         self.maintenance_history.save(self.jobs, secrets)
+        self.audit.sync_jobs(self.jobs)
 
     def persist_pending(self):
         self.persist_history()
@@ -573,7 +605,7 @@ class Runtime:
                 [
                     j
                     for j in self.jobs
-                    if j.get("scheduled")
+                    if (j.get("scheduled") or j.get("requires_idle"))
                     and j["action"] != "recover-startup"
                     and j["state"] in ("fila", "executando", "adiado")
                 ],
@@ -595,7 +627,10 @@ class Runtime:
     def disable_recovery(self):
         self.want_running = False
         for job in self.jobs:
-            if job.get("scheduled") and job["state"] in ("fila", "adiado"):
+            if (job.get("scheduled") or job.get("requires_idle")) and job["state"] in (
+                "fila",
+                "adiado",
+            ):
                 job["state"] = "cancelado"
         self.persist_pending()
 
@@ -1009,7 +1044,7 @@ class Runtime:
                 "Falha ao encerrar inicialização fatal; recuperação suspensa: " + str(exc)
             )
 
-    async def stop(self, safe=True):
+    async def stop(self, safe=True, stop_intent=False, authorize=None):
         process = self.process
         pending = self.stop_request is not None and self.stop_request[0] is process
         if not self.live and not pending:
@@ -1047,6 +1082,10 @@ class Runtime:
                         raise MaintenanceDeferred(
                             "Conexão detectada na verificação final; parada cancelada"
                         )
+                if authorize and not authorize():
+                    raise JobCancelled("Conta alterada antes da parada; solicitação cancelada")
+                if stop_intent:
+                    self.set_run_intent(False)
                 requested = time.monotonic()
                 os.killpg(pid, signal.SIGINT)
                 self.stop_request = (process, requested)
@@ -1061,6 +1100,8 @@ class Runtime:
                     except ProcessLookupError:
                         pass
         else:
+            if stop_intent and self.run_intent.running:
+                self.set_run_intent(False)
             self.emit("Aguardando a parada já solicitada; mantendo o prazo original")
         requested = self.stop_request[1]
         deadline = requested + GAME_STOP_TIMEOUT
@@ -1138,10 +1179,13 @@ class Runtime:
 
     async def execute(self, job):
         action = job["action"]
+        if job.get("actor") and self.account_authorizer and not self.account_authorizer(job):
+            raise JobCancelled("Conta ou credenciais alteradas; solicitação cancelada")
+        guarded_stop = bool(job.get("requires_idle") and action == "stop")
         if (
             self.host_updates.busy
-            and job.get("scheduled")
-            and action in ("restart", "backup", "update")
+            and (job.get("scheduled") or job.get("requires_idle"))
+            and action in ("stop", "restart", "backup", "update")
         ):
             raise MaintenanceDeferred(
                 "Atualização da imagem em andamento; manutenção automática adiada"
@@ -1149,7 +1193,7 @@ class Runtime:
         if job.get("scheduled") and (not self.want_running or not self.run_intent.running):
             job["result"] = "Tarefa automática dispensada: servidor deve permanecer parado"
             return
-        if action in ("start", "stop") and not job.get("scheduled"):
+        if action in ("start", "stop") and not job.get("scheduled") and not guarded_stop:
             revision = job.get("intent_revision")
             if revision is not None and revision != self.run_intent.revision:
                 job["result"] = "Solicitação substituída por uma preferência mais recente"
@@ -1174,6 +1218,8 @@ class Runtime:
             await self.start()
             return
         if action == "stop" and not self.live:
+            if guarded_stop:
+                self.set_run_intent(False)
             self.disable_recovery()
             return
         if action == "check-update":
@@ -1197,13 +1243,21 @@ class Runtime:
             if self.installed_build() == self.latest_build:
                 job["result"] = "Versão já instalada; parada dispensada"
                 return
-        if job.get("scheduled") and (not self.live or not self.game_ready):
+        if (job.get("scheduled") or job.get("requires_idle")) and (
+            not self.live or not self.game_ready
+        ):
             raise MaintenanceDeferred("Aguardando o jogo ficar pronto antes da manutenção")
         was_running = self.live
         try:
             # Explicit administrator actions bypass admission/idle checks only.
             # Exit and completed-save confirmation remain mandatory.
-            await self.stop(safe=bool(job.get("scheduled")))
+            if job.get("requires_idle"):
+                authorize = (
+                    (lambda: self.account_authorizer(job)) if self.account_authorizer else None
+                )
+                await self.stop(safe=True, stop_intent=guarded_stop, authorize=authorize)
+            else:
+                await self.stop(safe=bool(job.get("scheduled") or job.get("requires_idle")))
         except MaintenanceDeferred:
             raise
         except Exception:
@@ -1216,11 +1270,15 @@ class Runtime:
             ):
                 # Once a manual stop was actually signalled, keep that intent
                 # even if exit/save confirmation fails. Never turn it into a start.
+                if guarded_stop and self.run_intent.running:
+                    self.set_run_intent(False)
                 self.disable_recovery()
             elif was_running and not self.live:
                 self.next_recovery = time.monotonic() + 300
             raise
         if action == "stop":
+            if guarded_stop and self.run_intent.running:
+                self.set_run_intent(False)
             self.disable_recovery()
             return
         try:
@@ -1278,12 +1336,14 @@ class Runtime:
                         raise MaintenanceDeferred(self.persistence_error)
                 await self.execute(job)
                 job["state"] = "concluído"
+            except JobCancelled as exc:
+                job["state"], job["result"] = "cancelado", str(exc)
             except Exception as exc:
                 job["state"], job["error"] = "falha", str(exc)
                 deferred = (
                     isinstance(exc, MaintenanceDeferred)
-                    and job.get("scheduled")
-                    and job["action"] in ("restart", "backup", "update")
+                    and (job.get("scheduled") or job.get("requires_idle"))
+                    and job["action"] in ("stop", "restart", "backup", "update")
                 )
                 if not deferred and job["action"] == "backup":
                     self.alert_condition("backup", True)
@@ -1356,6 +1416,7 @@ class Runtime:
             await asyncio.sleep(5)
 
     async def tick(self):
+        self.audit.image_result(self.host_updates.current)
         if time.monotonic() >= self.next_history_prune:
             self.persist_history()
             self.next_history_prune = time.monotonic() + 3600

@@ -25,10 +25,14 @@ def test_roundtrip_and_admin_excluded(tmp_path, config):
     (tmp_path / "config/alert-state.json").write_text("{}")
     (tmp_path / "config/run-intent.json").write_text('{"version":1,"running":false}')
     (tmp_path / "config/maintenance-history.json").write_text("[]")
+    (tmp_path / "config/panel-users.json").write_text('[ {"hash":"never-export-account"} ]')
+    (tmp_path / "config/audit.json").write_text("[]")
     backups = Backups(tmp_path)
     name = backups.create("manual", config.effective(), "123")
     manifest, _ = backups.validate(backups.resolve(name))
     assert "config/admin.json" not in manifest["files"]
+    assert "config/panel-users.json" not in manifest["files"]
+    assert "config/audit.json" not in manifest["files"]
     assert "config/alerts.json" not in manifest["files"]
     assert "config/alert-state.json" not in manifest["files"]
     assert "config/run-intent.json" not in manifest["files"]

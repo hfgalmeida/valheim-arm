@@ -45,6 +45,8 @@ class Backups:
                         raise ValueError("Links simbólicos não são aceitos nos dados de backup")
                     if path.is_file() and path.name not in {
                         "admin.json",
+                        "panel-users.json",
+                        "audit.json",
                         "alerts.json",
                         "alert-state.json",
                         "run-intent.json",

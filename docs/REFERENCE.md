@@ -136,7 +136,7 @@ A publicação do Docker pode passar antes do UFW. Para restringir o painel por 
 <a id="painel"></a>
 ## Painel e certificado
 
-Acesse **https://SEU_IP**. As abas são **Visão geral**, **Configurações do jogo**, **Configurações do servidor**, **Mods**, **Jogadores**, **Backups** e **Atividade**. Ações manuais solicitam a parada imediatamente, mesmo com jogadores conectados, e aguardam o jogo salvar e encerrar.
+Acesse **https://SEU_IP** com seu usuário e senha. O administrador tem acesso às abas **Visão geral**, **Configurações do jogo**, **Configurações do servidor**, **Mods**, **Jogadores**, **Backups**, **Administração** e **Atividade**. O operador vê apenas **Visão geral** e suas operações em **Atividade**. Ações do administrador solicitam a parada imediatamente; paradas e reinícios do operador aguardam zero jogadores. Ambos preservam o salvamento e o encerramento gracioso.
 
 Para redefinir a senha administrativa:
 
@@ -299,7 +299,7 @@ A consulta de atualizações ocorre uma vez por dia, no horário de `RESTART_AT`
 
 A indicação de jogadores mostra a contagem do último registro `Connections` do jogo, a fonte, o horário e a idade da observação. Durante conexões, desconexões ou reconexões, aparece `?` até chegar um novo registro completo; a última contagem fica apenas como referência. Registros sem renovação por 11 minutos expiram. Mensagens de saída ou contagens temporárias do PlayFab não confirmam que o servidor está vazio.
 
-Manutenções automáticas aguardam dois minutos de zero jogadores confirmado; no modo Steam, exigem também A2S. Informações desconhecidas adiam a tarefa. As ações manuais do painel dispensam essas verificações, preservando a confirmação de salvamento. A aba **Atividade** mostra o resultado.
+Manutenções automáticas aguardam dois minutos de zero jogadores confirmado; no modo Steam, exigem também A2S. Informações desconhecidas adiam a tarefa. As ações manuais do administrador dispensam essas verificações, preservando a confirmação de salvamento. Paradas e reinícios solicitados pelo operador aguardam as mesmas verificações de servidor vazio. A aba **Atividade** mostra o resultado.
 
 Se o jogo registrar sinal fatal na primeira cena e permanecer ativo, o painel mostra a falha e o supervisor tenta encerrá-lo com SIGINT por até 30 segundos. Somente quando a primeira cena foi reconhecida e ainda não houve indício de carregamento do mundo, pode encerrar o processo travado com SIGKILL e agendar uma nova tentativa. Essa saída não é tratada como salvamento confirmado e não gera backup.
 
@@ -422,6 +422,25 @@ O atualizador também respeita o jogo parado: nessa condição valida o painel e
 
 ### Histórico de manutenção
 
-Na aba **Atividade**, consulte as operações por origem (administrador, agendamento ou recuperação), resultado e período. Os horários seguem o fuso configurado no servidor. Cada registro mostra solicitação, início, término, tempo efetivo em execução, tentativas, resultado/motivo de adiamento ou falha e nome do backup criado ou restaurado, quando houver. O tempo aguardando jogadores ou na fila não entra na duração.
+Na aba **Atividade**, consulte as operações por origem (administrador, operador, agendamento ou recuperação), resultado e período. Os horários seguem o fuso configurado no servidor. Cada registro mostra solicitação, início, término, tempo efetivo em execução, tentativas, resultado/motivo de adiamento ou falha e nome do backup criado ou restaurado, quando houver. O tempo aguardando jogadores ou na fila não entra na duração.
 
 O histórico permanece após recriar os contêineres. São mantidas até 200 operações concluídas dos últimos 30 dias, além das pendentes. Registros antigos podem não ter duração ou horário de início disponíveis. O nome do backup no histórico não garante que o arquivo ainda esteja disponível: a retenção dos backups é independente. Falhas ao gravar o histórico aparecem nessa aba e não impedem a parada do jogo.
+
+
+### Contas e permissões do painel
+
+O acesso existente continua funcionando com **admin** e a senha da instalação. Em **Administração → Usuários do painel**, cadastre uma conta com nome, perfil e senha temporária. No primeiro acesso, o usuário precisa trocar essa senha; depois, entra novamente com a senha pessoal. O botão **Minha senha** permite alterá-la posteriormente. As contas do painel não mudam as listas de administradores, banidos ou permitidos do jogo.
+
+| Operação | Administrador | Operador |
+| --- | --- | --- |
+| Estado, jogadores, métricas e join code | Sim | Sim |
+| Iniciar o jogo | Imediato | Imediato |
+| Parar ou reiniciar | Imediato, com confirmação | Aguarda jogo pronto e zero jogadores por dois minutos; Steam também exige A2S |
+| Consultar operações | Todas | Somente as próprias |
+| Configurações, mods, listas de jogadores, backups, nuvem, atualizações e logs completos | Sim | Não |
+| Gerenciar contas e consultar auditoria | Sim | Não |
+| Alterar a própria senha | Sim | Sim |
+
+Desativar uma conta, alterar seu perfil ou redefinir a senha encerra suas sessões e cancela solicitações ainda na fila ou adiadas. Uma operação que já enviou o sinal de parada continua o encerramento gracioso. Redefinir a senha exige nova troca no próximo acesso. A conta **admin** principal não pode ser desativada ou mudar de perfil; permanece disponível para recuperação pelo comando de senha existente.
+
+Em **Administração → Auditoria**, filtre por usuário, operação e período. O registro identifica responsável, horário, resultado, alterações e a tarefa associada, inclusive nas operações em segundo plano. São mantidos até 2.000 registros dos últimos 90 dias, com limite de 8 MiB. Campos secretos aparecem apenas como alterados; configurações de plugins são identificadas pela revisão do arquivo, sem registrar seu conteúdo. A auditoria e as contas persistem ao remover os contêineres e não são incluídas nos backups dos mundos.

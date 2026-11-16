@@ -126,6 +126,20 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                         payload.get("confirm_world", False),
                     )
                 value = runtime.config.describe()
+            elif endpoint == "/accounts":
+                value = {
+                    "users": [
+                        {
+                            "id": "admin",
+                            "username": "admin",
+                            "role": "admin",
+                            "enabled": True,
+                            "must_change_password": False,
+                        }
+                    ]
+                }
+            elif endpoint == "/audit":
+                value = {"events": [], "error": None}
             elif endpoint == "/image-update":
                 if method == "POST":
                     assert payload["confirm"] is True and len(payload["request_id"]) == 32
@@ -251,7 +265,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert (
             page.get_by_role("heading", name="Rotina automática", include_hidden=True).count() == 1
         )
-        assert page.get_by_role("tab").count() == 7
+        assert page.get_by_role("tab").count() == 8
         assert page.get_by_role("tabpanel").count() == 1
         assert (
             page.get_by_role("tab", name="Visão geral", exact=True).get_attribute("aria-selected")
@@ -539,4 +553,116 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert page.locator("#update-image").is_enabled()
         assert "concluída" in page.locator("#image-update-status").inner_text()
         assert not errors
+        browser.close()
+
+
+def test_accounts_first_login_operator_view_and_admin_management(runtime, monkeypatch):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastapi.testclient import TestClient
+    from app.auth import set_password
+    from app.web import create_app
+
+    static = Path(__file__).resolve().parents[1] / "app/static"
+    monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    set_password(runtime.data, "browser-admin-password")
+    app = create_app(runtime.data, runtime, lifecycle=False)
+    operator = app.state.auth.accounts.create(
+        "browser-operator", "operator", "temporary-browser-password"
+    )
+    client = TestClient(app, base_url="https://panel.test")
+    visited = []
+
+    def route(request):
+        path = request.request.url.removeprefix("https://panel.test")
+        if path.startswith("/api/v1"):
+            visited.append(path.split("?")[0])
+            headers = {
+                k: v
+                for k, v in request.request.headers.items()
+                if k in ("origin", "x-csrf-token", "content-type", "cookie")
+            }
+            response = client.request(
+                request.request.method,
+                path,
+                content=request.request.post_data_buffer,
+                headers=headers,
+            )
+            request.fulfill(
+                status=response.status_code, body=response.content, headers=dict(response.headers)
+            )
+        else:
+            file = static / ("index.html" if path == "/" else path.lstrip("/"))
+            request.fulfill(
+                path=str(file),
+                content_type=(
+                    "text/html"
+                    if file.suffix == ".html"
+                    else "text/javascript" if file.suffix == ".js" else "text/css"
+                ),
+            )
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=os.environ.get("BROWSER_CHANNEL") or None, headless=True
+        )
+        page = browser.new_page()
+        page.add_init_script("window.EventSource = class { close() {} };")
+        page.route("https://panel.test/**", route)
+        page.goto("https://panel.test/")
+        page.locator("#username").fill("browser-operator")
+        page.locator("#password").fill("temporary-browser-password")
+        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.locator("#password-change").wait_for(state="visible")
+        assert page.locator("#dashboard").is_hidden()
+        assert not any(
+            path in visited for path in ("/api/v1/config", "/api/v1/accounts", "/api/v1/audit")
+        )
+        page.locator("#current-password").fill("temporary-browser-password")
+        page.locator("#new-password").fill("personal-browser-password")
+        page.locator("#repeat-password").fill("personal-browser-password")
+        page.get_by_role("button", name="Salvar minha senha", exact=True).click()
+        page.locator("#login").wait_for(state="visible")
+        page.locator("#password").fill("personal-browser-password")
+        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.locator("#dashboard").wait_for(state="visible")
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        assert page.get_by_role("tab").count() == 2
+        assert page.get_by_role("tab", name="Administração").count() == 0
+        assert page.get_by_role("button", name="Atualizar jogo", exact=True).count() == 0
+        assert "zero jogadores" in page.locator("#action-policy").inner_text()
+        page.get_by_role("button", name="Parar", exact=True).click()
+        assert "aguardará" in page.locator("#action-confirm-description").inner_text()
+        page.locator("#action-confirm-submit").click()
+        page.wait_for_function(
+            "document.querySelector('#notice').textContent.includes('Operação enviada')"
+        )
+        assert runtime.jobs[-1]["actor"]["id"] == operator["id"]
+        assert runtime.jobs[-1]["requires_idle"]
+        page.get_by_role("tab", name="Atividade", exact=True).click()
+        assert page.locator("#logs").is_hidden()
+        page.locator("#logout").click()
+        page.locator("#username").fill("admin")
+        page.locator("#password").fill("browser-admin-password")
+        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        page.get_by_role("tab", name="Administração", exact=True).click()
+        page.locator("#account-username").fill("browser-helper")
+        page.locator("#account-password").fill("helper-temporary-password")
+        page.get_by_role("button", name="Cadastrar usuário", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#account-list').textContent.includes('browser-helper')"
+        )
+        assert app.state.auth.accounts.find("browser-helper")["must_change_password"]
+        assert "helper-temporary-password" not in page.locator("#audit-list").inner_text()
+        page.locator("#audit-user").fill("admin")
+        page.locator("#audit-operation").select_option("accounts")
+        page.get_by_role("button", name="Filtrar auditoria", exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('#audit-list').textContent.includes('Contas')"
+        )
+        assert "admin" in page.locator("#audit-list").inner_text()
         browser.close()

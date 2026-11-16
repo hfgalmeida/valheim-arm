@@ -5,7 +5,7 @@ Servidor Valheim na Oracle ARM: instale com Docker, jogue e gerencie pelo navega
 ## Funcionalidades
 
 - **Instalação via Docker Compose**, com imagem pronta para ARM64 e execução do Valheim pelo FEX.
-- **Painel web com HTTPS**, métricas em tempo real e controles para iniciar, parar e reiniciar o servidor. [Detalhes](docs/REFERENCE.md#painel).
+- **Painel web com HTTPS**, contas de administrador/operador, auditoria, métricas em tempo real e controles para iniciar, parar e reiniciar o servidor. [Detalhes](docs/REFERENCE.md#painel).
 - **Atualizações e manutenção automáticas**, com verificação de jogadores, salvamento antes das paradas e recuperação após falhas. [Detalhes](docs/REFERENCE.md#operacao).
 - **Backups automáticos**, download e restauração pelo painel, com envio opcional para OneDrive, Dropbox ou Google Drive. [Detalhes](docs/REFERENCE.md#backups).
 - **Configuração do mundo e crossplay**, modificadores e listas de administradores, banidos e jogadores permitidos. [Detalhes](docs/REFERENCE.md#configuracao).
@@ -48,7 +48,7 @@ Após o carregamento, adicione **SEU_IP:2456** no Valheim e entre com a senha do
 
 ## Acessar o painel
 
-Abra **https://SEU_IP** e entre com a senha administrativa definida na instalação. O HTTPS já vem configurado; para o navegador confiar no certificado local, siga uma vez o [guia de certificado para Windows ou Linux](docs/REFERENCE.md#certificado).
+Abra **https://SEU_IP** e entre com o usuário **admin** e a senha administrativa definida na instalação. O HTTPS já vem configurado; para o navegador confiar no certificado local, siga uma vez o [guia de certificado para Windows ou Linux](docs/REFERENCE.md#certificado).
 
 Pelo painel, você pode ajustar o servidor, administrar usuários do jogo e baixar/restaurar backups. Ao habilitar crossplay e reiniciar, o código de entrada aparece quando a sessão fica disponível.
 

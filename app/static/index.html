@@ -13,15 +13,26 @@
         <span class="eyebrow">ORACLE ARM · VALHEIM</span>
         <h1>Sala de comando</h1>
       </div>
-      <button id="logout" hidden>Sair</button>
+      <div class="session-tools">
+        <span id="identity"></span><button id="own-password" hidden>Minha senha</button
+        ><button id="logout" hidden>Sair</button>
+      </div>
     </header>
     <main>
       <p id="notice" role="status" aria-live="polite"></p>
       <section id="login" class="card login">
-        <span class="eyebrow">ACESSO ADMINISTRATIVO</span>
+        <span class="eyebrow">ACESSO AO PAINEL</span>
         <h2>Bem-vindo de volta</h2>
         <p>Entre para cuidar do seu mundo.</p>
         <form id="login-form">
+          <label
+            >Usuário<input
+              id="username"
+              autocomplete="username"
+              value="admin"
+              required
+              maxlength="32"
+          /></label>
           <label
             >Senha do painel<input
               id="password"
@@ -31,7 +42,41 @@
               maxlength="256" /></label
           ><button class="primary">Entrar</button>
         </form>
-        <small>A senha é definida pelo administrador diretamente no servidor.</small>
+        <small>O acesso principal continua sendo admin, com a senha definida na instalação.</small>
+      </section>
+      <section id="password-change" class="card login" hidden>
+        <h2>Trocar minha senha</h2>
+        <p id="password-change-message">Escolha uma senha pessoal de 12 a 256 caracteres.</p>
+        <form id="password-change-form">
+          <label
+            >Senha atual<input
+              id="current-password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="256"
+          /></label>
+          <label
+            >Nova senha<input
+              id="new-password"
+              type="password"
+              autocomplete="new-password"
+              required
+              minlength="12"
+              maxlength="256"
+          /></label>
+          <label
+            >Repita a nova senha<input
+              id="repeat-password"
+              type="password"
+              autocomplete="new-password"
+              required
+              minlength="12"
+              maxlength="256"
+          /></label>
+          <button class="primary">Salvar minha senha</button>
+        </form>
+        <button id="close-password-change" type="button">Voltar ao painel</button>
       </section>
       <div id="dashboard" hidden>
         <section class="overview">
@@ -44,9 +89,9 @@
               <p id="game-detail"></p>
               <p id="last-failure" hidden></p>
             </div>
-            <p id="versions"></p>
-            <p id="run-intent" aria-live="polite"></p>
-            <p id="image-version"></p>
+            <p id="versions" data-admin-only></p>
+            <p id="run-intent" data-admin-only aria-live="polite"></p>
+            <p id="image-version" data-admin-only></p>
             <p id="crossplay-info" hidden>
               Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
             </p>
@@ -70,6 +115,7 @@
             type="button"
             role="tab"
             id="tab-settings"
+            data-admin-only
             aria-controls="panel-settings"
             aria-selected="false"
             tabindex="-1"
@@ -80,6 +126,7 @@
             type="button"
             role="tab"
             id="tab-server"
+            data-admin-only
             aria-controls="panel-server"
             aria-selected="false"
             tabindex="-1"
@@ -90,6 +137,7 @@
             type="button"
             role="tab"
             id="tab-mods"
+            data-admin-only
             aria-controls="panel-mods"
             aria-selected="false"
             tabindex="-1"
@@ -100,6 +148,7 @@
             type="button"
             role="tab"
             id="tab-players"
+            data-admin-only
             aria-controls="panel-players"
             aria-selected="false"
             tabindex="-1"
@@ -110,11 +159,23 @@
             type="button"
             role="tab"
             id="tab-backups"
+            data-admin-only
             aria-controls="panel-backups"
             aria-selected="false"
             tabindex="-1"
           >
             Backups
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tab-administration"
+            data-admin-only
+            aria-controls="panel-administration"
+            aria-selected="false"
+            tabindex="-1"
+          >
+            Administração
           </button>
           <button
             type="button"
@@ -131,10 +192,10 @@
           <nav id="actions" aria-label="Controle do servidor">
             <button data-action="start">Iniciar</button><button data-action="stop">Parar</button
             ><button data-action="restart">Reiniciar</button
-            ><button data-action="update">Atualizar jogo</button
-            ><button data-action="backup">Criar backup</button>
+            ><button data-action="update" data-admin-only>Atualizar jogo</button
+            ><button data-action="backup" data-admin-only>Criar backup</button>
           </nav>
-          <p class="muted">
+          <p id="action-policy" class="muted">
             Ações do painel solicitam a parada imediatamente e podem desconectar jogadores. O jogo
             salva antes de encerrar; apenas as tarefas automáticas aguardam o servidor vazio.
           </p>
@@ -178,7 +239,14 @@
           </section>
           <p id="metric-scope" class="muted"></p>
         </div>
-        <div role="tabpanel" id="panel-settings" aria-labelledby="tab-settings" tabindex="0" hidden>
+        <div
+          role="tabpanel"
+          id="panel-settings"
+          data-admin-only
+          aria-labelledby="tab-settings"
+          tabindex="0"
+          hidden
+        >
           <section class="card">
             <div class="section-title">
               <h2>Configurações do jogo</h2>
@@ -198,7 +266,14 @@
             </p>
           </section>
         </div>
-        <div role="tabpanel" id="panel-server" aria-labelledby="tab-server" tabindex="0" hidden>
+        <div
+          role="tabpanel"
+          id="panel-server"
+          data-admin-only
+          aria-labelledby="tab-server"
+          tabindex="0"
+          hidden
+        >
           <section class="card">
             <h2>Atualização da imagem Docker</h2>
             <p class="muted">
@@ -255,7 +330,14 @@
             </p>
           </section>
         </div>
-        <div role="tabpanel" id="panel-mods" aria-labelledby="tab-mods" tabindex="0" hidden>
+        <div
+          role="tabpanel"
+          id="panel-mods"
+          data-admin-only
+          aria-labelledby="tab-mods"
+          tabindex="0"
+          hidden
+        >
           <section class="card" aria-labelledby="mod-diagnostics-title">
             <h2 id="mod-diagnostics-title">Diagnóstico dos mods</h2>
             <p id="mod-session-status" role="status" aria-live="polite">
@@ -347,7 +429,14 @@
             </p>
           </section>
         </div>
-        <div role="tabpanel" id="panel-players" aria-labelledby="tab-players" tabindex="0" hidden>
+        <div
+          role="tabpanel"
+          id="panel-players"
+          data-admin-only
+          aria-labelledby="tab-players"
+          tabindex="0"
+          hidden
+        >
           <section class="card">
             <div class="section-title">
               <h2>Jogadores e permissões</h2>
@@ -405,7 +494,14 @@
             </form>
           </section>
         </div>
-        <div role="tabpanel" id="panel-backups" aria-labelledby="tab-backups" tabindex="0" hidden>
+        <div
+          role="tabpanel"
+          id="panel-backups"
+          data-admin-only
+          aria-labelledby="tab-backups"
+          tabindex="0"
+          hidden
+        >
           <section class="card">
             <div class="section-title">
               <h2>Backups</h2>
@@ -475,9 +571,103 @@
             </p>
           </section>
         </div>
+        <div
+          role="tabpanel"
+          id="panel-administration"
+          aria-labelledby="tab-administration"
+          data-admin-only
+          tabindex="0"
+          hidden
+        >
+          <section class="card">
+            <h2>Usuários do painel</h2>
+            <p class="muted">
+              Contas do painel são independentes das listas de jogadores. Novos usuários e senhas
+              redefinidas exigem troca no próximo acesso. A conta admin principal permanece
+              disponível para recuperação.
+            </p>
+            <form id="account-create-form" class="account-form">
+              <label
+                >Usuário<input
+                  id="account-username"
+                  required
+                  minlength="3"
+                  maxlength="32"
+                  pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,31}"
+                  autocomplete="off"
+              /></label>
+              <label
+                >Perfil<select id="account-role">
+                  <option value="operator">Operador</option>
+                  <option value="admin">Administrador</option>
+                </select></label
+              >
+              <label
+                >Senha temporária<input
+                  id="account-password"
+                  type="password"
+                  autocomplete="new-password"
+                  required
+                  minlength="12"
+                  maxlength="256"
+              /></label>
+              <button class="primary">Cadastrar usuário</button>
+            </form>
+            <div id="account-list"></div>
+            <h3>Redefinir senha</h3>
+            <form id="account-reset-form" class="account-form">
+              <label>Usuário<select id="account-reset-user" required></select></label>
+              <label
+                >Nova senha temporária<input
+                  id="account-reset-password"
+                  type="password"
+                  autocomplete="new-password"
+                  required
+                  minlength="12"
+                  maxlength="256"
+              /></label>
+              <button>Redefinir senha e encerrar sessões</button>
+            </form>
+          </section>
+          <section class="card">
+            <h2>Auditoria</h2>
+            <p class="muted">
+              Até 2.000 registros dos últimos 90 dias. Senhas e tokens não são registrados. Horários
+              e filtros seguem o fuso do servidor.
+            </p>
+            <form id="audit-filter-form" class="history-filters">
+              <label>Usuário<input id="audit-user" maxlength="32" placeholder="Todos" /></label>
+              <label
+                >Operação<select id="audit-operation">
+                  <option value="">Todas</option>
+                  <option value="configuration">Configurações</option>
+                  <option value="start">Início</option>
+                  <option value="stop">Parada</option>
+                  <option value="restart">Reinício</option>
+                  <option value="backup">Backup</option>
+                  <option value="restore">Restauração</option>
+                  <option value="update">Atualização do jogo</option>
+                  <option value="image-update">Atualização da imagem</option>
+                  <option value="accounts">Contas</option>
+                  <option value="password-change">Troca de senha</option>
+                  <option value="plugins">Plugins</option>
+                  <option value="plugin-config">Configurações de plugins</option>
+                  <option value="player-lists">Listas de jogadores</option>
+                  <option value="alerts">Alertas</option>
+                  <option value="cloud">Nuvem</option>
+                </select></label
+              >
+              <label>Desde<input id="audit-from" type="date" /></label
+              ><label>Até<input id="audit-to" type="date" /></label>
+              <button>Filtrar auditoria</button>
+            </form>
+            <p id="audit-warning" role="status"></p>
+            <div id="audit-list"></div>
+          </section>
+        </div>
         <div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden>
           <section class="card">
-            <h2>Histórico de manutenção</h2>
+            <h2 id="history-title">Histórico de manutenção</h2>
             <p class="muted">
               Até 200 operações dos últimos 30 dias. Tarefas pendentes são preservadas.
             </p>
@@ -486,6 +676,7 @@
                 >Origem<select id="history-origin">
                   <option value="">Todas</option>
                   <option value="administrator">Administrador</option>
+                  <option value="operator">Operador</option>
                   <option value="schedule">Agendamento</option>
                   <option value="recovery">Recuperação</option>
                 </select></label
@@ -507,7 +698,7 @@
             <p id="history-warning" role="status"></p>
             <div id="jobs" aria-live="polite"></div>
           </section>
-          <section class="card">
+          <section class="card" data-admin-only>
             <h2>Log do servidor</h2>
             <pre id="logs" tabindex="0"></pre>
           </section>

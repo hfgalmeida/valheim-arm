@@ -16,7 +16,6 @@ services:
       SERVER_NAME: ${SERVER_NAME:-Valheim ARM}
       WORLD_NAME: ${WORLD_NAME:-Dedicated}
       SERVER_PASSWORD: ${SERVER_PASSWORD:?Defina SERVER_PASSWORD no .env}
-      SERVER_PORT: "2456"
       PUBLIC: ${PUBLIC:-true}
       CROSSPLAY: ${CROSSPLAY:-false}
       PRESET: ${PRESET:-}
@@ -53,7 +52,6 @@ services:
     volumes:
       # Bind mount persistente: remover o contêiner não apaga os arquivos do host.
       - ./data:/data
-    expose: ["8080"]
     healthcheck:
       test: ["CMD", "/opt/venv/bin/python", "-m", "app.cli", "health"]
       interval: 30s
