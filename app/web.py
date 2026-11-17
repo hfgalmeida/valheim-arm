@@ -866,7 +866,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
     async def reset_account_password(user_id: str, body: AccountPassword, request: Request):
         target = auth.accounts.get(user_id)
         if target:
-            request.state.audit_resource = "Conta " + target["username"]
+            request.state.audit_resource = "Account " + target["username"]
         try:
             await asyncio.to_thread(auth.accounts.password, user_id, body.password, True)
         except ValueError as exc:

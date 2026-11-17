@@ -52,7 +52,7 @@ def collect_rootfs(data_dir, destination, info_path):
     for path in images:
         with path.open("rb") as file:
             hashes[path.name] = hashlib.file_digest(file, "sha256").hexdigest()
-    info["rootfs"] = "Ubuntu 24.04, FEXRootFSFetcher (hash upstream verificado pelo fetcher)"
+    info["rootfs"] = "Ubuntu 24.04, FEXRootFSFetcher (upstream hash verified by the fetcher)"
     info["rootfs_directory"] = root.name
     info["rootfs_images"] = hashes
     shutil.move(str(root), str(destination))

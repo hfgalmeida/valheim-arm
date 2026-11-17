@@ -132,7 +132,7 @@ class Accounts:
             if not user:
                 raise ValueError("Account not found")
             if expected is not None and self.fingerprint(user) != expected:
-                raise ValueError("Credenciais alteradas; entre novamente")
+                raise ValueError("Credentials changed; sign in again")
             hashed = self.hasher.hash(password)
             if user_id == "admin":
                 atomic_json(self.primary, {"hash": hashed, "must_change_password": temporary})

@@ -1580,4 +1580,4 @@ class Runtime:
         finally:
             if self.lock_file:
                 self.lock_file.close()
-        self.emit("Supervisor encerrado")
+        self.emit("Supervisor stopped")

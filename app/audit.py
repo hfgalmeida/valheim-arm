@@ -143,7 +143,7 @@ class Audit:
             "succeeded": "completed",
             "failed": "failed",
             "rolled_back": "rolled_back",
-            "interrupted": "interrompido",
+            "interrupted": "interrupted",
         }
         job_id = status.get("request_id")
         outcome = outcomes.get(status.get("state"))

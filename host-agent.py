@@ -22,8 +22,8 @@ log = logging.getLogger("valheim-host-agent")
 PHASES = {
     "reconciling": "Verifying the current installation without switching images.",
     "queued": "Update requested.",
-    "downloading": "Baixando a imagem Docker.",
-    "preflight": "Validando a nova imagem.",
+    "downloading": "Downloading the Docker image.",
+    "preflight": "Validating the new image.",
     "stopping": "Stopping the game gracefully.",
     "backup": "Creating a backup before switching.",
     "switching": "Applying the new image; the panel may disconnect.",
@@ -219,14 +219,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not peer_allowed(self.connection):
-            return self.reply(403, {"detail": "Acesso negado."})
+            return self.reply(403, {"detail": "Access denied."})
         if self.path != "/status":
             return self.reply(404, {"detail": "Operation unavailable."})
         self.reply(200, self.server.agent.status())
 
     def do_POST(self):
         if not peer_allowed(self.connection):
-            return self.reply(403, {"detail": "Acesso negado."})
+            return self.reply(403, {"detail": "Access denied."})
         if self.path != "/update":
             return self.reply(404, {"detail": "Operation unavailable."})
         try:

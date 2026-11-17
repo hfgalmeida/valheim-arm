@@ -142,7 +142,7 @@ class Plugins:
         if target.exists():
             current = self.info(target)["revision"]
             if current is None:
-                raise ValueError("A DLL existente ultrapassa 16 MiB; gerencie-a pelo SSH")
+                raise ValueError("The existing DLL exceeds 16 MiB; manage it through SSH")
             if current != revision:
                 raise Conflict(
                     "The DLL already exists or changed. Refresh the list and confirm replacement"

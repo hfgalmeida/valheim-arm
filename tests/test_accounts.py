@@ -305,7 +305,7 @@ def test_password_change_is_limited_and_rejects_stale_credentials(runtime, monke
     account = admin.app.state.auth.accounts
     old = account.fingerprint(account.get(user["id"]))
     account.password(user["id"], "administrator-reset-password", True)
-    with pytest.raises(ValueError, match="Credenciais"):
+    with pytest.raises(ValueError, match="Credentials"):
         account.password(user["id"], "must-not-override-reset", expected=old)
 
 
