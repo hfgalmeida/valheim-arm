@@ -119,6 +119,12 @@ function signedOut() {
   for (const id of [
     "cloud-status",
     "alerts-status",
+    "local-backup-freshness",
+    "cloud-backup-freshness",
+    "backup-age-warning",
+    "backup-age-warning",
+    "local-backup-freshness",
+    "cloud-backup-freshness",
     "last-failure",
     "mod-session-status",
     "mod-session-version",
@@ -202,6 +208,8 @@ function alertStatus(a) {
     cloud: "envio à nuvem",
     game: "recuperação do jogo",
     disk: "espaço em disco",
+    backup_age: "backup local atrasado",
+    cloud_age: "envio à nuvem atrasado",
   };
   $("alerts-status").textContent =
     (a.enabled ? "Notificações ativadas." : "Notificações desativadas.") +
@@ -210,11 +218,49 @@ function alertStatus(a) {
       ? " Atenção: " + a.active.map((key) => names[key] || key).join(", ") + "."
       : " Nenhum problema ativo.") +
     (a.error ? " " + a.error : "");
+  const states = {
+    ok: "Dentro do prazo",
+    overdue: "Atrasado ou indisponível",
+    grace: "Aguardando o primeiro sucesso, dentro da carência",
+    disabled: "Prazo desativado",
+    inactive: "Envio à nuvem desativado",
+    unknown: "Não foi possível verificar",
+  };
+  const date = (value) =>
+    value
+      ? new Date(value * 1000).toLocaleString("pt-BR", {
+          timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
+        })
+      : "nenhum registro";
+  const attention = [];
+  for (const [name, id, label] of [
+    ["local", "local-backup-freshness", "Backup local"],
+    ["cloud", "cloud-backup-freshness", "Envio à nuvem"],
+  ]) {
+    const status = a.freshness?.[name];
+    $(id).textContent = status
+      ? label +
+        " · Último sucesso: " +
+        date(status.last_success) +
+        ". " +
+        (states[status.state] || "Verificando") +
+        (status.max_age_hours ? ". Prazo: " + status.max_age_hours + " h" : "") +
+        (status.due_at ? ". Limite: " + date(status.due_at) : "") +
+        (status.error ? ". " + status.error : "")
+      : label + " · Aguardando verificação…";
+    if (["overdue", "unknown"].includes(status?.state)) attention.push(label);
+  }
+  $("backup-age-warning").hidden = !attention.length;
+  $("backup-age-warning").textContent = attention.length
+    ? "Backups exigem atenção: " + attention.join(", ") + ". Consulte a aba Backups."
+    : "";
 }
 async function loadAlerts() {
   const a = await api("/alerts");
   $("alerts-enabled").value = String(a.enabled);
   $("alerts-url").value = "";
+  $("backup-max-age-hours").value = a.backup_max_age_hours ?? 36;
+  $("cloud-max-age-hours").value = a.cloud_max_age_hours ?? 36;
   alertStatus(a);
 }
 function modDiagnostics(d) {
@@ -1308,6 +1354,8 @@ $("alerts-form").onsubmit = (event) => {
     const a = await api("/alerts", "PUT", {
       enabled: $("alerts-enabled").value === "true",
       url: $("alerts-url").value,
+      backup_max_age_hours: Number($("backup-max-age-hours").value),
+      cloud_max_age_hours: Number($("cloud-max-age-hours").value),
     });
     $("alerts-url").value = "";
     alertStatus(a);

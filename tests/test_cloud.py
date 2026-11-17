@@ -23,6 +23,18 @@ def archive(runtime):
     return runtime.backups.create("test", runtime.config.effective())
 
 
+def test_new_cloud_destination_does_not_reuse_previous_success(runtime):
+    cloud = runtime.cloud
+    cloud.configure(True, "Valheim", remote())
+    cloud.settings.update(last_success=1000, last_file="old.tar.gz")
+    with patch("app.cloud.time.time", return_value=2000):
+        result = cloud.configure(True, "AnotherFolder")
+    assert result["last_success"] is None
+    assert result["last_file"] is None
+    assert result["monitor_since"] == 2000
+    assert Cloud(runtime.data, runtime.backups).describe()["monitor_since"] == 2000
+
+
 @pytest.mark.parametrize("provider", ["drive", "onedrive", "dropbox"])
 def test_import_supported_connection(provider):
     name, config = connection(remote(provider))

@@ -380,13 +380,15 @@ sudo df -h ./data
 
 Não publique `.env`, credenciais ou backups em pedidos de suporte. Para investigar builds, rollback do jogo e falhas de encerramento, consulte o [guia do mantenedor](MAINTAINER.md).
 
-## Alertas no Discord
+## Alertas e monitoramento
 
-Na aba **Configurações do servidor**, em **Alertas no Discord**, cole a URL de um webhook criado nas configurações do canal do Discord, em **Integrações → Webhooks**. Ative as notificações, salve e clique em **Enviar teste**. Deixar a URL vazia mantém a credencial salva; desativar interrompe os envios.
+Na aba **Configurações do servidor**, em **Alertas e monitoramento**, cole a URL de um webhook criado nas configurações do canal do Discord, em **Integrações → Webhooks**. Ative as notificações, salve e clique em **Enviar teste**. Deixar a URL vazia mantém a credencial salva; desativar interrompe os envios.
 
-Os avisos cobrem falha na criação de backups, falha de envio à nuvem, suspensão da recuperação automática e menos de 6 GiB livres no disco de dados. A normalização também é notificada; para disco, exige ao menos 7 GiB livres para evitar oscilações. O monitor verifica a cada 30 segundos, sem depender de o painel estar aberto.
+Configure também o prazo máximo para backup local e envio à nuvem: padrão de **36 horas** para cada um, de 1 a 720 horas; **0 desativa** a verificação correspondente. O painel mostra as últimas datas e os limites na aba **Backups**, com aviso na visão geral, mesmo sem webhook. Sem backup anterior, existe uma carência persistente que não recomeça ao reiniciar o contêiner. A nuvem só é cobrada quando ativada; trocar a conexão ou pasta inicia nova carência, sem aproveitar o sucesso do destino anterior.
 
-Cada categoria avisa uma vez ao entrar em falha e uma vez ao normalizar, com intervalo mínimo de cinco minutos. Entregas malsucedidas são tentadas novamente após cinco minutos. O estado é preservado em `data/config/alert-state.json`; o webhook fica protegido em `data/config/alerts.json`, fora dos saves, backups e arquivos compartilhados. Mensagens não contêm senhas, tokens ou logs. A situação dos alertas e erros de entrega aparecem no painel. Uma interrupção da instância ou da rede pode impedir qualquer envio; este recurso não substitui monitoramento externo.
+Os avisos cobrem falha na criação de backups, falha de envio à nuvem, suspensão da recuperação automática e menos de 6 GiB livres no disco de dados. Também há aviso de atraso, mesmo sem erro explícito de criação ou envio. A normalização também é notificada; para disco, exige ao menos 7 GiB livres para evitar oscilações. O monitor verifica a cada 30 segundos, sem depender de o painel estar aberto.
+
+Cada categoria avisa uma vez ao entrar em falha e uma vez ao normalizar, com intervalo mínimo de cinco minutos. Entregas malsucedidas são tentadas novamente após cinco minutos. O estado é preservado em `data/config/alert-state.json` e `data/config/backup-age-state.json`; o webhook fica protegido em `data/config/alerts.json`, fora dos saves, backups e arquivos compartilhados. Mensagens não contêm senhas, tokens ou logs. A situação dos alertas e erros de entrega aparecem no painel. Uma interrupção da instância ou da rede pode impedir qualquer envio; este recurso não substitui monitoramento externo.
 
 Detalhes do protocolo: [webhooks do Discord](https://docs.discord.com/developers/resources/webhook#execute-webhook).
 

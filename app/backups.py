@@ -1,9 +1,11 @@
 import hashlib
 import io
 import json
+import re
 import shutil
 import tarfile
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -33,6 +35,45 @@ class Backups:
             for p in sorted(self.root.glob("*.tar.gz"), reverse=True)
         ]
 
+    def latest_completed(self, now=None):
+        """Creation date of an available published archive, never its mutable mtime.
+
+        The checksum sidecar is published only after create() validates the archive.
+        This is a freshness observation, not a new integrity validation of all saves.
+        """
+        now = time.time() if now is None else now
+        for path in sorted(self.root.glob("*.tar.gz"), reverse=True):
+            if not re.fullmatch(r"\d{8}T\d{12}Z\.tar\.gz", path.name):
+                continue
+            try:
+                created = (
+                    datetime.strptime(path.name, "%Y%m%dT%H%M%S%fZ.tar.gz")
+                    .replace(tzinfo=timezone.utc)
+                    .timestamp()
+                )
+                checksum = path.with_suffix(path.suffix + ".sha256")
+                if (
+                    created <= 0
+                    or created > now
+                    or path.is_symlink()
+                    or not path.is_file()
+                    or path.stat().st_size == 0
+                    or checksum.is_symlink()
+                    or not checksum.is_file()
+                    or checksum.stat().st_size > 128
+                ):
+                    continue
+                if not re.fullmatch(
+                    r"[a-fA-F0-9]{64}", checksum.read_text(encoding="ascii").strip()
+                ):
+                    continue
+                return {"time": created, "name": path.name}
+            except FileNotFoundError:
+                continue  # Retention can remove an older archive while it is scanned.
+            except (ValueError, UnicodeError):
+                continue
+        return None
+
     def create(self, reason, settings, build="unknown"):
         saves = self.data / "saves"
         if not saves.exists():
@@ -49,6 +90,7 @@ class Backups:
                         "audit.json",
                         "alerts.json",
                         "alert-state.json",
+                        "backup-age-state.json",
                         "run-intent.json",
                         "maintenance-history.json",
                     }:

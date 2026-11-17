@@ -92,6 +92,7 @@
               <p id="panel-health">Painel: conectando…</p>
               <p id="game-detail"></p>
               <p id="last-failure" hidden></p>
+              <p id="backup-age-warning" data-admin-only role="status" hidden></p>
             </div>
             <details id="server-details" class="overview-extra" data-admin-only open>
               <summary>Detalhes do servidor</summary>
@@ -319,13 +320,40 @@
             </form>
           </section>
           <section class="card">
-            <h2>Alertas no Discord</h2>
+            <h2>Alertas e monitoramento</h2>
             <p class="muted">
               Receba avisos de falha de backup, envio à nuvem, recuperação suspensa e pouco espaço
               em disco. No Discord, crie um webhook em Configurações do canal → Integrações →
               Webhooks e cole a URL abaixo.
             </p>
             <form id="alerts-form">
+              <div class="settings">
+                <label
+                  >Prazo para backup local (horas)<input
+                    id="backup-max-age-hours"
+                    type="number"
+                    min="0"
+                    max="720"
+                    step="1"
+                    value="36"
+                    required
+                /></label>
+                <label
+                  >Prazo para envio à nuvem (horas)<input
+                    id="cloud-max-age-hours"
+                    type="number"
+                    min="0"
+                    max="720"
+                    step="1"
+                    value="36"
+                    required
+                /></label>
+              </div>
+              <p class="muted">
+                Zero desativa a verificação correspondente. Sem backup anterior, o prazo conta desde
+                o início do monitoramento, mesmo após reiniciar o contêiner. A nuvem só é monitorada
+                quando ativada. O painel funciona sem webhook; o Discord é opcional.
+              </p>
               <label
                 >Notificações<select id="alerts-enabled">
                   <option value="false">Desativadas</option>
@@ -574,6 +602,8 @@
               Baixe uma cópia para seu computador. Restaurar substitui os saves e exige o jogo
               parado.
             </p>
+            <p id="local-backup-freshness" role="status">Verificando data do backup local…</p>
+            <p id="cloud-backup-freshness" role="status">Verificando data do envio à nuvem…</p>
             <div id="backup-list"></div>
           </section>
 

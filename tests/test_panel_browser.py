@@ -165,7 +165,12 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                 value = state
             elif endpoint == "/alerts":
                 if method == "PUT":
-                    runtime.alerts.configure(payload["enabled"], payload.get("url", ""))
+                    runtime.alerts.configure(
+                        payload["enabled"],
+                        payload.get("url", ""),
+                        payload.get("backup_max_age_hours"),
+                        payload.get("cloud_max_age_hours"),
+                    )
                 value = runtime.alerts.describe()
             elif endpoint == "/alerts/test":
                 value = {"sent": True}
@@ -547,10 +552,14 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
         page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
         page.locator("#alerts-enabled").select_option("true")
+        page.locator("#backup-max-age-hours").fill("48")
+        page.locator("#cloud-max-age-hours").fill("72")
         page.locator("#alerts-url").fill("https://discord.com/api/webhooks/123/" + "a" * 40)
         page.get_by_role("button", name="Salvar alertas", exact=True).click()
         page.wait_for_function("document.querySelector('#alerts-url').value === ''")
         assert runtime.alerts.settings["enabled"]
+        assert runtime.alerts.settings["backup_max_age_hours"] == 48
+        assert runtime.alerts.settings["cloud_max_age_hours"] == 72
         page.get_by_role("button", name="Enviar teste", exact=True).click()
         page.wait_for_function(
             "document.querySelector('#notice').textContent.includes('entregue ao Discord')"
@@ -865,6 +874,92 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
             no_horizontal_scroll(page)
         assert not errors
         context.close()
+        browser.close()
+
+
+def test_backup_age_status_and_configuration_on_phone(runtime, monkeypatch):
+    playwright = pytest.importorskip("playwright.sync_api")
+    from fastapi.testclient import TestClient
+    from app.auth import set_password
+    from app.web import create_app
+
+    static = Path(__file__).resolve().parents[1] / "app/static"
+    monkeypatch.setenv("PANEL_ORIGIN", "https://panel.test")
+    monkeypatch.setattr("app.image_version.published_version", lambda: "0.25.0")
+    monkeypatch.setattr(
+        runtime.backups,
+        "latest_completed",
+        lambda now: {"time": now - 7200, "name": "completed.tar.gz"},
+    )
+    runtime.alerts.configure(False, backup_max_age_hours=1, cloud_max_age_hours=0)
+    set_password(runtime.data, "freshness-admin-password")
+    client = TestClient(
+        create_app(runtime.data, runtime, lifecycle=False), base_url="https://panel.test"
+    )
+
+    def route(request):
+        path = request.request.url.removeprefix("https://panel.test")
+        if path.startswith("/api/v1"):
+            response = client.request(
+                request.request.method,
+                path,
+                content=request.request.post_data_buffer,
+                headers={
+                    k: v
+                    for k, v in request.request.headers.items()
+                    if k in ("origin", "x-csrf-token", "content-type", "cookie")
+                },
+            )
+            request.fulfill(
+                status=response.status_code, body=response.content, headers=dict(response.headers)
+            )
+        else:
+            file = static / ("index.html" if path == "/" else path.lstrip("/"))
+            request.fulfill(
+                path=str(file),
+                content_type={
+                    ".html": "text/html",
+                    ".js": "text/javascript",
+                    ".css": "text/css",
+                }.get(file.suffix, "font/ttf"),
+            )
+
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch(
+            channel=os.environ.get("BROWSER_CHANNEL") or None, headless=True
+        )
+        page = browser.new_page(
+            viewport={"width": 320, "height": 640}, is_mobile=True, has_touch=True
+        )
+        page.add_init_script("window.EventSource = class { close() {} };")
+        page.route("https://panel.test/**", route)
+        page.goto("https://panel.test/")
+        page.locator("#password").fill("freshness-admin-password")
+        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.wait_for_function(
+            "document.querySelector('#panel-health').textContent.includes('conectado')"
+        )
+        assert page.locator("#backup-age-warning").is_visible()
+        assert "Backup local" in page.locator("#backup-age-warning").inner_text()
+        page.locator("#mobile-section").select_option("tab-backups")
+        assert "Último sucesso" in page.locator("#local-backup-freshness").inner_text()
+        assert "Atrasado" in page.locator("#local-backup-freshness").inner_text()
+        assert "nuvem desativado" in page.locator("#cloud-backup-freshness").inner_text()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.locator("#mobile-section").select_option("tab-server")
+        page.locator("#backup-max-age-hours").fill("0")
+        page.locator("#cloud-max-age-hours").fill("48")
+        page.get_by_role("button", name="Salvar alertas", exact=True).tap()
+        page.wait_for_function(
+            "document.querySelector('#notice').textContent.includes('Alertas salvos')"
+        )
+        assert not runtime.alerts.describe()["active"]
+        assert not runtime.alerts.settings["enabled"]
+        assert page.locator("#backup-age-warning").is_hidden()
+        page.locator("#mobile-section").select_option("tab-backups")
+        assert "Prazo desativado" in page.locator("#local-backup-freshness").inner_text()
+        page.locator("#logout").tap()
+        assert page.locator("#local-backup-freshness").text_content() == ""
         browser.close()
 
 

@@ -116,6 +116,8 @@ class AlertChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
     url: str = Field(default="", max_length=512)
+    backup_max_age_hours: int | None = Field(default=None, ge=0, le=720, strict=True)
+    cloud_max_age_hours: int | None = Field(default=None, ge=0, le=720, strict=True)
 
 
 class CloudChange(BaseModel):
@@ -644,21 +646,32 @@ def create_app(data=None, runtime=None, lifecycle=True):
 
     @app.get("/api/v1/alerts", dependencies=[Depends(session)])
     async def alert_config():
+        try:
+            await rt.alerts.check_freshness(rt)
+        except (OSError, ValueError) as exc:
+            config_error(exc)
         return rt.alerts.describe()
 
     @app.put("/api/v1/alerts", dependencies=[Depends(session)])
     async def alert_configure(body: AlertChange, request: Request):
         try:
             before = rt.alerts.describe()
-            result = rt.alerts.configure(body.enabled, body.url)
+            rt.alerts.configure(
+                body.enabled, body.url, body.backup_max_age_hours, body.cloud_max_age_hours
+            )
+            await rt.alerts.check_freshness(rt)
+            result = rt.alerts.describe()
             request.state.audit_changes = {
                 "ativado": {"antes": before["enabled"], "depois": result["enabled"]}
             }
+            for key in ("backup_max_age_hours", "cloud_max_age_hours"):
+                if before[key] != result[key]:
+                    request.state.audit_changes[key] = {"antes": before[key], "depois": result[key]}
             if body.url:
                 request.state.audit_changes["webhook"] = {"alterado": True}
             return result
-        except ValueError as exc:
-            raise HTTPException(422, str(exc))
+        except (OSError, ValueError) as exc:
+            config_error(exc)
 
     @app.post("/api/v1/alerts/test", dependencies=[Depends(session)])
     async def alert_test():

@@ -23,6 +23,7 @@ def test_roundtrip_and_admin_excluded(tmp_path, config):
     saves = save_fixture(tmp_path)
     (tmp_path / "config/alerts.json").write_text('{"url":"private-webhook"}')
     (tmp_path / "config/alert-state.json").write_text("{}")
+    (tmp_path / "config/backup-age-state.json").write_text('{"backup_age":{"active":true}}')
     (tmp_path / "config/run-intent.json").write_text('{"version":1,"running":false}')
     (tmp_path / "config/maintenance-history.json").write_text("[]")
     (tmp_path / "config/panel-users.json").write_text('[ {"hash":"never-export-account"} ]')
@@ -35,6 +36,7 @@ def test_roundtrip_and_admin_excluded(tmp_path, config):
     assert "config/audit.json" not in manifest["files"]
     assert "config/alerts.json" not in manifest["files"]
     assert "config/alert-state.json" not in manifest["files"]
+    assert "config/backup-age-state.json" not in manifest["files"]
     assert "config/run-intent.json" not in manifest["files"]
     assert "config/maintenance-history.json" not in manifest["files"]
     (saves / "Dedicated.db").write_bytes(b"changed")

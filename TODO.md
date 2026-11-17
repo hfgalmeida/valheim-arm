@@ -77,6 +77,9 @@
 
 ### Melhorias de operação e diagnóstico
 
+- [x] Monitorar ausência de backup recente e envio à nuvem atrasado, com prazos independentes de 36 horas por padrão (0 desativa), carência persistente, datas/avisos no painel e alertas opcionais no Discord com deduplicação e normalização. Não depender de erro explícito, mtime de arquivos ou presença de jogadores.
+
+
 - [x] Diagnóstico do painel: distinguir conexão com supervisor, jogo iniciando, pronto, parado, parando, em recuperação ou com falha; mostrar prazo da recuperação e última falha da sessão com horário.
 - [x] Atualizador no host para imagem Docker (FEX e painel), com backup, parada limpa, verificação de inicialização e retorno à imagem anterior; versão instalada e atualização pública no painel.
 - [x] Validar na Oracle restauração dos arquivos no formato atual: parada limpa, backup preservado fora da retenção, restauração de 9 arquivos de saves com hashes idênticos, remoção de arquivo adicional e retorno do mundo ao estado online (14/11/2026).

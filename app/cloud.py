@@ -124,6 +124,7 @@ class Cloud:
             "uploading": self.busy,
             "last_success": self.settings.get("last_success"),
             "last_file": self.settings.get("last_file"),
+            "monitor_since": self.settings.get("monitor_since", self.settings.get("since")),
             "error": self.settings.get("error"),
         }
 
@@ -160,6 +161,14 @@ class Cloud:
             raise ValueError("Importe a conexão antes de ativar o envio")
         if enabled:
             settings.setdefault("since", time.time())
+        target_changed = replacement is not None or folder != self.settings.get(
+            "folder", "Valheim/backups"
+        )
+        if enabled and (not self.settings.get("enabled") or target_changed):
+            settings["monitor_since"] = time.time()
+        if target_changed:
+            settings.pop("last_success", None)
+            settings.pop("last_file", None)
         try:
             atomic_json(self.config_path, settings)
         except BaseException:
