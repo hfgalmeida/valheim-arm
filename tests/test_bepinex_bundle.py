@@ -76,7 +76,7 @@ def test_bundle_is_deterministic_and_rejects_changed_download(tmp_path):
 @pytest.mark.parametrize("name", ["../outside", "/absolute", "C:/outside", "folder\\outside"])
 def test_build_rejects_unsafe_paths(tmp_path, name):
     archive, settings, license_path = fixture_pack(tmp_path, name)
-    with pytest.raises(ValueError, match="Caminho inseguro"):
+    with pytest.raises(ValueError, match="Unsafe path"):
         bundle(archive, tmp_path / "bundle", settings, license_path)
 
 

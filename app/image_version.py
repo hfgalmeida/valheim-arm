@@ -101,7 +101,7 @@ class ImageVersion:
                     self.available = published_version()
                     self.checked, self.error = time.time(), None
                 except Exception:
-                    self.error = "Não foi possível consultar a imagem pública no Docker Hub. A última versão conhecida pode estar desatualizada."
+                    self.error = "Could not query the public Docker Hub image. The last known version may be outdated."
         finally:
             self.check_lock.release()
         return self.describe()

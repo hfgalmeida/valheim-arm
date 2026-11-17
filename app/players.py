@@ -39,7 +39,7 @@ class Players:
         self.empty_since = None
         self.last_event_at = None
         self.state = "unknown"
-        self.reason = "Aguardando snapshot Connections do jogo"
+        self.reason = "Waiting for a Connections snapshot from the game"
         self.steam = {"count": None, "updated_at": None}
         self.steam_observed = None
 
@@ -60,18 +60,18 @@ class Players:
                 self.empty_since = now if value == 0 else None
             self.count = self.last_count = value
             self.observed, self.updated_at = now, self.wall_clock()
-            self.state, self.reason = "snapshot", "snapshot do jogo"
+            self.state, self.reason = "snapshot", "game snapshot"
         elif SNAPSHOT_HEADER.match(line.strip()):
-            self.invalidate("Formato do snapshot inválido; aguardando novo snapshot")
+            self.invalidate("Invalid snapshot format; waiting for another snapshot")
         elif CONNECTION_CHANGE.search(line):
             # Events invalidate, never increment/decrement or infer an empty server.
             # PlayFab's 'now N players' can describe reconnection, not final departure.
-            self.invalidate("Conexão alterada; aguardando novo snapshot")
+            self.invalidate("Connection changed; waiting for a new snapshot")
 
     def current(self):
         if self.observed is not None and self.clock() - self.observed >= SNAPSHOT_TTL:
             self.count = self.empty_since = None
-            self.state, self.reason = "stale", "Snapshot ausente ou expirado"
+            self.state, self.reason = "stale", "Snapshot missing or expired"
         return self.count
 
     def idle(self, seconds=IDLE_SECONDS):
@@ -85,7 +85,7 @@ class Players:
         self.steam = {"count": count, "updated_at": self.wall_clock()}
         self.steam_observed = self.clock()
         if count is not None and self.current() is not None and count != self.count:
-            self.invalidate("Consulta Steam divergente do log; aguardando novo snapshot")
+            self.invalidate("Steam query disagrees with the log; waiting for a new snapshot")
 
     def status(self):
         count = self.current()
@@ -125,7 +125,7 @@ class Players:
     def stopped_status():
         return {
             "count": 0,
-            "reason": "Servidor parado",
+            "reason": "Server stopped",
             "state": "stopped",
             "source": "supervisor",
             "updated_at": None,

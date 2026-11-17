@@ -1,32 +1,33 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <title>Valheim · Sala de comando</title>
+    <title>Valheim · Control panel</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/panel.js" defer></script>
   </head>
   <body>
     <header>
       <div>
-        <span class="eyebrow">ORACLE ARM · VALHEIM</span>
-        <h1>Sala de comando</h1>
+        <span class="eyebrow">ARM64 · VALHEIM</span>
+        <h1>Control panel</h1>
       </div>
       <div class="session-tools">
-        <span id="identity"></span><button id="own-password" hidden>Minha senha</button
-        ><button id="logout" hidden>Sair</button>
+        <span id="identity"></span
+        ><button id="own-password" hidden type="button">My password</button
+        ><button id="logout" hidden type="button">Sign out</button>
       </div>
     </header>
     <main>
       <p id="notice" role="status" aria-live="polite"></p>
       <section id="login" class="card login">
-        <span class="eyebrow">ACESSO AO PAINEL</span>
-        <h2>Bem-vindo de volta</h2>
-        <p>Entre para cuidar do seu mundo.</p>
+        <span class="eyebrow">PANEL ACCESS</span>
+        <h2>Welcome back</h2>
+        <p>Sign in to manage your world.</p>
         <form id="login-form">
           <label
-            >Usuário<input
+            >Username<input
               id="username"
               autocomplete="username"
               value="admin"
@@ -34,22 +35,22 @@
               maxlength="32"
           /></label>
           <label
-            >Senha do painel<input
+            >Panel password<input
               id="password"
               type="password"
               autocomplete="current-password"
               required
               maxlength="256" /></label
-          ><button class="primary">Entrar</button>
+          ><button class="primary" type="submit">Sign in</button>
         </form>
-        <small>O acesso principal continua sendo admin, com a senha definida na instalação.</small>
+        <small>Use admin and the password set during installation for the primary account.</small>
       </section>
       <section id="password-change" class="card login" hidden>
-        <h2>Trocar minha senha</h2>
-        <p id="password-change-message">Escolha uma senha pessoal de 12 a 256 caracteres.</p>
+        <h2>Change my password</h2>
+        <p id="password-change-message">Choose a personal password with 12 to 256 characters.</p>
         <form id="password-change-form">
           <label
-            >Senha atual<input
+            >Current password<input
               id="current-password"
               type="password"
               autocomplete="current-password"
@@ -57,7 +58,7 @@
               maxlength="256"
           /></label>
           <label
-            >Nova senha<input
+            >New password<input
               id="new-password"
               type="password"
               autocomplete="new-password"
@@ -66,7 +67,7 @@
               maxlength="256"
           /></label>
           <label
-            >Repita a nova senha<input
+            >Repeat new password<input
               id="repeat-password"
               type="password"
               autocomplete="new-password"
@@ -74,50 +75,50 @@
               minlength="12"
               maxlength="256"
           /></label>
-          <button class="primary">Salvar minha senha</button>
+          <button class="primary" type="submit">Save my password</button>
         </form>
-        <button id="close-password-change" type="button">Voltar ao painel</button>
+        <button id="close-password-change" type="button">Back to panel</button>
       </section>
       <div id="dashboard" hidden>
-        <nav class="mobile-navigation" aria-label="Navegação do painel no celular">
-          <label for="mobile-section">Seção do painel</label>
+        <nav class="mobile-navigation" aria-label="Mobile panel navigation">
+          <label for="mobile-section">Panel section</label>
           <select id="mobile-section"></select>
         </nav>
         <section class="overview">
           <div>
-            <span class="eyebrow">SEU MUNDO, SEMPRE À VISTA</span>
+            <span class="eyebrow">YOUR WORLD AT A GLANCE</span>
             <h2 id="server-name">Valheim ARM</h2>
-            <p id="status">Conectando…</p>
+            <p id="status">Connecting…</p>
             <div class="diagnostics" aria-live="polite">
-              <p id="panel-health">Painel: conectando…</p>
+              <p id="panel-health">Panel: connecting…</p>
               <p id="game-detail"></p>
               <p id="last-failure" hidden></p>
               <p id="backup-age-warning" data-admin-only role="status" hidden></p>
             </div>
             <details id="server-details" class="overview-extra" data-admin-only open>
-              <summary>Detalhes do servidor</summary>
+              <summary>Server details</summary>
               <p id="versions" data-admin-only></p>
               <p id="run-intent" data-admin-only aria-live="polite"></p>
               <p id="image-version" data-admin-only></p>
               <details>
-                <summary>Inicializações e recuperação</summary>
+                <summary>Startup and recovery</summary>
                 <p id="startup-summary" class="muted"></p>
                 <p class="muted">
-                  O perfil de compatibilidade tenta contornar falhas iniciais do FEX; a eficácia e o
-                  desempenho ainda dependem de validação.
+                  The compatibility profile may help with early FEX failures; its effectiveness and
+                  performance still require validation.
                 </p>
                 <ul id="startup-history"></ul>
               </details>
             </details>
             <p id="crossplay-info" hidden>
-              Código de entrada (crossplay): <strong id="join-code" aria-live="polite"></strong>
+              Join code (crossplay):<strong id="join-code" aria-live="polite"></strong>
             </p>
           </div>
           <div class="player-count">
-            <strong id="players">—</strong><span>jogadores</span><small id="player-reason"></small>
+            <strong id="players">—</strong><span>players</span><small id="player-reason"></small>
           </div>
         </section>
-        <div class="tabs" role="tablist" aria-label="Seções do painel">
+        <div class="tabs" role="tablist" aria-label="Panel sections">
           <button
             type="button"
             role="tab"
@@ -126,7 +127,7 @@
             aria-selected="true"
             tabindex="0"
           >
-            Visão geral
+            Overview
           </button>
           <button
             type="button"
@@ -137,7 +138,7 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Configurações do jogo
+            Game settings
           </button>
           <button
             type="button"
@@ -148,7 +149,7 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Configurações do servidor
+            Server settings
           </button>
           <button
             type="button"
@@ -170,7 +171,7 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Jogadores
+            Players
           </button>
           <button
             type="button"
@@ -192,7 +193,7 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Administração
+            Administration
           </button>
           <button
             type="button"
@@ -202,56 +203,47 @@
             aria-selected="false"
             tabindex="-1"
           >
-            Atividade
+            Activity
           </button>
         </div>
         <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
-          <nav id="actions" aria-label="Controle do servidor">
-            <button data-action="start">Iniciar</button><button data-action="stop">Parar</button
-            ><button data-action="restart">Reiniciar</button
-            ><button data-action="update" data-admin-only>Atualizar jogo</button
-            ><button data-action="backup" data-admin-only>Criar backup</button>
+          <nav id="actions" aria-label="Server controls">
+            <button data-action="start" type="button">Start</button
+            ><button data-action="stop" type="button">Stop</button
+            ><button data-action="restart" type="button">Restart</button
+            ><button data-action="update" data-admin-only type="button">Update game</button
+            ><button data-action="backup" data-admin-only type="button">Create backup</button>
           </nav>
           <p id="action-policy" class="muted">
-            Ações do painel solicitam a parada imediatamente e podem desconectar jogadores. O jogo
-            salva antes de encerrar; apenas as tarefas automáticas aguardam o servidor vazio.
+            Administrator actions may disconnect players immediately. The game saves before exiting;
+            automatic maintenance waits for an empty server.
           </p>
-          <section class="metrics" aria-label="Recursos em tempo real">
+          <section class="metrics" aria-label="Live resources">
             <article class="card">
-              <span>CPU · 100% por núcleo</span><strong id="cpu">—</strong
-              ><canvas
-                id="cpu-chart"
-                width="600"
-                height="150"
-                aria-label="Histórico de CPU"
-              ></canvas>
+              <span>CPU · 100% per core</span><strong id="cpu">—</strong
+              ><canvas id="cpu-chart" width="600" height="150" aria-label="CPU history"></canvas>
             </article>
             <article class="card">
-              <span>Memória do contêiner</span><strong id="memory">—</strong
+              <span>Container memory</span><strong id="memory">—</strong
               ><canvas
                 id="memory-chart"
                 width="600"
                 height="150"
-                aria-label="Histórico de memória"
+                aria-label="Memory history"
               ></canvas>
             </article>
             <article class="card">
-              <span>Rede · entrada / saída</span><strong id="network">—</strong
+              <span>Network · receive / send</span><strong id="network">—</strong
               ><canvas
                 id="network-chart"
                 width="600"
                 height="150"
-                aria-label="Histórico de rede"
+                aria-label="Network history"
               ></canvas>
             </article>
             <article class="card">
-              <span>Disco do volume</span><strong id="disk">—</strong
-              ><canvas
-                id="disk-chart"
-                width="600"
-                height="150"
-                aria-label="Histórico de disco"
-              ></canvas>
+              <span>Volume disk usage</span><strong id="disk">—</strong
+              ><canvas id="disk-chart" width="600" height="150" aria-label="Disk history"></canvas>
             </article>
           </section>
           <p id="metric-scope" class="muted"></p>
@@ -266,20 +258,22 @@
         >
           <section class="card">
             <div class="section-title">
-              <h2>Configurações do jogo</h2>
+              <h2>Game settings</h2>
               <span id="pending"></span>
             </div>
             <p class="muted">
-              Ajustes do painel prevalecem sobre o Compose. “Usar Compose” remove um ajuste. Senhas
-              nunca são exibidas.
+              Panel overrides take precedence over Compose. Use Compose removes an override.
+              Passwords are never displayed.
             </p>
             <form id="config-form">
               <div id="settings" class="settings"></div>
-              <button class="primary">Salvar configuração</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save game settings</button>
+              </div>
             </form>
             <p class="muted">
-              Trocar o nome do mundo seleciona ou cria outro save. Desmarcar uma chave deixa de
-              enviá-la ao jogo; isso não remove uma chave já gravada no mundo.
+              Changing the world name selects or creates another save. Clearing a key stops passing
+              it to the game; it does not remove an existing world key.
             </p>
           </section>
         </div>
@@ -292,44 +286,44 @@
           hidden
         >
           <section class="card">
-            <h2>Atualização da imagem Docker</h2>
+            <h2>Docker image update</h2>
             <p class="muted">
-              Atualiza painel, FEX e proxy com backup e verificação. O painel pode desconectar
-              durante a troca; a preferência de manter o jogo ligado ou parado será preservada.
+              Update the panel, FEX, and proxy with a backup and readiness check. The panel may
+              disconnect; your preference to run or stop the game is preserved.
             </p>
             <p id="image-version-status" role="status" aria-live="polite"></p>
             <div class="editor-actions">
-              <button type="button" id="check-image-version">Verificar nova versão</button>
-              <button type="button" id="update-image" class="primary" disabled>
-                Atualizar imagem
-              </button>
+              <button type="button" id="check-image-version">Check for updates</button>
+              <button type="button" id="update-image" class="primary" disabled>Update image</button>
             </div>
             <p id="image-update-status" role="status" aria-live="polite">
-              Consultando serviço de atualização…
+              Checking updater service…
             </p>
           </section>
           <section class="card">
-            <h2>Configurações do servidor</h2>
+            <h2>Server settings</h2>
             <p class="muted">
-              Configure salvamento, backups e manutenção automática. Os horários usam o fuso
-              selecionado.
+              Configure saves, backups, and automatic maintenance. Schedules use the selected time
+              zone.
             </p>
             <form id="server-config-form">
               <div id="server-settings" class="settings"></div>
-              <button class="primary">Salvar configurações do servidor</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save server settings</button>
+              </div>
             </form>
           </section>
           <section class="card">
-            <h2>Alertas e monitoramento</h2>
+            <h2>Alerts and monitoring</h2>
             <p class="muted">
-              Receba avisos de falha de backup, envio à nuvem, recuperação suspensa e pouco espaço
-              em disco. No Discord, crie um webhook em Configurações do canal → Integrações →
-              Webhooks e cole a URL abaixo.
+              Receive backup, cloud upload, recovery, and low-disk-space notifications. In Discord,
+              create a webhook under Channel settings → Integrations → Webhooks and paste its URL
+              below.
             </p>
             <form id="alerts-form">
               <div class="settings">
                 <label
-                  >Prazo para backup local (horas)<input
+                  >Local backup deadline (hours)<input
                     id="backup-max-age-hours"
                     type="number"
                     min="0"
@@ -339,7 +333,7 @@
                     required
                 /></label>
                 <label
-                  >Prazo para envio à nuvem (horas)<input
+                  >Cloud upload deadline (hours)<input
                     id="cloud-max-age-hours"
                     type="number"
                     min="0"
@@ -350,31 +344,33 @@
                 /></label>
               </div>
               <p class="muted">
-                Zero desativa a verificação correspondente. Sem backup anterior, o prazo conta desde
-                o início do monitoramento, mesmo após reiniciar o contêiner. A nuvem só é monitorada
-                quando ativada. O painel funciona sem webhook; o Discord é opcional.
+                Zero disables that check. Without a previous backup, the grace period survives
+                container restarts. Cloud monitoring applies only when uploads are enabled. Panel
+                warnings work without a Discord webhook.
               </p>
               <label
-                >Notificações<select id="alerts-enabled">
-                  <option value="false">Desativadas</option>
-                  <option value="true">Ativadas</option>
+                >Notifications<select id="alerts-enabled">
+                  <option value="false">Disabled</option>
+                  <option value="true">Enabled</option>
                 </select></label
               >
               <label
-                >URL do webhook<input
+                >Webhook URL<input
                   id="alerts-url"
                   type="password"
                   autocomplete="off"
                   maxlength="512"
-                  placeholder="Deixe vazio para manter o webhook salvo"
+                  placeholder="Leave blank to keep the saved webhook"
               /></label>
-              <button class="primary">Salvar alertas</button>
-              <button type="button" id="alerts-test">Enviar teste</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save alerts</button>
+                <button type="button" id="alerts-test">Send test</button>
+              </div>
             </form>
             <p id="alerts-status" role="status" aria-live="polite"></p>
             <p class="muted">
-              Salve antes de testar. A URL é uma credencial e nunca é exibida novamente. Alertas e
-              recuperações têm intervalo mínimo de cinco minutos por categoria.
+              Save before testing. The webhook is a credential and is never displayed again.
+              Notifications have a minimum interval of five minutes per category.
             </p>
           </section>
         </div>
@@ -387,82 +383,81 @@
           hidden
         >
           <section class="card" aria-labelledby="mod-diagnostics-title">
-            <h2 id="mod-diagnostics-title">Diagnóstico dos mods</h2>
+            <h2 id="mod-diagnostics-title">Mod diagnostics</h2>
             <p id="mod-session-status" role="status" aria-live="polite">
-              Aguardando informações do supervisor…
+              Waiting for supervisor information…
             </p>
             <p id="mod-session-version"></p>
             <p id="mod-session-pending" class="muted"></p>
-            <h3>Plugins informados pelo carregador</h3>
+            <h3>Plugins reported by the loader</h3>
             <ul id="mod-session-plugins"></ul>
-            <h3>Avisos e erros registrados</h3>
+            <h3>Recorded warnings and errors</h3>
             <ul id="mod-session-issues"></ul>
             <p class="muted">
-              As informações são da sessão atual ou da última execução deste supervisor. Uma DLL
-              instalada não comprova que o plugin carregou. “Loading” registra uma tentativa; a
-              conclusão do carregador e a ausência de erro não garantem compatibilidade ou
-              funcionamento no jogo.
+              These details describe this or the last supervisor session. An installed DLL or a
+              Loading message does not confirm plugin compatibility or correct behavior in the game.
             </p>
           </section>
           <section class="card">
             <h2>BepInEx</h2>
             <p class="muted">
-              Ative o BepInEx incluído na imagem e instale seus plugins abaixo. Não é necessário
-              informar URL ou hash. As alterações serão aplicadas na próxima inicialização do jogo.
+              Enable the bundled BepInEx package and upload plugins below. No URL or checksum is
+              required. Changes apply at the next game startup.
             </p>
             <form id="mods-config-form">
               <div id="mods-settings" class="settings"></div>
-              <button class="primary">Salvar configurações de mods</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save mod settings</button>
+              </div>
             </form>
           </section>
           <section class="card">
             <div class="section-title">
-              <h2>Enviar plugins</h2>
-              <button type="button" id="refresh-plugins">Atualizar plugins</button>
+              <h2>Upload plugins</h2>
+              <button type="button" id="refresh-plugins">Refresh plugins</button>
             </div>
             <p class="muted">
-              Pare o jogo, selecione uma DLL e envie. Use plugins de fontes confiáveis e compatíveis
-              com seu BepInEx. Eles serão carregados na próxima inicialização.
+              Stop the game before uploading. Use trusted plugins compatible with BepInEx. They load
+              at the next startup.
             </p>
             <form id="plugin-upload-form">
               <label
-                >Arquivo DLL · até 16 MiB<input id="plugin-file" type="file" accept=".dll" required
+                >DLL file · up to 16 MiB<input id="plugin-file" type="file" accept=".dll" required
               /></label>
               <div class="editor-actions">
-                <button class="primary" id="upload-plugin">Enviar plugin</button>
+                <button class="primary" id="upload-plugin" type="submit">Upload plugin</button>
               </div>
             </form>
             <p id="plugin-upload-status" role="status" aria-live="polite"></p>
             <div id="plugin-list"></div>
-            <h3>Plugins excluídos</h3>
+            <h3>Deleted plugins</h3>
             <p class="muted">
-              A exclusão preserva uma cópia fora da pasta carregada pelo BepInEx e mantém as
-              configurações. Essas cópias continuam ocupando espaço em disco até serem removidas dos
-              arquivos compartilhados.
+              Deletion keeps a recovery copy outside the BepInEx loading directory and preserves
+              settings. Copies use disk space until removed from shared files.
             </p>
             <div id="deleted-plugin-list"></div>
             <p class="muted">
-              O envio aceita DLLs individuais, sem ZIP ou arquivos auxiliares. Substituições exigem
-              confirmação e preservam uma cópia anterior fora da pasta carregada pelo BepInEx.
+              Upload individual DLLs without ZIPs or additional files. Replacements require
+              confirmation and preserve one previous version outside the loading directory.
             </p>
           </section>
           <section class="card">
             <div class="section-title">
-              <h2>Arquivos dos plugins</h2>
-              <button type="button" id="refresh-mod-configs">Atualizar arquivos</button>
+              <h2>Plugin configuration files</h2>
+              <button type="button" id="refresh-mod-configs">Refresh files</button>
             </div>
             <p class="muted">
-              Selecione uma configuração de texto gerada pelo plugin. Pare o jogo antes de salvar e
-              inicie novamente para aplicar. O editor preserva uma versão anterior do arquivo.
+              Select a text configuration generated by a plugin. Stop before saving and start again
+              to apply it. The editor preserves one previous version.
             </p>
             <label
-              >Arquivo<select id="mod-config-file">
-                <option value="">Selecione um arquivo</option>
+              >File<select id="mod-config-file">
+                <option value="">Select a file</option>
               </select></label
             >
             <form id="mod-config-form">
               <label
-                >Conteúdo<textarea
+                >Content<textarea
                   id="mod-config-content"
                   rows="16"
                   maxlength="32768"
@@ -471,16 +466,16 @@
                 ></textarea>
               </label>
               <div class="editor-actions">
-                <button class="primary" id="save-mod-config" disabled>Salvar arquivo</button
+                <button class="primary" id="save-mod-config" disabled type="submit">
+                  Save file</button
                 ><button type="button" id="previous-mod-config" disabled>
-                  Carregar versão anterior
+                  Load previous version
                 </button>
               </div>
             </form>
             <p class="muted">
-              Arquivos UTF-8 de até 32 KiB em BepInEx/config. O editor não valida as regras
-              específicas de cada plugin. Plugins que usam outras pastas ainda precisam ser
-              configurados pelo SSH.
+              UTF-8 files up to 32 KiB in BepInEx/config. The editor does not validate
+              plugin-specific rules. Other configuration directories require SSH access.
             </p>
           </section>
         </div>
@@ -494,37 +489,36 @@
         >
           <section class="card">
             <div class="section-title">
-              <h2>Jogadores e permissões</h2>
+              <h2>Players and permissions</h2>
               <small id="user-list-count"></small>
             </div>
             <label
-              >Lista<select id="user-kind">
-                <option value="admins">Administradores</option>
-                <option value="banned">Banidos</option>
-                <option value="permitted">Permitidos</option>
+              >List<select id="user-kind">
+                <option value="admins">Administrators</option>
+                <option value="banned">Banned</option>
+                <option value="permitted">Permitted</option>
               </select></label
             >
             <p class="muted">
-              Escolha a lista, adicione ou remova jogadores e salve. Uma lista de permitidos
-              preenchida restringe o acesso a esses jogadores.
+              Choose a list, add or remove players, then save. A populated permitted list restricts
+              access to those players.
             </p>
             <div class="player-picker">
               <label
-                >Jogador conhecido<select id="known-player">
-                  <option value="">Selecione um ID identificado ou já cadastrado</option>
+                >Known player<select id="known-player">
+                  <option value="">Select an identified or registered ID</option>
                 </select></label
-              ><button id="refresh-players" type="button">Atualizar jogadores</button>
+              ><button id="refresh-players" type="button">Refresh players</button>
             </div>
             <p class="muted">
-              Nome, plataforma e IDs encontrados no log ou cadastrados pelo administrador. IDs
-              observados no crossplay podem exigir confirmação no F2. Este histórico não indica quem
-              está online.
+              Names, platforms, and IDs from logs or administrator records. Crossplay IDs may need
+              confirmation in F2. This history does not show who is online.
             </p>
             <details id="player-identity-details">
-              <summary>Identificar ou confirmar jogador</summary>
+              <summary>Identify or confirm a player</summary>
               <form id="player-identity-form">
                 <label
-                  >ID completo do F2<input
+                  >Complete F2 ID<input
                     id="directory-id"
                     required
                     maxlength="128"
@@ -532,56 +526,58 @@
                     autocomplete="off"
                 /></label>
                 <label
-                  >Nome do jogador (opcional)<input
+                  >Player name (optional)<input
                     id="directory-name"
                     maxlength="80"
                     autocomplete="off"
                 /></label>
                 <label
-                  >Plataforma (opcional)<input
+                  >Platform (optional)<input
                     id="directory-platform"
                     maxlength="40"
                     autocomplete="off"
                 /></label>
                 <label
-                  ><input id="directory-confirm" type="checkbox" required /> Conferi este ID no F2
-                  do jogo</label
+                  ><input id="directory-confirm" type="checkbox" required />I checked this ID in the
+                  game F2 panel</label
                 >
                 <p class="muted">
-                  Use o ID exatamente como aparece no jogo. O nome é uma identificação cadastrada
-                  por você. Salvar aqui não concede permissões nem altera as listas.
+                  Copy the ID exactly as shown in the game. The name is your own label. Saving an
+                  identity does not grant permissions or change player lists.
                 </p>
-                <button type="submit">Salvar identificação</button>
+                <div class="form-actions">
+                  <button type="submit">Save identity</button>
+                </div>
               </form>
             </details>
             <form id="player-add-form" class="player-add">
               <label
-                >ID do jogador<input
+                >Player ID<input
                   id="player-id"
                   required
                   maxlength="128"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="Steam_765… ou ID completo da plataforma" /></label
-              ><button type="submit">Adicionar à lista</button>
+                  placeholder="Steam_765… or complete platform ID" /></label
+              ><button type="submit">Add to list</button>
             </form>
             <p class="muted">
-              Use o ID de plataforma exibido no F2 do jogo. SteamID64 de 17 dígitos também é aceito.
-              Não use o código de entrada ou o identificador da conexão PlayFab.
+              Use the platform ID shown in F2. A 17-digit SteamID64 is also accepted. Do not use
+              join codes or PlayFab connection handles.
             </p>
             <form id="users-form">
               <div id="user-list" aria-live="polite"></div>
               <details class="bulk-players">
-                <summary>Editar vários IDs de uma vez</summary>
+                <summary>Edit multiple IDs</summary>
                 <label
-                  >Um ID de plataforma por linha<textarea
+                  >One platform ID per line<textarea
                     id="user-entries"
                     rows="7"
                     spellcheck="false"
                   ></textarea>
                 </label>
               </details>
-              <button class="primary">Salvar lista</button>
+              <button class="primary" type="submit">Save list</button>
             </form>
           </section>
         </div>
@@ -596,38 +592,37 @@
           <section class="card">
             <div class="section-title">
               <h2>Backups</h2>
-              <button id="refresh-backups">Atualizar lista</button>
+              <button id="refresh-backups" type="button">Refresh list</button>
             </div>
             <p class="muted">
-              Baixe uma cópia para seu computador. Restaurar substitui os saves e exige o jogo
-              parado.
+              Download a copy to your computer. Restoration replaces saves and requires the game to
+              be stopped.
             </p>
-            <p id="local-backup-freshness" role="status">Verificando data do backup local…</p>
-            <p id="cloud-backup-freshness" role="status">Verificando data do envio à nuvem…</p>
+            <p id="local-backup-freshness" role="status">Checking local backup date…</p>
+            <p id="cloud-backup-freshness" role="status">Checking cloud upload date…</p>
             <div id="backup-list"></div>
           </section>
 
           <section class="card">
-            <h2>Backup na nuvem</h2>
+            <h2>Cloud backups</h2>
             <p class="muted">
-              Envie automaticamente cada novo backup completo para OneDrive, Dropbox ou Google
-              Drive. A conta é autorizada uma vez no seu computador.
-              <a
-                href="https://github.com/hfgalmeida/valheim-arm/blob/main/docs/REFERENCE.md#nuvem"
+              Automatically upload each new complete backup to OneDrive, Dropbox, or Google Drive.
+              Authorize the account once on your computer.<a
+                href="https://github.com/hfgalmeida/valheim-arm/blob/main/docs/REFERENCE.md#cloud-backups"
                 target="_blank"
                 rel="noopener"
-                >Como conectar sua conta</a
+                >Connect your account</a
               >
             </p>
             <form id="cloud-form">
               <div class="settings">
                 <label
-                  >Envio automático<select id="cloud-enabled">
-                    <option value="false">Desativado</option>
-                    <option value="true">Ativado</option>
+                  >Automatic uploads<select id="cloud-enabled">
+                    <option value="false">Disabled</option>
+                    <option value="true">Enabled</option>
                   </select></label
                 ><label
-                  >Pasta na nuvem<input
+                  >Cloud folder<input
                     id="cloud-folder"
                     value="Valheim/backups"
                     required
@@ -636,31 +631,33 @@
                 /></label>
               </div>
               <label
-                >Importar conexão do computador<input
+                >Import connection from computer<input
                   id="cloud-file"
                   type="file"
                   accept=".conf,.txt" /></label
               ><label
-                >Conexão rclone autorizada<textarea
+                >Authorized rclone connection<textarea
                   id="cloud-config"
                   rows="5"
                   maxlength="65536"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="Cole a seção da conta do rclone.conf. Deixe vazio para manter a conexão atual."
+                  placeholder="Paste the account section from rclone.conf. Leave blank to keep the current connection."
                 ></textarea>
               </label>
               <p class="muted">
-                Esse conteúdo contém credenciais: use apenas sua própria conta. A conexão salva
-                nunca é exibida. Ao alterar o destino, os envios pendentes seguem para a nova
-                pasta/conta.
+                This content contains credentials: use your own account only. Saved connections are
+                never displayed. Changing the destination sends pending uploads to the new
+                folder/account.
               </p>
-              <button class="primary">Salvar envio na nuvem</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Save cloud settings</button>
+              </div>
             </form>
             <p id="cloud-status" role="status" aria-live="polite"></p>
             <p class="muted">
-              Arquivos locais são preservados enquanto aguardam envio. A cópia na nuvem não tem
-              exclusão automática; acompanhe o espaço disponível.
+              Local copies are retained while awaiting upload. Cloud copies are not deleted
+              automatically; monitor your storage quota.
             </p>
           </section>
         </div>
@@ -673,15 +670,15 @@
           hidden
         >
           <section class="card">
-            <h2>Usuários do painel</h2>
+            <h2>Panel accounts</h2>
             <p class="muted">
-              Contas do painel são independentes das listas de jogadores. Novos usuários e senhas
-              redefinidas exigem troca no próximo acesso. A conta admin principal permanece
-              disponível para recuperação.
+              Panel accounts are separate from game permission lists. New users and reset passwords
+              require a change at next sign-in. The primary admin account remains available for
+              recovery.
             </p>
             <form id="account-create-form" class="account-form">
               <label
-                >Usuário<input
+                >Username<input
                   id="account-username"
                   required
                   minlength="3"
@@ -690,13 +687,13 @@
                   autocomplete="off"
               /></label>
               <label
-                >Perfil<select id="account-role">
-                  <option value="operator">Operador</option>
-                  <option value="admin">Administrador</option>
+                >Role<select id="account-role">
+                  <option value="operator">Operator</option>
+                  <option value="admin">Administrator</option>
                 </select></label
               >
               <label
-                >Senha temporária<input
+                >Temporary password<input
                   id="account-password"
                   type="password"
                   autocomplete="new-password"
@@ -704,14 +701,16 @@
                   minlength="12"
                   maxlength="256"
               /></label>
-              <button class="primary">Cadastrar usuário</button>
+              <div class="form-actions">
+                <button class="primary" type="submit">Create account</button>
+              </div>
             </form>
             <div id="account-list"></div>
-            <h3>Redefinir senha</h3>
+            <h3>Reset password</h3>
             <form id="account-reset-form" class="account-form">
-              <label>Usuário<select id="account-reset-user" required></select></label>
+              <label>Username<select id="account-reset-user" required></select></label>
               <label
-                >Nova senha temporária<input
+                >New temporary password<input
                   id="account-reset-password"
                   type="password"
                   autocomplete="new-password"
@@ -719,41 +718,43 @@
                   minlength="12"
                   maxlength="256"
               /></label>
-              <button>Redefinir senha e encerrar sessões</button>
+              <div class="form-actions">
+                <button type="submit">Reset password and end sessions</button>
+              </div>
             </form>
           </section>
           <section class="card">
-            <h2>Auditoria</h2>
+            <h2>Audit log</h2>
             <p class="muted">
-              Até 2.000 registros dos últimos 90 dias. Senhas e tokens não são registrados. Horários
-              e filtros seguem o fuso do servidor.
+              Up to 2,000 records from the last 90 days. Passwords and tokens are not recorded.
+              Dates and filters use the server time zone.
             </p>
             <form id="audit-filter-form" class="history-filters">
-              <label>Usuário<input id="audit-user" maxlength="32" placeholder="Todos" /></label>
+              <label>Username<input id="audit-user" maxlength="32" placeholder="All" /></label>
               <label
-                >Operação<select id="audit-operation">
-                  <option value="">Todas</option>
-                  <option value="configuration">Configurações</option>
-                  <option value="start">Início</option>
-                  <option value="stop">Parada</option>
-                  <option value="restart">Reinício</option>
+                >Operation<select id="audit-operation">
+                  <option value="">All</option>
+                  <option value="configuration">Settings</option>
+                  <option value="start">Start</option>
+                  <option value="stop">Stop</option>
+                  <option value="restart">Restart</option>
                   <option value="backup">Backup</option>
-                  <option value="restore">Restauração</option>
-                  <option value="update">Atualização do jogo</option>
-                  <option value="image-update">Atualização da imagem</option>
-                  <option value="accounts">Contas</option>
-                  <option value="password-change">Troca de senha</option>
+                  <option value="restore">Restore</option>
+                  <option value="update">Game update</option>
+                  <option value="image-update">Image update</option>
+                  <option value="accounts">Accounts</option>
+                  <option value="password-change">Password change</option>
                   <option value="plugins">Plugins</option>
-                  <option value="plugin-config">Configurações de plugins</option>
-                  <option value="player-lists">Listas de jogadores</option>
-                  <option value="player-directory">Identificação de jogadores</option>
-                  <option value="alerts">Alertas</option>
-                  <option value="cloud">Nuvem</option>
+                  <option value="plugin-config">Plugin settings</option>
+                  <option value="player-lists">Player lists</option>
+                  <option value="player-directory">Player identities</option>
+                  <option value="alerts">Alerts</option>
+                  <option value="cloud">Cloud</option>
                 </select></label
               >
-              <label>Desde<input id="audit-from" type="date" /></label
-              ><label>Até<input id="audit-to" type="date" /></label>
-              <button>Filtrar auditoria</button>
+              <label>From<input id="audit-from" type="date" /></label
+              ><label>To<input id="audit-to" type="date" /></label>
+              <button type="submit">Filter audit log</button>
             </form>
             <p id="audit-warning" role="status"></p>
             <div id="audit-list"></div>
@@ -761,39 +762,39 @@
         </div>
         <div role="tabpanel" id="panel-activity" aria-labelledby="tab-activity" tabindex="0" hidden>
           <section class="card">
-            <h2 id="history-title">Histórico de manutenção</h2>
+            <h2 id="history-title">Maintenance history</h2>
             <p class="muted">
-              Até 200 operações dos últimos 30 dias. Tarefas pendentes são preservadas.
+              Up to 200 operations from the last 30 days. Pending tasks are retained.
             </p>
             <div class="history-filters">
               <label
-                >Origem<select id="history-origin">
-                  <option value="">Todas</option>
-                  <option value="administrator">Administrador</option>
-                  <option value="operator">Operador</option>
-                  <option value="schedule">Agendamento</option>
-                  <option value="recovery">Recuperação</option>
+                >Source<select id="history-origin">
+                  <option value="">All</option>
+                  <option value="administrator">Administrator</option>
+                  <option value="operator">Operator</option>
+                  <option value="schedule">Schedule</option>
+                  <option value="recovery">Recovery</option>
                 </select></label
               >
               <label
-                >Resultado<select id="history-state">
-                  <option value="">Todos</option>
-                  <option>concluído</option>
-                  <option>falha</option>
-                  <option>adiado</option>
-                  <option>cancelado</option>
-                  <option>executando</option>
-                  <option>fila</option>
+                >Result<select id="history-state">
+                  <option value="">All</option>
+                  <option value="completed">Completed</option>
+                  <option value="failed">Failed</option>
+                  <option value="deferred">Deferred</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="running">Running</option>
+                  <option value="queued">Queued</option>
                 </select></label
               >
-              <label>Desde<input type="date" id="history-from" /></label>
-              <label>Até<input type="date" id="history-to" /></label>
+              <label>From<input type="date" id="history-from" /></label>
+              <label>To<input type="date" id="history-to" /></label>
             </div>
             <p id="history-warning" role="status"></p>
             <div id="jobs" aria-live="polite"></div>
           </section>
           <section class="card" data-admin-only>
-            <h2>Log do servidor</h2>
+            <h2>Server log</h2>
             <pre id="logs" tabindex="0"></pre>
           </section>
         </div>
@@ -805,17 +806,17 @@
       aria-describedby="action-confirm-description action-confirm-warning"
     >
       <form method="dialog">
-        <span class="eyebrow">CONTROLE DO SERVIDOR</span>
+        <span class="eyebrow">SERVER CONTROL</span>
         <h2 id="action-confirm-title"></h2>
         <p id="action-confirm-description"></p>
         <p id="action-confirm-warning" class="confirmation-warning">
-          A operação começa assim que o supervisor processar a solicitação, sem aguardar o servidor
-          ficar vazio. Jogadores conectados podem ser desconectados. O jogo terá tempo para salvar
-          antes de encerrar.
+          The operation begins when the supervisor processes the request, without waiting for an
+          empty server. Connected players may be disconnected. The game has time to save before
+          exiting.
         </p>
         <div class="confirmation-actions">
-          <button value="cancel" autofocus>Cancelar</button>
-          <button value="confirm" id="action-confirm-submit" class="primary"></button>
+          <button value="cancel" autofocus type="submit">Cancel</button>
+          <button value="confirm" id="action-confirm-submit" class="primary" type="submit"></button>
         </div>
       </form>
     </dialog>
@@ -825,15 +826,28 @@
       aria-describedby="plugin-confirm-description"
     >
       <form method="dialog">
-        <span class="eyebrow">GERENCIAMENTO DE PLUGINS</span>
+        <span class="eyebrow">PLUGIN MANAGEMENT</span>
         <h2 id="plugin-confirm-title"></h2>
         <p id="plugin-confirm-description"></p>
         <div class="confirmation-actions">
-          <button value="cancel" autofocus>Cancelar</button
-          ><button id="plugin-confirm-submit" value="confirm" class="primary"></button>
+          <button value="cancel" autofocus type="submit">Cancel</button
+          ><button
+            id="plugin-confirm-submit"
+            value="confirm"
+            class="primary"
+            type="submit"
+          ></button>
         </div>
       </form>
     </dialog>
-    <footer>Valheim ARM · Administração local · FEX Emu</footer>
+    <footer>
+      Valheim ARM · Local administration · FEX Emu ·
+      <a
+        href="https://github.com/hfgalmeida/valheim-arm/issues/new/choose"
+        target="_blank"
+        rel="noopener"
+        >Report an issue</a
+      >
+    </footer>
   </body>
 </html>

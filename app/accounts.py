@@ -21,7 +21,7 @@ class Accounts:
         if not self.path.exists():
             return []
         if self.path.stat().st_size > 1024**2:
-            raise ValueError("Cadastro de contas excessivo")
+            raise ValueError("Too many account records")
         value = json.loads(self.path.read_text(encoding="utf-8"))
         if (
             not isinstance(value, list)
@@ -39,11 +39,11 @@ class Accounts:
                 for u in value
             )
         ):
-            raise ValueError("Cadastro de contas inválido; confira os arquivos no host")
+            raise ValueError("Invalid account registry; check the files on the host")
         if len({u["id"] for u in value}) != len(value) or len(
             {u["username"] for u in value}
         ) != len(value):
-            raise ValueError("Cadastro de contas duplicado")
+            raise ValueError("Duplicate account records")
         return value
 
     def all(self):
@@ -80,23 +80,23 @@ class Accounts:
     @staticmethod
     def validate_password(password):
         if not 12 <= len(password) <= 256:
-            raise ValueError("A senha deve ter entre 12 e 256 caracteres")
+            raise ValueError("The password must contain 12 to 256 characters")
 
     def create(self, username, role, password):
         username = username.lower().strip()
         if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{2,31}", username):
             raise ValueError(
-                "Use de 3 a 32 letras sem acentos, números, ponto, hífen ou sublinhado"
+                "Use 3 to 32 unaccented letters, numbers, periods, hyphens, or underscores"
             )
         if role not in ("admin", "operator"):
-            raise ValueError("Perfil inválido")
+            raise ValueError("Invalid role")
         self.validate_password(password)
         with self.lock:
             users = self.records()
             if username == "admin" or any(u["username"] == username for u in users):
-                raise ValueError("Nome de usuário já cadastrado")
+                raise ValueError("Username already registered")
             if len(users) >= 50:
-                raise ValueError("Limite de 50 contas adicionais atingido")
+                raise ValueError("The limit of 50 additional accounts has been reached")
             user = {
                 "id": uuid.uuid4().hex,
                 "username": username,
@@ -112,15 +112,15 @@ class Accounts:
     def change(self, user_id, role, enabled):
         if user_id == "admin":
             raise ValueError(
-                "A conta admin principal é preservada para recuperação e não pode ser desativada ou mudar de perfil"
+                "The primary admin account is reserved for recovery and cannot be disabled or assigned a different role"
             )
         if role not in ("admin", "operator") or type(enabled) is not bool:
-            raise ValueError("Perfil ou estado inválido")
+            raise ValueError("Invalid role or state")
         with self.lock:
             users = self.records()
             user = next((u for u in users if u["id"] == user_id), None)
             if user is None:
-                raise ValueError("Conta não encontrada")
+                raise ValueError("Account not found")
             user.update(role=role, enabled=enabled, revision=uuid.uuid4().hex)
             atomic_json(self.path, users)
             return self.public(user)
@@ -130,7 +130,7 @@ class Accounts:
         with self.lock:
             user = self.get(user_id)
             if not user:
-                raise ValueError("Conta não encontrada")
+                raise ValueError("Account not found")
             if expected is not None and self.fingerprint(user) != expected:
                 raise ValueError("Credenciais alteradas; entre novamente")
             hashed = self.hasher.hash(password)

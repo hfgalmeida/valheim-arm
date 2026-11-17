@@ -29,7 +29,7 @@ def test_delete_requires_confirmation_revision_csrf_and_stopped_game(runtime, mo
     runtime.process = SimpleNamespace(returncode=None)
     assert client.post("/api/v1/plugins/delete", json=body).status_code == 409
     runtime.process = None
-    runtime.jobs.append({"id": "waiting", "action": "restart", "state": "adiado", "created": 0})
+    runtime.jobs.append({"id": "waiting", "action": "restart", "state": "deferred", "created": 0})
     assert client.post("/api/v1/plugins/delete", json=body).status_code == 409
     runtime.jobs.clear()
     assert (root / "example.dll").exists()
@@ -61,10 +61,10 @@ def test_delete_restore_is_audited_and_never_overwrites_uploaded_plugin(runtime,
     assert (root / "example.dll").read_bytes() == dll()
     events = client.get("/api/v1/audit?operation=plugins").json()["events"]
     assert any(
-        event.get("changes", {}).get("arquivo", {}).get("depois") == "excluído recuperável"
+        event.get("changes", {}).get("file", {}).get("after") == "recoverable deletion"
         for event in events
     )
     assert any(
-        event.get("changes", {}).get("arquivo", {}).get("depois") == "instalado" for event in events
+        event.get("changes", {}).get("file", {}).get("after") == "instalado" for event in events
     )
     assert all(event["actor"]["username"] == "admin" for event in events)

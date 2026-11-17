@@ -26,7 +26,7 @@ def http_error(status, errors=None):
 
 def test_existing_image_is_blocked():
     opener = Mock(side_effect=[token(), io.BytesIO(b"manifest")])
-    with pytest.raises(RuntimeError, match="já está publicada.*VERSION"):
+    with pytest.raises(RuntimeError, match="already published.*VERSION"):
         check("hfgalmeida/valheim-arm", "0.1.0", opener)
     manifest = opener.call_args_list[1].args[0]
     assert manifest.full_url.endswith("/hfgalmeida/valheim-arm/manifests/0.1.0")
@@ -56,7 +56,7 @@ def test_authenticated_check_uses_pat_only_at_token_endpoint():
 
 def test_authenticated_existing_tag_remains_blocked():
     opener = Mock(side_effect=[token(), io.BytesIO(b"manifest")])
-    with pytest.raises(RuntimeError, match="já está publicada"):
+    with pytest.raises(RuntimeError, match="already published"):
         check("hfgalmeida/valheim-arm", "0.1.0", opener, username="owner", password="test-pat")
 
 
@@ -68,13 +68,13 @@ def test_wrong_credentials_have_actionable_error_without_secret(status):
     message = str(result.value)
     assert "DOCKERHUB_TOKEN" in message and "DOCKERHUB_IMAGE" in message
     assert "sensitive-pat" not in message
-    assert "publicação bloqueada" in message
+    assert "publication blocked" in message
 
 
 @pytest.mark.parametrize("username,password", [("owner", None), (None, "test-pat")])
 def test_partial_credentials_are_not_silently_downgraded_to_anonymous(username, password):
     opener = Mock()
-    with pytest.raises(ValueError, match="juntos"):
+    with pytest.raises(ValueError, match="both"):
         check("hfgalmeida/valheim-arm", "0.2.0", opener, username=username, password=password)
     opener.assert_not_called()
 
@@ -93,13 +93,13 @@ def test_access_token_response_is_supported():
 @pytest.mark.parametrize("status", [401, 403, 404, 429, 500, 503])
 def test_registry_failure_never_counts_as_available_version(status):
     opener = Mock(side_effect=[token(), http_error(status)])
-    with pytest.raises(RuntimeError, match="publicação bloqueada"):
+    with pytest.raises(RuntimeError, match="publication blocked"):
         check("hfgalmeida/valheim-arm", "0.2.0", opener)
 
 
 def test_wrong_repository_is_not_treated_as_missing_tag():
     opener = Mock(side_effect=[token(), http_error(404, [{"code": "NAME_UNKNOWN"}])])
-    with pytest.raises(RuntimeError, match="bloqueada"):
+    with pytest.raises(RuntimeError, match="blocked"):
         check("hfgalmeida/wrong-image", "0.2.0", opener)
 
 
@@ -115,14 +115,14 @@ def test_wrong_repository_is_not_treated_as_missing_tag():
 )
 def test_token_failures_block_publication(failure):
     opener = Mock(side_effect=[failure])
-    with pytest.raises(RuntimeError, match="bloqueada"):
+    with pytest.raises(RuntimeError, match="blocked"):
         check("hfgalmeida/valheim-arm", "0.2.0", opener)
     assert opener.call_count == 1
 
 
 def test_manifest_network_failure_blocks_publication():
     opener = Mock(side_effect=[token(), urllib.error.URLError("offline")])
-    with pytest.raises(RuntimeError, match="bloqueada"):
+    with pytest.raises(RuntimeError, match="blocked"):
         check("hfgalmeida/valheim-arm", "0.2.0", opener)
 
 

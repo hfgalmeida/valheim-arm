@@ -185,7 +185,7 @@ def test_disable_reset_and_role_change_invalidate_sessions_and_queued_jobs(runti
         == 200
     )
     assert operator.get("/api/v1/session").status_code == 401
-    assert next(j for j in runtime.jobs if j["id"] == own["id"])["state"] == "cancelado"
+    assert next(j for j in runtime.jobs if j["id"] == own["id"])["state"] == "cancelled"
     admin.patch("/api/v1/accounts/" + user["id"], json={"role": "operator", "enabled": True})
     login(operator, "operator-one", "personal-operator-password")
     assert (
@@ -226,7 +226,7 @@ def test_operator_stop_and_restart_wait_without_changing_run_intent(runtime, mon
 
     with patch("app.runtime.os.killpg", create=True) as kill:
         asyncio.run(scenario())
-    assert pending["state"] == "adiado"
+    assert pending["state"] == "deferred"
     assert runtime.run_intent.running
     kill.assert_not_called()
     restored = Runtime(runtime.data, runtime.config)
@@ -255,7 +255,7 @@ def test_audit_persists_attribution_changes_results_and_never_credentials(runtim
 
     asyncio.run(scenario())
     result = admin.get("/api/v1/audit?user=operator-one&operation=start").json()["events"]
-    assert {r["outcome"] for r in result} >= {"fila", "executando", "concluído"}
+    assert {r["outcome"] for r in result} >= {"queued", "running", "completed"}
     assert all(r["job_id"] == job["id"] and r["actor"]["id"] == user["id"] for r in result)
     raw = runtime.audit.path.read_text()
     for secret in (
@@ -268,8 +268,8 @@ def test_audit_persists_attribution_changes_results_and_never_credentials(runtim
         assert secret not in raw
     events = admin.get("/api/v1/audit?operation=configuration").json()["events"]
     event = next(r for r in events if "changes" in r)
-    assert event["changes"]["public"] == {"antes": True, "depois": False}
-    assert event["changes"]["server_password"] == {"alterado": True}
+    assert event["changes"]["public"] == {"before": True, "after": False}
+    assert event["changes"]["server_password"] == {"changed": True}
     from app.audit import Audit
 
     restored = Audit(runtime.data)
@@ -364,10 +364,10 @@ def test_interrupted_operation_records_audit_failure_on_next_boot(runtime, monke
     admin, operator, _ = operator_fixture(runtime, monkeypatch)
     response = operator.post("/api/v1/actions", json={"action": "restart"}).json()
     job = next(j for j in runtime.jobs if j["id"] == response["id"])
-    job["state"] = "executando"
+    job["state"] = "running"
     runtime.persist_pending()
     restored = Runtime(runtime.data, runtime.config)
-    event = next(r for r in restored.audit.query(operation="restart") if r["outcome"] == "falha")
+    event = next(r for r in restored.audit.query(operation="restart") if r["outcome"] == "failed")
     assert event["actor"]["username"] == "operator-one"
     assert event["job_id"] == job["id"]
     assert restored.queue.empty()
@@ -385,21 +385,21 @@ def test_audit_retention_filters_and_corruption_fail_closed(tmp_path):
             "time": now,
             "actor": {"username": "user"},
             "operation": "start",
-            "outcome": "fila",
+            "outcome": "queued",
         }
         for i in range(LIMIT + 3)
     ]
     audit.records.insert(0, {"time": 1})
     with patch("app.audit.atomic_json"):
-        audit.append({"id": "admin", "username": "admin", "role": "admin"}, "stop", "concluído")
+        audit.append({"id": "admin", "username": "admin", "role": "admin"}, "stop", "completed")
     assert len(audit.records) == LIMIT
-    assert audit.query(user="admin", operation="stop")[0]["outcome"] == "concluído"
+    assert audit.query(user="admin", operation="stop")[0]["outcome"] == "completed"
     assert not audit.query(since=now + 100)
     audit.path.parent.mkdir(parents=True, exist_ok=True)
     audit.path.write_text("corrupt")
     broken = Audit(tmp_path)
     with pytest.raises(OSError):
-        broken.append(None, "start", "fila")
+        broken.append(None, "start", "queued")
     assert audit.path.read_text() == "corrupt"
 
 
@@ -408,7 +408,7 @@ def test_image_audit_distinguishes_request_failure_from_final_job_outcome(tmp_pa
 
     audit = Audit(tmp_path)
     actor = {"id": "admin", "username": "admin", "role": "admin"}
-    audit.append(actor, "image-update", "falha", request_id="request", job_id="job")
+    audit.append(actor, "image-update", "failed", request_id="request", job_id="job")
     audit.image_result({"state": "failed", "request_id": "job"})
     audit.image_result({"state": "failed", "request_id": "job"})
     assert len([r for r in audit.records if r.get("kind") == "job"]) == 1
@@ -423,7 +423,7 @@ def test_revoked_operator_start_does_not_change_stopped_intent(runtime, monkeypa
     assert not runtime.run_intent.running
     admin.patch("/api/v1/accounts/" + user["id"], json={"role": "operator", "enabled": False})
     assert not runtime.run_intent.running
-    assert runtime.jobs[-1]["state"] == "cancelado"
+    assert runtime.jobs[-1]["state"] == "cancelled"
 
 
 def test_operator_cannot_forge_attribution_or_disable_idle_guard(runtime, monkeypatch):

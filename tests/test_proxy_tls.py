@@ -15,9 +15,7 @@ import pytest
 CADDY = os.environ.get("CADDY_EXE") or shutil.which("caddy")
 
 
-@pytest.mark.skipif(
-    not CADDY, reason="Caddy necessário; configure CADDY_EXE para testar o TLS real"
-)
+@pytest.mark.skipif(not CADDY, reason="Caddy required; set CADDY_EXE for real TLS checks")
 def test_proxy_presents_public_ip_certificate_without_sni(tmp_path):
     ip = "192.0.2.10"
     source = Path(__file__).resolve().parents[1] / "docker/Caddyfile"
@@ -69,13 +67,13 @@ def test_proxy_presents_public_ip_certificate_without_sni(tmp_path):
                 except OSError as exc:
                     last_error = exc
                     time.sleep(0.1)
-            pytest.fail(f"TLS sem SNI não funcionou: {last_error}")
+            pytest.fail(f"TLS without SNI failed: {last_error}")
         finally:
             process.terminate()
             process.wait(timeout=5)
 
 
-@pytest.mark.skipif(not CADDY, reason="Caddy necessário para validar os limites HTTPS")
+@pytest.mark.skipif(not CADDY, reason="Caddy required to check HTTPS limits")
 def test_plugin_upload_has_a_separate_request_limit(tmp_path):
     import http.client
     import threading

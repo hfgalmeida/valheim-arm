@@ -153,7 +153,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
         try:
             if lifecycle:
                 if not re.fullmatch(r"https://[A-Za-z0-9.\-]+(?::\d+)?", origin):
-                    raise RuntimeError("PANEL_ORIGIN HTTPS obrigatório")
+                    raise RuntimeError("HTTPS PANEL_ORIGIN is required")
                 await rt.boot()
                 task = asyncio.create_task(metrics.run())
             yield
@@ -206,12 +206,12 @@ def create_app(data=None, runtime=None, lifecycle=True):
                     (
                         "enfileirado"
                         if response.status_code == 202
-                        else "concluído" if response.status_code < 400 else "falha"
+                        else "completed" if response.status_code < 400 else "failed"
                     ),
                     getattr(
                         request.state,
                         "audit_resource",
-                        request.scope.get("route").path if request.scope.get("route") else "painel",
+                        request.scope.get("route").path if request.scope.get("route") else "panel",
                     ),
                     request.state.audit_request_id,
                     getattr(request.state, "audit_job_id", None),
@@ -226,20 +226,20 @@ def create_app(data=None, runtime=None, lifecycle=True):
     def session(request: Request):
         value = auth.session(request.cookies.get("session"))
         if not value:
-            raise HTTPException(401, "Faça login")
+            raise HTTPException(401, "Sign in")
         user = value["user"]
         path = request.url.path
         if request.method not in ("GET", "HEAD"):
             if request.headers.get("origin") != origin or not secrets.compare_digest(
                 request.headers.get("x-csrf-token", ""), value["csrf"]
             ):
-                raise HTTPException(403, "Origem ou token CSRF inválido")
+                raise HTTPException(403, "Invalid origin or CSRF token")
         if user["must_change_password"] and path not in (
             "/api/v1/session",
             "/api/v1/password",
             "/api/v1/logout",
         ):
-            raise HTTPException(403, "Troque a senha temporária antes de acessar o painel")
+            raise HTTPException(403, "Change the temporary password before accessing the panel")
         allowed = (
             request.method == "GET"
             and (
@@ -255,32 +255,32 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 rt.audit.append(
                     user,
                     operation(request),
-                    "negado",
+                    "denied",
                     "recurso administrativo",
                     request.state.audit_request_id,
                 )
             except OSError:
                 pass
-            raise HTTPException(403, "Acesso restrito ao administrador")
+            raise HTTPException(403, "Administrator access required")
         if request.method not in ("GET", "HEAD"):
             if path not in ("/api/v1/logout", "/api/v1/image-update", "/api/v1/password"):
                 rt.host_updates.status()
                 if rt.host_updates.busy:
                     raise HTTPException(
                         409,
-                        "Atualização da imagem em andamento; aguarde antes de executar outras operações.",
+                        "Image update in progress; wait before performing other operations.",
                     )
         if (
             request.method not in ("GET", "HEAD") or path.startswith("/api/v1/backups/")
         ) and not getattr(request.state, "audit_started", False):
             try:
                 rt.audit.append(
-                    user, operation(request), "solicitado", "painel", request.state.audit_request_id
+                    user, operation(request), "requested", "panel", request.state.audit_request_id
                 )
             except OSError:
                 raise HTTPException(
                     503,
-                    "Auditoria indisponível; confira espaço e permissões antes de alterar o servidor",
+                    "Audit unavailable; check disk space and permissions before changing the server",
                 ) from None
             request.state.audit_actor = user
             request.state.audit_started = True
@@ -306,13 +306,13 @@ def create_app(data=None, runtime=None, lifecycle=True):
         }
         if item.get("error"):
             result["error"] = (
-                "Aguardando confirmação de servidor vazio e pronto"
-                if item["state"] == "adiado"
-                else "Operação não concluída; contate o administrador"
+                "Waiting for an empty, ready server"
+                if item["state"] == "deferred"
+                else "Operation did not complete; contact the administrator"
             )
         if item.get("result"):
             result["result"] = (
-                "Operação concluída" if item["state"] == "concluído" else "Solicitação encerrada"
+                "Operation completed" if item["state"] == "completed" else "Request closed"
             )
         return result
 
@@ -323,12 +323,12 @@ def create_app(data=None, runtime=None, lifecycle=True):
             status["jobs"] = [public_job(j, user) for j in status["jobs"]]
             return status
         detail = {
-            "ready": "Servidor pronto para conexão.",
-            "starting": "O jogo está iniciando.",
-            "stopping": "Aguardando salvamento e saída.",
-            "stopped": "Jogo parado.",
-            "recovering": "Recuperação automática em andamento.",
-            "failed": "Falha no jogo; contate o administrador.",
+            "ready": "Server ready for connections.",
+            "starting": "The game is starting.",
+            "stopping": "Waiting for save and shutdown.",
+            "stopped": "Game stopped.",
+            "recovering": "Automatic recovery in progress.",
+            "failed": "Game failure; contact the administrator.",
         }
         diagnostic = status["diagnostics"]
         return {
@@ -337,7 +337,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             "server_name": rt.config.effective().server_name,
             "diagnostics": {
                 "phase": diagnostic["phase"],
-                "detail": detail.get(diagnostic["phase"], "Consulte o administrador."),
+                "detail": detail.get(diagnostic["phase"], "Contact the administrator."),
                 "retry_in_seconds": diagnostic["retry_in_seconds"],
                 "last_failure": None,
             },
@@ -359,7 +359,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.post("/api/v1/login")
     async def login(body: Login, request: Request, response: Response):
         if request.headers.get("origin") != origin:
-            raise HTTPException(403, "Origem inválida")
+            raise HTTPException(403, "Invalid origin")
         try:
             token, csrf = await asyncio.to_thread(
                 auth.login, body.password, request.client.host, body.username
@@ -370,13 +370,13 @@ def create_app(data=None, runtime=None, lifecycle=True):
             rt.audit.append(
                 auth.sessions[token]["user"],
                 "login",
-                "concluído",
-                "painel",
+                "completed",
+                "panel",
                 request.state.audit_request_id,
             )
         except OSError:
             auth.sessions.pop(token, None)
-            raise HTTPException(503, "Auditoria indisponível; contate o administrador") from None
+            raise HTTPException(503, "Audit unavailable; contact the administrator") from None
         response.set_cookie(
             "session",
             token,
@@ -413,15 +413,15 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.patch("/api/v1/config", dependencies=[Depends(session)])
     async def change_config(body: ConfigChange, request: Request):
         if rt.active:
-            raise HTTPException(409, "Aguarde a operação atual antes de alterar configurações")
+            raise HTTPException(409, "Wait for the current operation before changing settings")
         try:
             before = rt.config.effective().model_dump()
             after = rt.config.change(body.changes, body.reset, body.confirm_world).model_dump()
             request.state.audit_changes = {
                 key: (
-                    {"alterado": True}
+                    {"changed": True}
                     if any(secret in key for secret in ("password", "token", "url", "secret"))
-                    else {"antes": before[key], "depois": after[key]}
+                    else {"before": before[key], "after": after[key]}
                 )
                 for key in before
                 if before[key] != after[key]
@@ -434,11 +434,9 @@ def create_app(data=None, runtime=None, lifecycle=True):
     async def action(body: Action, request: Request, value=Depends(session)):
         operator = value["user"]["role"] == "operator"
         if operator and body.action not in ("start", "stop", "restart"):
-            raise HTTPException(
-                403, "O operador pode somente iniciar, parar e reiniciar o servidor"
-            )
+            raise HTTPException(403, "Operators can only start, stop, and restart the server")
         if body.action == "restore" and not body.confirm:
-            raise HTTPException(422, "Confirmação de restauração obrigatória")
+            raise HTTPException(422, "Restore confirmation required")
         try:
             item = rt.submit(
                 body.action,
@@ -451,7 +449,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             request.state.audit_job_id = item["id"]
             return public_job(item, value["user"])
         except (ValueError, asyncio.QueueFull) as exc:
-            raise HTTPException(409, str(exc) or "Fila cheia")
+            raise HTTPException(409, str(exc) or "Queue full")
 
     @app.get("/api/v1/image-version", dependencies=[Depends(session)])
     async def check_image_version():
@@ -466,12 +464,10 @@ def create_app(data=None, runtime=None, lifecycle=True):
         body: ImageUpdateRequest, request: Request, value=Depends(session)
     ):
         if not body.confirm:
-            raise HTTPException(
-                422, "Confirme a atualização da imagem e a possível desconexão de jogadores."
-            )
+            raise HTTPException(422, "Confirm the image update and possible player disconnections.")
         if rt.active or not rt.queue.empty() or rt.closing:
             raise HTTPException(
-                409, "Aguarde as operações do jogo terminarem antes de atualizar a imagem."
+                409, "Wait for game operations to finish before updating the image."
             )
         request.state.audit_job_id = body.request_id
         try:
@@ -480,7 +476,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
         except (OSError, http.client.HTTPException):
-            raise HTTPException(503, "Serviço de atualização indisponível no host.") from None
+            raise HTTPException(503, "Host updater service unavailable.") from None
 
     @app.get("/api/v1/jobs/{job_id}")
     async def job(job_id: str, value=Depends(session)):
@@ -490,7 +486,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 or item.get("actor", {}).get("id") == value["user"]["id"]
             ):
                 return public_job(item, value["user"])
-        raise HTTPException(404, "Operação não encontrada")
+        raise HTTPException(404, "Operation not found")
 
     def config_error(exc):
         code = (
@@ -501,7 +497,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             (
                 str(exc)
                 if isinstance(exc, ValueError)
-                else "Arquivo indisponível; confira permissões e espaço livre"
+                else "File unavailable; check permissions and free space"
             ),
         )
 
@@ -510,10 +506,10 @@ def create_app(data=None, runtime=None, lifecycle=True):
             rt.live
             or rt.active
             or not rt.queue.empty()
-            or any(j["state"] in ("fila", "executando", "adiado") for j in rt.jobs)
+            or any(j["state"] in ("queued", "running", "deferred") for j in rt.jobs)
         ):
             raise HTTPException(
-                409, "Pare o jogo e aguarde as operações terminarem antes de alterar plugins"
+                409, "Stop the game and wait for pending operations before changing plugins"
             )
 
     @app.get("/api/v1/plugins", dependencies=[Depends(session)])
@@ -536,19 +532,19 @@ def create_app(data=None, runtime=None, lifecycle=True):
     async def upload_plugin(request: Request, name: str, revision: str | None = None):
         plugin_stopped()
         if revision is not None and not re.fullmatch(r"[a-f0-9]{64}", revision):
-            raise HTTPException(422, "Confirmação de substituição inválida")
+            raise HTTPException(422, "Invalid replacement confirmation")
         if (
             request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             != "application/octet-stream"
         ):
-            raise HTTPException(415, "Envie o conteúdo binário da DLL")
+            raise HTTPException(415, "Send the binary DLL content")
         try:
             with plugins.staging(name) as (file, temporary):
                 size = 0
                 async for chunk in request.stream():
                     size += len(chunk)
                     if size > MAX_PLUGIN_SIZE:
-                        raise HTTPException(413, "A DLL pode ter no máximo 16 MiB")
+                        raise HTTPException(413, "The DLL must not exceed 16 MiB")
                     file.write(chunk)
                 file.flush()
                 os.fsync(file.fileno())
@@ -559,7 +555,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
                 result = plugins.commit(name, temporary, revision)
                 request.state.audit_resource = "Plugin " + result["name"]
                 request.state.audit_changes = {
-                    "revisão": {"antes": revision, "depois": result["revision"]}
+                    "revision": {"before": revision, "after": result["revision"]}
                 }
                 return result
         except (OSError, ValueError) as exc:
@@ -572,7 +568,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             result = plugins.restore(body.name, body.revision)
             request.state.audit_resource = "Plugin " + result["name"]
             request.state.audit_changes = {
-                "revisão": {"antes": body.revision, "depois": result["revision"]}
+                "revision": {"before": body.revision, "after": result["revision"]}
             }
             return result
         except (OSError, ValueError) as exc:
@@ -581,15 +577,15 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.post("/api/v1/plugins/delete", dependencies=[Depends(session)])
     async def delete_plugin(body: PluginDelete, request: Request):
         if not body.confirm:
-            raise HTTPException(422, "Confirme a exclusão do plugin")
+            raise HTTPException(422, "Confirm plugin deletion")
         plugin_stopped()
         try:
             result = plugins.delete(body.name, body.revision)
             request.state.audit_resource = "Plugin " + body.name
             request.state.audit_changes = {
-                "arquivo": {"antes": "instalado", "depois": "excluído recuperável"},
-                "revisão": body.revision,
-                "cópia": result["id"],
+                "file": {"before": "instalado", "after": "recoverable deletion"},
+                "revision": body.revision,
+                "copy": result["id"],
             }
             return result
         except (OSError, ValueError) as exc:
@@ -598,15 +594,15 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.post("/api/v1/plugins/restore-deleted", dependencies=[Depends(session)])
     async def restore_deleted_plugin(body: PluginDeletedRestore, request: Request):
         if not body.confirm:
-            raise HTTPException(422, "Confirme a restauração do plugin excluído")
+            raise HTTPException(422, "Confirm restoration of the deleted plugin")
         plugin_stopped()
         try:
             result = plugins.restore_deleted(body.id, body.revision)
             request.state.audit_resource = "Plugin " + result["name"]
             request.state.audit_changes = {
-                "arquivo": {"antes": "excluído", "depois": "instalado"},
-                "revisão": result["revision"],
-                "cópia": body.id,
+                "file": {"before": "deleted", "after": "instalado"},
+                "revision": result["revision"],
+                "copy": body.id,
             }
             return result
         except (OSError, ValueError) as exc:
@@ -631,14 +627,14 @@ def create_app(data=None, runtime=None, lifecycle=True):
         if rt.live or rt.active or not rt.queue.empty():
             raise HTTPException(
                 409,
-                "Pare o jogo pelo painel e aguarde as operações terminarem antes de editar plugins",
+                "Stop the game in the panel and wait for pending operations before editing plugins",
             )
         try:
             result = mod_configs.save(body.path, body.content, body.revision)
-            request.state.audit_resource = "Configuração de plugin " + result["path"]
+            request.state.audit_resource = "Plugin configuration " + result["path"]
             request.state.audit_changes = {
-                "arquivo": {"alterado": True},
-                "revisão": {"antes": body.revision, "depois": result["revision"]},
+                "file": {"changed": True},
+                "revision": {"before": body.revision, "after": result["revision"]},
             }
             return result
         except (OSError, ValueError) as exc:
@@ -662,13 +658,13 @@ def create_app(data=None, runtime=None, lifecycle=True):
             await rt.alerts.check_freshness(rt)
             result = rt.alerts.describe()
             request.state.audit_changes = {
-                "ativado": {"antes": before["enabled"], "depois": result["enabled"]}
+                "enabled": {"before": before["enabled"], "after": result["enabled"]}
             }
             for key in ("backup_max_age_hours", "cloud_max_age_hours"):
                 if before[key] != result[key]:
-                    request.state.audit_changes[key] = {"antes": before[key], "depois": result[key]}
+                    request.state.audit_changes[key] = {"before": before[key], "after": result[key]}
             if body.url:
-                request.state.audit_changes["webhook"] = {"alterado": True}
+                request.state.audit_changes["webhook"] = {"changed": True}
             return result
         except (OSError, ValueError) as exc:
             config_error(exc)
@@ -690,12 +686,12 @@ def create_app(data=None, runtime=None, lifecycle=True):
             before = rt.cloud.describe()
             result = rt.cloud.configure(body.enabled, body.folder, body.config)
             request.state.audit_changes = {
-                key: {"antes": before[key], "depois": result[key]}
+                key: {"before": before[key], "after": result[key]}
                 for key in ("enabled", "folder", "provider")
                 if before[key] != result[key]
             }
             if body.config:
-                request.state.audit_changes["conexão"] = {"alterado": True}
+                request.state.audit_changes["connection"] = {"changed": True}
             return result
         except ValueError as exc:
             raise HTTPException(422, str(exc))
@@ -715,7 +711,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.get("/api/v1/users/{kind}", dependencies=[Depends(session)])
     async def get_users(kind: str):
         if kind not in LISTS:
-            raise HTTPException(404, "Lista inválida")
+            raise HTTPException(404, "Invalid list")
         path = data / "saves" / LISTS[kind]
         known = {entry["id"]: entry for entry in rt.player_directory.describe()}
         for filename in LISTS.values():
@@ -742,20 +738,20 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.put("/api/v1/player-directory", dependencies=[Depends(session)])
     async def register_player(body: PlayerIdentity, request: Request):
         if not body.confirm:
-            raise HTTPException(422, "Confirme que o ID foi conferido no F2 do jogo")
+            raise HTTPException(422, "Confirm that the ID was checked in the in-game F2 window")
         try:
             previous = {entry["id"]: entry for entry in rt.player_directory.describe()}
             result = rt.player_directory.register(body.id, body.name, body.platform)
-            request.state.audit_resource = "Identificação de jogador " + result["id"]
+            request.state.audit_resource = "Player identity " + result["id"]
             request.state.audit_changes = {
-                "nome": {
-                    "antes": previous.get(result["id"], {}).get("name", ""),
-                    "depois": result["name"],
+                "name": {
+                    "before": previous.get(result["id"], {}).get("name", ""),
+                    "after": result["name"],
                 },
-                "origem": "confirmação administrativa",
-                "plataforma": {
-                    "antes": previous.get(result["id"], {}).get("platform"),
-                    "depois": result["platform"],
+                "source": "administrator confirmation",
+                "platform": {
+                    "before": previous.get(result["id"], {}).get("platform"),
+                    "after": result["platform"],
                 },
             }
             return result
@@ -765,16 +761,16 @@ def create_app(data=None, runtime=None, lifecycle=True):
     @app.put("/api/v1/users/{kind}", dependencies=[Depends(session)])
     async def put_users(kind: str, body: UserList, request: Request):
         if kind not in LISTS:
-            raise HTTPException(404, "Lista inválida")
+            raise HTTPException(404, "Invalid list")
         if rt.active:
-            raise HTTPException(409, "Aguarde a operação atual antes de editar listas")
+            raise HTTPException(409, "Wait for the current operation before editing lists")
         entries = list(
             dict.fromkeys(
                 e.strip() for e in body.entries if e.strip() and not e.strip().startswith("//")
             )
         )
         if any(not re.fullmatch(r"(?:[A-Za-z]+_)?[A-Za-z0-9:_-]{1,128}", e) for e in entries):
-            raise HTTPException(422, "Use um ID de plataforma por linha, copiado do jogo")
+            raise HTTPException(422, "Use one platform ID per line, copied from the game")
         path = data / "saves" / LISTS[kind]
         previous = path.read_text().splitlines() if path.exists() else []
         fd, temporary = tempfile.mkstemp(dir=path.parent)
@@ -787,7 +783,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
         finally:
             Path(temporary).unlink(missing_ok=True)
         request.state.audit_resource = "Lista " + kind
-        request.state.audit_changes = {"entradas": {"antes": previous, "depois": entries}}
+        request.state.audit_changes = {"entries": {"before": previous, "after": entries}}
         return {"entries": entries}
 
     @app.get("/api/v1/events", dependencies=[Depends(session)])
@@ -819,16 +815,16 @@ def create_app(data=None, runtime=None, lifecycle=True):
         except ValueError as exc:
             raise HTTPException(429, str(exc)) from None
         if not valid:
-            raise HTTPException(403, "Senha atual inválida")
+            raise HTTPException(403, "Invalid current password")
         if secrets.compare_digest(body.current_password, body.password):
-            raise HTTPException(422, "Escolha uma senha diferente da senha atual")
+            raise HTTPException(422, "Choose a password different from the current password")
         try:
             await asyncio.to_thread(
                 auth.accounts.password, user["id"], body.password, False, value["credential"]
             )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
-        request.state.audit_changes = {"senha": {"alterado": True}}
+        request.state.audit_changes = {"password": {"changed": True}}
         response.delete_cookie("session", secure=True, httponly=True, samesite="strict", path="/")
         return {"ok": True, "login_required": True}
 
@@ -844,7 +840,7 @@ def create_app(data=None, runtime=None, lifecycle=True):
             )
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
-        request.state.audit_changes = {"conta": {"depois": result}}
+        request.state.audit_changes = {"account": {"after": result}}
         return result
 
     @app.patch("/api/v1/accounts/{user_id}", dependencies=[Depends(session)])
@@ -855,14 +851,14 @@ def create_app(data=None, runtime=None, lifecycle=True):
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from None
         request.state.audit_changes = {
-            "conta": {"antes": auth.accounts.public(old), "depois": result}
+            "account": {"before": auth.accounts.public(old), "after": result}
         }
         for pending in rt.jobs:
             if pending.get("actor", {}).get("id") == user_id and pending["state"] in (
-                "fila",
-                "adiado",
+                "queued",
+                "deferred",
             ):
-                pending["state"] = "cancelado"
+                pending["state"] = "cancelled"
         rt.persist_pending()
         return result
 
@@ -875,13 +871,13 @@ def create_app(data=None, runtime=None, lifecycle=True):
             await asyncio.to_thread(auth.accounts.password, user_id, body.password, True)
         except ValueError as exc:
             raise HTTPException(404, str(exc)) from None
-        request.state.audit_changes = {"senha": {"alterado": True}}
+        request.state.audit_changes = {"password": {"changed": True}}
         for pending in rt.jobs:
             if pending.get("actor", {}).get("id") == user_id and pending["state"] in (
-                "fila",
-                "adiado",
+                "queued",
+                "deferred",
             ):
-                pending["state"] = "cancelado"
+                pending["state"] = "cancelled"
         rt.persist_pending()
         return {"ok": True}
 

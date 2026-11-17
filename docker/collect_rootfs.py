@@ -14,7 +14,7 @@ def collect_rootfs(data_dir, destination, info_path):
     rootfs_dir = data_dir / "RootFS"
     if not rootfs_dir.is_dir():
         raise ValueError(
-            f"Diretório {rootfs_dir} ausente; confira FEX_APP_DATA_LOCATION e o download do FEXRootFSFetcher"
+            f"Directory {rootfs_dir} missing; check FEX_APP_DATA_LOCATION and the FEXRootFSFetcher download"
         )
     candidates = [
         p
@@ -28,7 +28,7 @@ def collect_rootfs(data_dir, destination, info_path):
     if len(candidates) != 1:
         entries = sorted(p.name for p in rootfs_dir.iterdir())
         raise ValueError(
-            f"Esperado um rootfs Ubuntu x86_64 extraído em {rootfs_dir}; candidatos={candidates}, entradas={entries}"
+            f"Expected an extracted Ubuntu x86_64 rootfs in {rootfs_dir}; candidates={candidates}, entries={entries}"
         )
     root = candidates[0]
     if not any(
@@ -41,9 +41,11 @@ def collect_rootfs(data_dir, destination, info_path):
             "usr/lib/i386-linux-gnu/ld-linux.so.2",
         )
     ):
-        raise ValueError("Rootfs não inclui loader i386 necessário ao SteamCMD")
+        raise ValueError("Rootfs does not contain the i386 loader required by SteamCMD")
     if destination.exists():
-        raise ValueError(f"Destino {destination} já existe; a coleta não sobrescreve um rootfs")
+        raise ValueError(
+            f"Destination {destination} already exists; rootfs collection never overwrites it"
+        )
     info = json.loads(info_path.read_text(encoding="utf-8"))
     images = [p for p in rootfs_dir.iterdir() if p.is_file() and p.suffix in (".sqsh", ".ero")]
     hashes = {}

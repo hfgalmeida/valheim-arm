@@ -14,7 +14,7 @@ hasher = PasswordHasher()
 
 def set_password(data, password):
     if len(password) < 12 or len(password) > 256:
-        raise ValueError("Senha administrativa deve ter entre 12 e 256 caracteres")
+        raise ValueError("Administrator password must contain 12 to 256 characters")
     atomic_json(data / "config/admin.json", {"hash": hasher.hash(password)})
 
 
@@ -40,7 +40,7 @@ class Auth:
             while attempts and now - attempts[0] > 300:
                 attempts.popleft()
             if len(attempts) >= 5:
-                raise ValueError("Muitas tentativas; aguarde cinco minutos")
+                raise ValueError("Too many attempts; wait five minutes")
             attempts.append(now)
             return attempts
 
@@ -74,7 +74,7 @@ class Auth:
             or not user["enabled"]
             or fingerprint != self.fingerprint(user["id"])
         ):
-            raise ValueError("Credenciais inválidas")
+            raise ValueError("Invalid credentials")
         with self.rate_lock:
             attempts.clear()
         self.sessions = {k: v for k, v in self.sessions.items() if v["expires"] > now}

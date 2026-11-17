@@ -110,7 +110,7 @@ def test_runtime_consumes_redacted_logs(runtime):
     asyncio.run(runtime.read_game(process))
     data = runtime.mod_diagnostics.describe(False, True)
     assert "game-password" not in str(data)
-    assert "[senha]" in data["issues"][0]["message"]
+    assert "[password]" in data["issues"][0]["message"]
 
 
 def test_plugin_endpoint_requires_auth_and_shows_pending_file(runtime, monkeypatch):

@@ -9,14 +9,14 @@ import pytest
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BROWSER_TESTS") != "1",
-    reason="Ative RUN_BROWSER_TESTS=1 para o teste de navegador",
+    reason="Set RUN_BROWSER_TESTS=1 for browser checks",
 )
 
 
 def test_panel_login_forms_actions_and_mobile(runtime):
     playwright = pytest.importorskip("playwright.sync_api")
     static = Path(__file__).resolve().parents[1] / "app/static"
-    image_update = {"available": True, "state": "idle", "message": "Pronto para atualizar."}
+    image_update = {"available": True, "state": "idle", "message": "Ready to update."}
     authenticated = False
     requests = []
     plugin_config = runtime.data / "mods/BepInEx/config/test.cfg"
@@ -39,7 +39,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         "network_out_bps": 4096,
         "disk_used": 8 * 1024**3,
         "disk_total": 50 * 1024**3,
-        "scope": "contêiner (cgroup v2)",
+        "scope": "container (cgroup v2)",
     }
     state = runtime.status()
     state.update(
@@ -64,7 +64,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         },
         players={
             "count": 2,
-            "reason": "snapshot do jogo",
+            "reason": "game snapshot",
             "source": "game_log",
             "updated_at": 1794643216,
             "age_seconds": 12,
@@ -95,7 +95,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         jobs=[
             {
                 "action": "restart",
-                "state": "concluído",
+                "state": "completed",
                 "created": 1794643216,
                 "started": 1794643217,
                 "finished": 1794643227,
@@ -122,7 +122,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             query = parse_qs(urlsplit(request.request.url).query)
             endpoint = path.removeprefix("/api/v1").split("?", 1)[0]
             if endpoint == "/session":
-                request.fulfill(status=401, json={"detail": "Faça login"})
+                request.fulfill(status=401, json={"detail": "Sign in"})
                 return
             if endpoint == "/login":
                 authenticated = True
@@ -159,7 +159,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             elif endpoint == "/image-update":
                 if method == "POST":
                     assert payload["confirm"] is True and len(payload["request_id"]) == 32
-                    image_update.update(state="running", message="Baixando a imagem Docker.")
+                    image_update.update(state="running", message="Downloading a image Docker.")
                 value = image_update.copy()
             elif endpoint == "/state":
                 value = state
@@ -212,7 +212,7 @@ def test_panel_login_forms_actions_and_mobile(runtime):
                     "known_players": [{"id": "Steam_76561198000000001", "last_seen": None}],
                 }
             elif endpoint == "/actions":
-                value = {"id": "browser-job", "state": "fila"}
+                value = {"id": "browser-job", "state": "queued"}
             elif endpoint == "/logout":
                 value = {"ok": True}
             else:
@@ -248,18 +248,18 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.route("https://panel.test/**", route)
         page.goto("https://panel.test")
         page.locator("#password").fill("admin-test-password")
-        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.get_by_role("button", name="Sign in", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
         page.evaluate("document.fonts.ready")
-        assert "iniciar o jogo automaticamente" in page.locator("#run-intent").inner_text()
+        assert "start the game automatically" in page.locator("#run-intent").inner_text()
         page.evaluate("s => update(s)", state | {"run_intent": {"running": False, "error": None}})
-        assert "manter o jogo parado" in page.locator("#run-intent").inner_text()
+        assert "keep the game stopped" in page.locator("#run-intent").inner_text()
         page.evaluate("s => update(s)", state)
-        assert "compatibilidade" in page.locator("#startup-summary").text_content()
+        assert "compatibility" in page.locator("#startup-summary").text_content()
         assert "PlatformInitializer" in page.locator("#startup-history").text_content()
-        assert "sinal 11" in page.locator("#startup-history").text_content()
-        assert "Disponível no Docker Hub: 0.15.0" in page.locator("#image-version").inner_text()
-        assert "Nova versão disponível" in page.locator("#image-version").inner_text()
+        assert "signal 11" in page.locator("#startup-history").text_content()
+        assert "Available on Docker Hub: 0.15.0" in page.locator("#image-version").inner_text()
+        assert "New version available" in page.locator("#image-version").inner_text()
         # No disruptive action is submitted before explicit HTML confirmation.
         for action in ("restart", "stop", "update", "backup"):
             before = len(requests)
@@ -267,10 +267,10 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             trigger.click()
             dialog = page.get_by_role("dialog")
             assert dialog.is_visible()
-            assert "Jogadores conectados" in dialog.inner_text()
-            assert page.evaluate("document.activeElement.textContent.trim()") == "Cancelar"
+            assert "Connected players" in dialog.inner_text()
+            assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
             assert len(requests) == before
-            dialog.get_by_role("button", name="Cancelar", exact=True).click()
+            dialog.get_by_role("button", name="Cancel", exact=True).click()
             assert not dialog.is_visible()
             assert len(requests) == before
             assert trigger.evaluate("element => element === document.activeElement")
@@ -287,82 +287,81 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             "document.fonts.check('600 24px Cinzel') && document.fonts.check('400 14px Manrope')"
         )
         assert (
-            page.get_by_role("heading", name="Rotina automática", include_hidden=True).count() == 1
+            page.get_by_role("heading", name="Automatic maintenance", include_hidden=True).count()
+            == 1
         )
         assert page.get_by_role("tab").count() == 8
         assert page.get_by_role("tabpanel").count() == 1
         assert (
-            page.get_by_role("tab", name="Visão geral", exact=True).get_attribute("aria-selected")
+            page.get_by_role("tab", name="Overview", exact=True).get_attribute("aria-selected")
             == "true"
         )
         assert page.locator("#config-form").is_hidden()
         # Arrow keys activate the next tab; Home/End reach either end.
-        page.get_by_role("tab", name="Visão geral", exact=True).focus()
+        page.get_by_role("tab", name="Overview", exact=True).focus()
         page.keyboard.press("End")
         assert page.locator("#logs").is_visible()
         assert "14/11/2026" in page.locator("#jobs time").inner_text()
         assert "05:00:16" in page.locator("#jobs time").inner_text()
         assert page.locator("#jobs time").get_attribute("datetime") == "2026-11-14T08:00:16.000Z"
-        assert "Reinício · concluído" in page.locator("#jobs").inner_text()
-        assert "Duração em execução: 10s" in page.locator("#jobs").inner_text()
+        assert "Restart · completed" in page.locator("#jobs").inner_text()
+        assert "Running duration: 10s" in page.locator("#jobs").inner_text()
         page.locator("#history-origin").select_option("schedule")
-        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        assert "No operations" in page.locator("#jobs").inner_text()
         page.locator("#history-origin").select_option("administrator")
-        assert "Reinício" in page.locator("#jobs").inner_text()
+        assert "Restart" in page.locator("#jobs").inner_text()
         page.locator("#history-from").fill("2026-11-15")
         page.locator("#history-from").dispatch_event("change")
-        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        assert "No operations" in page.locator("#jobs").inner_text()
         page.locator("#history-from").fill("")
         page.locator("#history-from").dispatch_event("change")
-        page.locator("#history-state").select_option("falha")
-        assert "Nenhuma operação" in page.locator("#jobs").inner_text()
+        page.locator("#history-state").select_option("failed")
+        assert "No operations" in page.locator("#jobs").inner_text()
         page.locator("#history-state").select_option("")
-        assert "Reinício" in page.locator("#jobs").inner_text()
+        assert "Restart" in page.locator("#jobs").inner_text()
         page.locator("#tab-activity").focus()
         page.keyboard.press("ArrowRight")
         assert page.locator("#cpu").is_visible()
         page.keyboard.press("ArrowRight")
         assert page.locator("#config-form").is_visible()
         assert (
-            page.get_by_role("tab", name="Configurações do jogo", exact=True).get_attribute(
-                "tabindex"
-            )
+            page.get_by_role("tab", name="Game settings", exact=True).get_attribute("tabindex")
             == "0"
         )
-        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
-        page.get_by_role("button", name="Verificar nova versão", exact=True).click()
+        page.get_by_role("tab", name="Server settings", exact=True).click()
+        page.get_by_role("button", name="Check for updates", exact=True).click()
         assert "0.15.0" in page.locator("#image-version-status").inner_text()
         assert page.locator("#setting-server_name").is_hidden()
         page.locator("#setting-restart_at").fill("04:00")
-        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
+        page.get_by_role("tab", name="Game settings", exact=True).click()
         page.locator("#setting-server_name").fill("Mundo de teste")
         page.locator("#setting-modifier_resources").select_option("more")
-        page.get_by_role("button", name="Salvar configuração", exact=True).click()
+        page.get_by_role("button", name="Save game settings", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Configuração salva')"
+            "document.querySelector('#notice').textContent.includes('Settings saved')"
         )
         assert requests[-1][1]["changes"] == {
             "server_name": "Mundo de teste",
             "modifier_resources": "more",
         }
         assert runtime.config.effective().restart_at == "off"
-        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.get_by_role("tab", name="Server settings", exact=True).click()
         assert page.locator("#setting-restart_at").input_value() == "04:00"
-        page.get_by_role("button", name="Salvar configurações do servidor", exact=True).click()
+        page.get_by_role("button", name="Save server settings", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#setting-restart_at').value === '04:00' && document.querySelector('#setting-restart_at').closest('.setting').textContent.includes('painel')"
+            "document.querySelector('#setting-restart_at').value === '04:00' && document.querySelector('#setting-restart_at').closest('.setting').textContent.includes('panel')"
         )
         assert runtime.config.effective().restart_at == "04:00"
         page.get_by_role("tab", name="Mods", exact=True).click()
         assert page.locator("#setting-bepinex_url").count() == 0
         assert page.locator("#setting-bepinex_sha256").count() == 0
         page.locator("#setting-bepinex").select_option("true")
-        page.get_by_role("button", name="Salvar configurações de mods", exact=True).click()
+        page.get_by_role("button", name="Save mod settings", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#setting-bepinex').closest('.setting').textContent.includes('painel')"
+            "document.querySelector('#setting-bepinex').closest('.setting').textContent.includes('panel')"
         )
         assert runtime.config.effective().bepinex
-        assert "Carregador BepInEx concluído" in page.locator("#mod-session-status").inner_text()
+        assert "BepInEx loader completed" in page.locator("#mod-session-status").inner_text()
         assert "Useful Plugin · 1.2.3" in page.locator("#mod-session-plugins").inner_text()
         assert "<unsafe>" in page.locator("#mod-session-issues").inner_text()
         assert page.locator("#mod-session-issues unsafe").count() == 0
@@ -370,22 +369,22 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.locator("#plugin-file").set_input_files(
             {"name": "test.dll", "mimeType": "application/octet-stream", "buffer": dll()}
         )
-        page.get_by_role("button", name="Enviar plugin", exact=True).click()
+        page.get_by_role("button", name="Upload plugin", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#plugin-upload-status').textContent.startsWith('Plugin enviado')"
+            "document.querySelector('#plugin-upload-status').textContent.startsWith('Plugin uploaded')"
         )
         assert (plugin_files.root / "test.dll").read_bytes() == dll()
         page.locator("#plugin-file").set_input_files(
             {"name": "test.dll", "mimeType": "application/octet-stream", "buffer": dll(2)}
         )
         page.once("dialog", lambda dialog: dialog.accept())
-        page.get_by_role("button", name="Enviar plugin", exact=True).click()
+        page.get_by_role("button", name="Upload plugin", exact=True).click()
         page.wait_for_function("document.querySelector('#plugin-file').value===''")
         assert (plugin_files.root / "test.dll").read_bytes() == dll(2)
         page.once("dialog", lambda dialog: dialog.accept())
-        page.get_by_role("button", name="Restaurar versão anterior de test.dll", exact=True).click()
+        page.get_by_role("button", name="Restore previous version of test.dll", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('DLL anterior restaurada')"
+            "document.querySelector('#notice').textContent.startsWith('Previous DLL restored')"
         )
         assert (plugin_files.root / "test.dll").read_bytes() == dll()
         page.locator("#mod-config-file").select_option("test.cfg")
@@ -393,34 +392,34 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             "document.querySelector('#mod-config-content').value==='Enabled = true'"
         )
         page.locator("#mod-config-content").fill("Enabled = false")
-        page.get_by_role("button", name="Salvar arquivo", exact=True).click()
+        page.get_by_role("button", name="Save file", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('Arquivo salvo')"
+            "document.querySelector('#notice').textContent.startsWith('File saved')"
         )
         assert plugin_config.read_text() == "Enabled = false"
-        page.get_by_role("button", name="Carregar versão anterior", exact=True).click()
+        page.get_by_role("button", name="Load previous version", exact=True).click()
         page.wait_for_function(
             "document.querySelector('#mod-config-content').value==='Enabled = true'"
         )
-        page.get_by_role("button", name="Salvar arquivo", exact=True).click()
+        page.get_by_role("button", name="Save file", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('Arquivo salvo')"
+            "document.querySelector('#notice').textContent.startsWith('File saved')"
         )
         assert plugin_config.read_text() == "Enabled = true"
-        page.get_by_role("tab", name="Visão geral", exact=True).click()
-        page.get_by_role("button", name="Criar backup", exact=True).click()
+        page.get_by_role("tab", name="Overview", exact=True).click()
+        page.get_by_role("button", name="Create backup", exact=True).click()
         page.locator("#action-confirm-submit").click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Operação enviada')"
+            "document.querySelector('#notice').textContent.includes('Operation requested')"
         )
         assert requests[-1] == ("/actions", {"action": "backup"})
         assert page.locator("#players").inner_text() == "2"
-        assert "Fonte: log do jogo (Connections)" in page.locator("#player-reason").inner_text()
-        assert "Há 12s" in page.locator("#player-reason").inner_text()
+        assert "Source: game log (Connections)" in page.locator("#player-reason").inner_text()
+        assert "Age: 12s" in page.locator("#player-reason").inner_text()
         unknown = state | {
             "players": {
                 "count": None,
-                "reason": "Conexão alterada; aguardando novo snapshot",
+                "reason": "Connection changed; waiting for a new snapshot",
                 "source": "game_log",
                 "last_count": 0,
                 "age_seconds": 40,
@@ -430,45 +429,44 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.evaluate("value => update(value)", unknown)
         assert page.locator("#players").inner_text() == "?"
         assert (
-            "Última contagem: 0 (sem confirmação atual)"
-            in page.locator("#player-reason").inner_text()
+            "Last count: 0 (not currently confirmed)" in page.locator("#player-reason").inner_text()
         )
         expired = unknown | {
             "players": unknown["players"]
-            | {"reason": "Snapshot ausente ou expirado", "age_seconds": 661}
+            | {"reason": "Snapshot missing or expired", "age_seconds": 661}
         }
         page.evaluate("value => update(value)", expired)
         assert page.locator("#players").inner_text() == "?"
-        assert "expirado" in page.locator("#player-reason").inner_text()
+        assert "expired" in page.locator("#player-reason").inner_text()
         empty = state | {"players": state["players"] | {"count": 0, "idle_wait_seconds": 120}}
         page.evaluate("value => update(value)", empty)
-        assert "aguardando 120s" in page.locator("#player-reason").inner_text()
+        assert "waiting 120s" in page.locator("#player-reason").inner_text()
         page.evaluate("value => update(value)", state)
 
-        page.get_by_role("tab", name="Jogadores", exact=True).click()
+        page.get_by_role("tab", name="Players", exact=True).click()
         assert page.locator("#users-form").is_visible()
         page.locator("#known-player").select_option("Steam_76561198000000001")
-        page.get_by_role("button", name="Adicionar à lista", exact=True).click()
+        page.get_by_role("button", name="Add to list", exact=True).click()
         assert page.locator("#user-list code").count() == 2
-        page.get_by_role("button", name="Salvar lista", exact=True).click()
+        page.get_by_role("button", name="Save list", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('Lista salva')"
+            "document.querySelector('#notice').textContent.startsWith('List saved')"
         )
         assert requests[-1] == (
             "/users/admins",
             {"entries": ["Steam_123", "Steam_76561198000000001"]},
         )
-        page.get_by_role("button", name="Remover Steam_123", exact=True).click()
+        page.get_by_role("button", name="Remove Steam_123", exact=True).click()
         assert page.locator("#user-list code").count() == 1
-        page.get_by_role("button", name="Atualizar jogadores", exact=True).click()
+        page.get_by_role("button", name="Refresh players", exact=True).click()
         assert page.locator("#user-list code").count() == 1
         page.locator("#player-id").fill("76561198000000001")
-        page.get_by_role("button", name="Adicionar à lista", exact=True).click()
-        assert "já está" in page.locator("#notice").inner_text()
+        page.get_by_role("button", name="Add to list", exact=True).click()
+        assert "already" in page.locator("#notice").inner_text()
         assert page.locator("#user-list code").count() == 1
-        page.get_by_role("button", name="Salvar lista", exact=True).click()
+        page.get_by_role("button", name="Save list", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('Lista salva')"
+            "document.querySelector('#notice').textContent.startsWith('List saved')"
         )
         assert lists["admins"] == ["Steam_76561198000000001"]
         page.locator("#user-kind").select_option("banned")
@@ -476,14 +474,14 @@ def test_panel_login_forms_actions_and_mobile(runtime):
             "document.querySelector('#user-list-count').textContent.startsWith('0 ')"
         )
         page.locator("#player-id").fill("123456")
-        page.get_by_role("button", name="Adicionar à lista", exact=True).click()
-        assert "ID de plataforma completo" in page.locator("#notice").inner_text()
+        page.get_by_role("button", name="Add to list", exact=True).click()
+        assert "complete platform ID" in page.locator("#notice").inner_text()
         assert page.locator("#user-list code").count() == 0
         page.locator("#player-id").fill("Xbox_12345")
-        page.get_by_role("button", name="Adicionar à lista", exact=True).click()
-        page.get_by_role("button", name="Salvar lista", exact=True).click()
+        page.get_by_role("button", name="Add to list", exact=True).click()
+        page.get_by_role("button", name="Save list", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.startsWith('Lista salva')"
+            "document.querySelector('#notice').textContent.startsWith('List saved')"
         )
         assert lists["banned"] == ["Xbox_12345"]
         player_artifact = Path(__file__).resolve().parents[1] / ".artifacts/panel-players.png"
@@ -502,9 +500,9 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.wait_for_function(
             "document.querySelector('#cloud-config').value.includes('refresh_token')"
         )
-        page.get_by_role("button", name="Salvar envio na nuvem", exact=True).click()
+        page.get_by_role("button", name="Save cloud settings", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Envio na nuvem salvo')"
+            "document.querySelector('#notice').textContent.includes('Cloud upload settings saved')"
         )
         assert runtime.cloud.describe()["enabled"]
         assert page.locator("#cloud-config").input_value() == ""
@@ -513,16 +511,16 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         assert page.locator("#crossplay-info").is_visible()
         assert page.locator("#join-code").inner_text() == "012345"
         page.evaluate("s => update(s)", state | {"join_code": None})
-        assert "Aguardando" in page.locator("#join-code").inner_text()
+        assert "Waiting" in page.locator("#join-code").inner_text()
         page.evaluate("s => update(s)", state | {"join_code": None, "running": False})
-        assert "Disponível ao iniciar" in page.locator("#join-code").inner_text()
+        assert "Available when the server starts" in page.locator("#join-code").inner_text()
         page.evaluate("s => update(s)", state | {"crossplay": False, "join_code": None})
         assert page.locator("#crossplay-info").is_hidden()
         page.evaluate("s => update(s)", state)
         assert page.locator("#backup-list a").count() == 1
         artifact = Path(__file__).resolve().parents[1] / ".artifacts/panel.png"
         artifact.parent.mkdir(exist_ok=True)
-        page.get_by_role("tab", name="Visão geral", exact=True).click()
+        page.get_by_role("tab", name="Overview", exact=True).click()
         page.screenshot(path=str(artifact), full_page=True)
         page.set_viewport_size({"width": 390, "height": 844})
         assert page.locator("#mobile-section").is_visible()
@@ -539,52 +537,48 @@ def test_panel_login_forms_actions_and_mobile(runtime):
         page.set_viewport_size({"width": 1280, "height": 900})
         page.route(
             "https://panel.test/api/v1/plugins",
-            lambda request: request.fulfill(
-                status=422, json={"detail": "Permissões indisponíveis"}
-            ),
+            lambda request: request.fulfill(status=422, json={"detail": "Permissions unavailable"}),
         )
         page.evaluate("signedIn()")
         assert page.locator("#dashboard").is_visible()
-        assert (
-            "Não foi possível carregar a lista de plugins" in page.locator("#notice").inner_text()
-        )
+        assert "Could not load the plugin list" in page.locator("#notice").inner_text()
         assert not errors
-        page.get_by_role("tab", name="Configurações do jogo", exact=True).click()
-        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.get_by_role("tab", name="Game settings", exact=True).click()
+        page.get_by_role("tab", name="Server settings", exact=True).click()
         page.locator("#alerts-enabled").select_option("true")
         page.locator("#backup-max-age-hours").fill("48")
         page.locator("#cloud-max-age-hours").fill("72")
         page.locator("#alerts-url").fill("https://discord.com/api/webhooks/123/" + "a" * 40)
-        page.get_by_role("button", name="Salvar alertas", exact=True).click()
+        page.get_by_role("button", name="Save alerts", exact=True).click()
         page.wait_for_function("document.querySelector('#alerts-url').value === ''")
         assert runtime.alerts.settings["enabled"]
         assert runtime.alerts.settings["backup_max_age_hours"] == 48
         assert runtime.alerts.settings["cloud_max_age_hours"] == 72
-        page.get_by_role("button", name="Enviar teste", exact=True).click()
+        page.get_by_role("button", name="Send test", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('entregue ao Discord')"
+            "document.querySelector('#notice').textContent.includes('delivered to Discord')"
         )
         assert not errors
-        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
+        page.get_by_role("tab", name="Server settings", exact=True).click()
         page.locator("#update-image").click()
         assert page.get_by_role("dialog").is_visible()
-        page.get_by_role("dialog").get_by_role("button", name="Cancelar", exact=True).click()
+        page.get_by_role("dialog").get_by_role("button", name="Cancel", exact=True).click()
         assert not any(endpoint == "/image-update" for endpoint, _ in requests)
         page.locator("#update-image").click()
         page.locator("#action-confirm-submit").click()
         page.wait_for_function(
-            "document.querySelector('#image-update-status').textContent.includes('Baixando')"
+            "document.querySelector('#image-update-status').textContent.includes('Downloading')"
         )
         assert page.locator("#update-image").is_disabled()
         page.reload()
         page.locator("#password").fill("admin-test-password")
-        page.get_by_role("button", name="Entrar", exact=True).click()
-        page.get_by_role("tab", name="Configurações do servidor", exact=True).click()
-        assert "Baixando" in page.locator("#image-update-status").inner_text()
-        image_update.update(state="succeeded", message="Atualização concluída.")
+        page.get_by_role("button", name="Sign in", exact=True).click()
+        page.get_by_role("tab", name="Server settings", exact=True).click()
+        assert "Downloading" in page.locator("#image-update-status").inner_text()
+        image_update.update(state="succeeded", message="Update completed.")
         page.evaluate("loadImageUpdateStatus()")
         assert page.locator("#update-image").is_enabled()
-        assert "concluída" in page.locator("#image-update-status").inner_text()
+        assert "completed" in page.locator("#image-update-status").inner_text()
         assert not errors
         browser.close()
 
@@ -645,7 +639,7 @@ def test_accounts_first_login_operator_view_and_admin_management(runtime, monkey
         page.goto("https://panel.test/")
         page.locator("#username").fill("browser-operator")
         page.locator("#password").fill("temporary-browser-password")
-        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.get_by_role("button", name="Sign in", exact=True).click()
         page.locator("#password-change").wait_for(state="visible")
         assert page.locator("#dashboard").is_hidden()
         assert not any(
@@ -654,39 +648,39 @@ def test_accounts_first_login_operator_view_and_admin_management(runtime, monkey
         page.locator("#current-password").fill("temporary-browser-password")
         page.locator("#new-password").fill("personal-browser-password")
         page.locator("#repeat-password").fill("personal-browser-password")
-        page.get_by_role("button", name="Salvar minha senha", exact=True).click()
+        page.get_by_role("button", name="Save my password", exact=True).click()
         page.locator("#login").wait_for(state="visible")
         page.locator("#password").fill("personal-browser-password")
-        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.get_by_role("button", name="Sign in", exact=True).click()
         page.locator("#dashboard").wait_for(state="visible")
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
         assert page.get_by_role("tab").count() == 2
-        assert page.get_by_role("tab", name="Administração").count() == 0
-        assert page.get_by_role("button", name="Atualizar jogo", exact=True).count() == 0
-        assert "zero jogadores" in page.locator("#action-policy").inner_text()
-        page.get_by_role("button", name="Parar", exact=True).click()
-        assert "aguardará" in page.locator("#action-confirm-description").inner_text()
+        assert page.get_by_role("tab", name="Administration").count() == 0
+        assert page.get_by_role("button", name="Update game", exact=True).count() == 0
+        assert "zero players" in page.locator("#action-policy").inner_text()
+        page.get_by_role("button", name="Stop", exact=True).click()
+        assert "will wait" in page.locator("#action-confirm-description").inner_text()
         page.locator("#action-confirm-submit").click()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Operação enviada')"
+            "document.querySelector('#notice').textContent.includes('Operation requested')"
         )
         assert runtime.jobs[-1]["actor"]["id"] == operator["id"]
         assert runtime.jobs[-1]["requires_idle"]
-        page.get_by_role("tab", name="Atividade", exact=True).click()
+        page.get_by_role("tab", name="Activity", exact=True).click()
         assert page.locator("#logs").is_hidden()
         page.locator("#logout").click()
         page.locator("#username").fill("admin")
         page.locator("#password").fill("browser-admin-password")
-        page.get_by_role("button", name="Entrar", exact=True).click()
+        page.get_by_role("button", name="Sign in", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
-        page.get_by_role("tab", name="Administração", exact=True).click()
+        page.get_by_role("tab", name="Administration", exact=True).click()
         page.locator("#account-username").fill("browser-helper")
         page.locator("#account-password").fill("helper-temporary-password")
-        page.get_by_role("button", name="Cadastrar usuário", exact=True).click()
+        page.get_by_role("button", name="Create account", exact=True).click()
         page.wait_for_function(
             "document.querySelector('#account-list').textContent.includes('browser-helper')"
         )
@@ -694,9 +688,9 @@ def test_accounts_first_login_operator_view_and_admin_management(runtime, monkey
         assert "helper-temporary-password" not in page.locator("#audit-list").inner_text()
         page.locator("#audit-user").fill("admin")
         page.locator("#audit-operation").select_option("accounts")
-        page.get_by_role("button", name="Filtrar auditoria", exact=True).click()
+        page.get_by_role("button", name="Filter audit log", exact=True).click()
         page.wait_for_function(
-            "document.querySelector('#audit-list').textContent.includes('Contas')"
+            "document.querySelector('#audit-list').textContent.includes('Accounts')"
         )
         assert "admin" in page.locator("#audit-list").inner_text()
         browser.close()
@@ -725,7 +719,7 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
         "network_out_bps": 4096,
         "disk_used": 8 * 1024**3,
         "disk_total": 50 * 1024**3,
-        "scope": "contêiner",
+        "scope": "container",
     }
     app.state.metrics.history.extend([metric | {"time": metric["time"] - 10}, metric])
     client = TestClient(app, base_url="https://panel.test")
@@ -797,7 +791,7 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
         )
         page.locator("#username").fill("admin" if role == "admin" else "mobile-operator")
         page.locator("#password").fill("mobile-panel-password")
-        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.get_by_role("button", name="Sign in", exact=True).tap()
         if role == "operator":
             page.locator("#password-change").wait_for(state="visible")
             assert page.locator("#dashboard").is_hidden()
@@ -806,12 +800,12 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
             page.locator("#new-password").fill("mobile-personal-password")
             page.locator("#repeat-password").fill("mobile-personal-password")
             no_horizontal_scroll(page)
-            page.get_by_role("button", name="Salvar minha senha", exact=True).tap()
+            page.get_by_role("button", name="Save my password", exact=True).tap()
             page.locator("#login").wait_for(state="visible")
             page.locator("#password").fill("mobile-personal-password")
-            page.get_by_role("button", name="Entrar", exact=True).tap()
+            page.get_by_role("button", name="Sign in", exact=True).tap()
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
         for width, height in [(320, 740), (390, 844), (430, 932), (768, 1024), (844, 390)]:
             page.set_viewport_size({"width": width, "height": height})
@@ -838,15 +832,15 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
             if mobile:
                 page.locator("#mobile-section").select_option("tab-overview")
             else:
-                page.get_by_role("tab", name="Visão geral", exact=True).tap()
+                page.get_by_role("tab", name="Overview", exact=True).tap()
             page.wait_for_timeout(50)
             assert page.locator("#cpu-chart").evaluate(
                 "c => Math.abs(c.width - c.getBoundingClientRect().width * devicePixelRatio) < 2"
             )
-            page.get_by_role("button", name="Reiniciar", exact=True).tap()
+            page.get_by_role("button", name="Restart", exact=True).tap()
             assert page.locator("#action-confirmation").is_visible()
             no_horizontal_scroll(page)
-            page.get_by_role("button", name="Cancelar", exact=True).tap()
+            page.get_by_role("button", name="Cancel", exact=True).tap()
             assert actions == []
         page.set_viewport_size({"width": 390, "height": 844})
         page.locator("#mobile-section").select_option("tab-overview")
@@ -856,10 +850,10 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
         )
         artifact.parent.mkdir(exist_ok=True)
         page.screenshot(path=str(artifact))
-        page.get_by_role("button", name="Reiniciar", exact=True).tap()
+        page.get_by_role("button", name="Restart", exact=True).tap()
         page.locator("#action-confirm-submit").tap()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Operação enviada')"
+            "document.querySelector('#notice').textContent.includes('Operation requested')"
         )
         assert actions == [{"action": "restart"}]
         assert bool(runtime.jobs[-1].get("requires_idle")) == (role == "operator")
@@ -867,7 +861,7 @@ def test_touch_navigation_forms_metrics_and_confirmation(runtime, monkeypatch, r
             page.locator("#mobile-section").select_option("tab-administration")
             page.locator("#account-username").fill("mobile-helper")
             page.locator("#account-password").fill("helper-temporary-password")
-            page.get_by_role("button", name="Cadastrar usuário", exact=True).tap()
+            page.get_by_role("button", name="Create account", exact=True).tap()
             page.wait_for_function(
                 "document.querySelector('#account-list').textContent.includes('mobile-helper')"
             )
@@ -889,7 +883,7 @@ def test_backup_age_status_and_configuration_on_phone(runtime, monkeypatch):
     monkeypatch.setattr(
         runtime.backups,
         "latest_completed",
-        lambda now: {"time": now - 7200, "name": "completed.tar.gz"},
+        lambda now: {"time": now - 7200, "name": "Completed.tar.gz"},
     )
     runtime.alerts.configure(False, backup_max_age_hours=1, cloud_max_age_hours=0)
     set_password(runtime.data, "freshness-admin-password")
@@ -935,29 +929,29 @@ def test_backup_age_status_and_configuration_on_phone(runtime, monkeypatch):
         page.route("https://panel.test/**", route)
         page.goto("https://panel.test/")
         page.locator("#password").fill("freshness-admin-password")
-        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.get_by_role("button", name="Sign in", exact=True).tap()
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
         assert page.locator("#backup-age-warning").is_visible()
-        assert "Backup local" in page.locator("#backup-age-warning").inner_text()
+        assert "Local backup" in page.locator("#backup-age-warning").inner_text()
         page.locator("#mobile-section").select_option("tab-backups")
-        assert "Último sucesso" in page.locator("#local-backup-freshness").inner_text()
-        assert "Atrasado" in page.locator("#local-backup-freshness").inner_text()
-        assert "nuvem desativado" in page.locator("#cloud-backup-freshness").inner_text()
+        assert "Last success" in page.locator("#local-backup-freshness").inner_text()
+        assert "Overdue" in page.locator("#local-backup-freshness").inner_text()
+        assert "Cloud uploads disabled" in page.locator("#cloud-backup-freshness").inner_text()
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.locator("#mobile-section").select_option("tab-server")
         page.locator("#backup-max-age-hours").fill("0")
         page.locator("#cloud-max-age-hours").fill("48")
-        page.get_by_role("button", name="Salvar alertas", exact=True).tap()
+        page.get_by_role("button", name="Save alerts", exact=True).tap()
         page.wait_for_function(
-            "document.querySelector('#notice').textContent.includes('Alertas salvos')"
+            "document.querySelector('#notice').textContent.includes('Alerts saved')"
         )
         assert not runtime.alerts.describe()["active"]
         assert not runtime.alerts.settings["enabled"]
         assert page.locator("#backup-age-warning").is_hidden()
         page.locator("#mobile-section").select_option("tab-backups")
-        assert "Prazo desativado" in page.locator("#local-backup-freshness").inner_text()
+        assert "Deadline disabled" in page.locator("#local-backup-freshness").inner_text()
         page.locator("#logout").tap()
         assert page.locator("#local-backup-freshness").text_content() == ""
         browser.close()
@@ -1014,9 +1008,9 @@ def test_player_identification_confirmation_on_phone(runtime, monkeypatch):
         page.route("https://panel.test/**", route)
         page.goto("https://panel.test/")
         page.locator("#password").fill("identity-admin-password")
-        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.get_by_role("button", name="Sign in", exact=True).tap()
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
         page.locator("#mobile-section").select_option("tab-players")
         page.locator("#known-player").select_option("Xbox_12345")
@@ -1027,13 +1021,13 @@ def test_player_identification_confirmation_on_phone(runtime, monkeypatch):
         page.locator("#directory-id").fill("X_987654321")
         page.locator("#directory-platform").fill("Xbox")
         page.locator("#directory-name").fill("Jogador <img src=x onerror=alert(1)>")
-        page.get_by_role("button", name="Salvar identificação", exact=True).tap()
+        page.get_by_role("button", name="Save identity", exact=True).tap()
         assert all(item["id"] != "X_987654321" for item in runtime.player_directory.describe())
         page.locator("#directory-confirm").check()
-        page.get_by_role("button", name="Salvar identificação", exact=True).tap()
+        page.get_by_role("button", name="Save identity", exact=True).tap()
         page.wait_for_function("document.querySelector('#player-id').value === 'X_987654321'")
         assert client.get("/api/v1/users/admins").json()["entries"] == []
-        page.get_by_role("button", name="Adicionar à lista", exact=True).tap()
+        page.get_by_role("button", name="Add to list", exact=True).tap()
         assert "Jogador <img" in page.locator("#user-list").inner_text()
         assert page.locator("#user-list img").count() == 0
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -1113,20 +1107,20 @@ def test_plugin_delete_confirmation_and_restore_on_phone(runtime, monkeypatch):
         page.route("https://panel.test/**", route)
         page.goto("https://panel.test/")
         page.locator("#password").fill("plugin-admin-password")
-        page.get_by_role("button", name="Entrar", exact=True).tap()
+        page.get_by_role("button", name="Sign in", exact=True).tap()
         page.wait_for_function(
-            "document.querySelector('#panel-health').textContent.includes('conectado')"
+            "document.querySelector('#panel-health').textContent.includes('connected')"
         )
         page.locator("#mobile-section").select_option("tab-mods")
         button = page.get_by_role(
-            "button", name="Excluir plugin Author-Plugin/example.dll", exact=True
+            "button", name="Delete plugin Author-Plugin/example.dll", exact=True
         )
         assert button.is_enabled()
         button.tap()
         assert (
             "Author-Plugin/example.dll" in page.locator("#plugin-confirm-description").inner_text()
         )
-        page.get_by_role("button", name="Cancelar", exact=True).tap()
+        page.get_by_role("button", name="Cancel", exact=True).tap()
         assert plugin.exists() and not writes
         button.tap()
         page.locator("#plugin-confirm-submit").tap()
@@ -1136,7 +1130,7 @@ def test_plugin_delete_confirmation_and_restore_on_phone(runtime, monkeypatch):
         assert not plugin.exists()
         assert config.read_text() == "custom-config"
         restore = page.get_by_role(
-            "button", name="Restaurar plugin excluído Author-Plugin/example.dll", exact=True
+            "button", name="Restore deleted plugin Author-Plugin/example.dll", exact=True
         )
         restore.tap()
         page.locator("#plugin-confirm-submit").tap()

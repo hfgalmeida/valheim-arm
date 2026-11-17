@@ -4,18 +4,18 @@ from app.config import ConfigStore, Settings
 
 
 def test_precedence_persistence_reset(tmp_path, config):
-    assert config.describe()["sources"]["server_name"] == "padrão"
+    assert config.describe()["sources"]["server_name"] == "default"
     config.change({"server_name": "Painel"}, [])
     restored = ConfigStore(tmp_path, {"SERVER_PASSWORD": "game-password", "SERVER_NAME": "Compose"})
     assert restored.effective().server_name == "Painel"
-    assert restored.describe()["sources"]["server_name"] == "painel"
+    assert restored.describe()["sources"]["server_name"] == "panel"
     restored.change({}, ["server_name"])
     assert restored.effective().server_name == "Compose"
     assert restored.describe()["values"]["server_password"] == ""
 
 
 def test_world_confirmation_and_validation(config):
-    with pytest.raises(ValueError, match="Confirme"):
+    with pytest.raises(ValueError, match="Confirm"):
         config.change({"world_name": "Novo"}, [])
     config.change({"world_name": "Novo"}, [], True)
     with pytest.raises(ValueError):

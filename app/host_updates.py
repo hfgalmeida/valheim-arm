@@ -12,7 +12,7 @@ SOCKET_PATH = "/run/valheim-update/agent.sock"
 class UnixConnection(http.client.HTTPConnection):
     def connect(self):
         if not hasattr(socket, "AF_UNIX"):
-            raise OSError("Sockets Unix indisponíveis")
+            raise OSError("Unix sockets unavailable")
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
         self.sock.connect(SOCKET_PATH)
@@ -24,7 +24,7 @@ class HostUpdates:
         self.current = {
             "available": False,
             "state": "unavailable",
-            "message": "Atualização pelo painel requer preparar o serviço no host com o instalador atualizado.",
+            "message": "Panel updates require the host service provided by the updated installer.",
         }
 
     @property
@@ -41,12 +41,12 @@ class HostUpdates:
             response = connection.getresponse()
             raw = response.read(8193)
             if len(raw) > 8192:
-                raise OSError("Resposta excessiva")
+                raise OSError("Response too large")
             value = json.loads(raw)
             if not isinstance(value, dict):
-                raise OSError("Resposta inválida")
+                raise OSError("Invalid response")
             if response.status not in (200, 202):
-                raise ValueError(value.get("detail", "Atualização não aceita pelo host."))
+                raise ValueError(value.get("detail", "Update rejected by the host."))
             return value
         finally:
             connection.close()
@@ -57,13 +57,13 @@ class HostUpdates:
                 self.current = self.request("GET", "/status")
             except (OSError, ValueError, http.client.HTTPException) as exc:
                 if isinstance(exc, FileNotFoundError):
-                    message = "A conexão com o atualizador não está instalada neste contêiner. Execute o instalador atualizado e aplique a integração indicada por ele."
+                    message = "The updater connection is not installed in this container. Run the updated installer and apply its integration instructions."
                 elif isinstance(exc, PermissionError):
-                    message = "O painel não tem permissão para acessar o atualizador. Reaplique o instalador atualizado no host."
+                    message = "The panel cannot access the updater. Run the updated installer on the host."
                 elif isinstance(exc, ConnectionRefusedError):
-                    message = "A conexão está montada, mas o serviço de atualização não está respondendo no host. Verifique o serviço systemd."
+                    message = "The connection is mounted, but the host updater service is not responding. Check the systemd service."
                 else:
-                    message = "Serviço de atualização indisponível. Prepare ou verifique o serviço no host."
+                    message = "Updater service unavailable. Install or check the host service."
                 self.current = {
                     **self.current,
                     "available": False,
@@ -76,7 +76,7 @@ class HostUpdates:
             self.current = {
                 "available": True,
                 "state": "running",
-                "message": "Confirmando solicitação no host…",
+                "message": "Confirming the request on the host…",
             }
             try:
                 self.current = self.request("POST", "/update", {"request_id": request_id})

@@ -23,10 +23,10 @@ class Backups:
 
     def resolve(self, name):
         if Path(name).name != name or not name.endswith(".tar.gz"):
-            raise ValueError("Nome de backup inválido")
+            raise ValueError("Invalid backup filename")
         path = self.root / name
         if path.is_symlink() or not path.is_file():
-            raise ValueError("Backup não encontrado")
+            raise ValueError("Backup not found")
         return path
 
     def list(self):
@@ -77,13 +77,13 @@ class Backups:
     def create(self, reason, settings, build="unknown"):
         saves = self.data / "saves"
         if not saves.exists():
-            raise ValueError("Não há saves para arquivar")
+            raise ValueError("No saves available to archive")
         files = []
         for base in (saves, self.data / "config", self.data / "mods/BepInEx/config"):
             if base.exists():
                 for path in base.rglob("*"):
                     if path.is_symlink():
-                        raise ValueError("Links simbólicos não são aceitos nos dados de backup")
+                        raise ValueError("Symbolic links are not allowed in backup data")
                     if path.is_file() and path.name not in {
                         "admin.json",
                         "panel-users.json",
@@ -97,7 +97,7 @@ class Backups:
                         files.append(path)
         size = sum(p.stat().st_size for p in files)
         if shutil.disk_usage(self.root).free < size * 2 + 64 * 1024**2:
-            raise ValueError("Espaço insuficiente para criar e validar o backup")
+            raise ValueError("Not enough space to create and validate the backup")
         now = datetime.now(timezone.utc)
         name = now.strftime("%Y%m%dT%H%M%S%fZ") + ".tar.gz"
         temp = self.root / (name + ".partial")
@@ -145,41 +145,41 @@ class Backups:
                     or member.name in names
                     or member.size < 0
                 ):
-                    raise ValueError("Arquivo de backup contém entrada insegura")
+                    raise ValueError("Backup archive contains an unsafe entry")
                 if member.name != "manifest.json" and not (
                     member.name.startswith("saves/")
                     or member.name.startswith("config/")
                     or member.name.startswith("mods/BepInEx/config/")
                 ):
-                    raise ValueError("Arquivo fora dos diretórios permitidos")
+                    raise ValueError("File outside the allowed directories")
                 if member.name == "config/admin.json":
                     raise ValueError(
-                        "Credencial administrativa não pode ser restaurada pelo painel"
+                        "Administrative credentials cannot be restored through the panel"
                     )
                 names.add(member.name)
                 total += member.size
                 if total > 100 * 1024**3 or len(names) > 100000:
-                    raise ValueError("Backup excede limites de extração")
+                    raise ValueError("Backup exceeds extraction limits")
             manifest_info = archive.getmember("manifest.json")
             if manifest_info.size > 8 * 1024**2:
-                raise ValueError("Manifesto excessivo")
+                raise ValueError("Manifest too large")
             manifest = json.load(archive.extractfile(manifest_info))
             if manifest.get("format") != 1 or set(manifest["files"]) != names - {"manifest.json"}:
-                raise ValueError("Manifesto inválido")
+                raise ValueError("Invalid manifest")
             for name, checksum in manifest["files"].items():
                 with archive.extractfile(name) as file:
                     if hashlib.file_digest(file, "sha256").hexdigest() != checksum:
-                        raise ValueError("Checksum inválido no backup")
+                        raise ValueError("Invalid backup checksum")
             return manifest, total
 
     def restore(self, name):
         path = self.resolve(name)
         checksum = path.with_suffix(path.suffix + ".sha256")
         if not checksum.exists() or digest(path) != checksum.read_text().strip():
-            raise ValueError("Checksum do arquivo de backup inválido ou ausente")
+            raise ValueError("Backup archive checksum missing or invalid")
         manifest, total = self.validate(path)
         if shutil.disk_usage(self.data).free < total + 64 * 1024**2:
-            raise ValueError("Espaço insuficiente para restaurar")
+            raise ValueError("Not enough space to restore")
         # Restore only save/list files. Config is archived for recovery but must be
         # reapplied explicitly, avoiding silently changing credentials or schedules.
         with tempfile.TemporaryDirectory(dir=self.data, prefix="restore-") as tmp:

@@ -65,7 +65,7 @@ def test_archive_without_extracted_rootfs_is_rejected(tmp_path):
 
 def test_i386_loader_required_before_moving_files(tmp_path):
     source = root_fixture(tmp_path, with_i386=False)
-    with pytest.raises(ValueError, match="loader i386"):
+    with pytest.raises(ValueError, match="i386 loader"):
         collect(tmp_path, tmp_path / "out", tmp_path / "info.json")
     assert source.exists()
     assert not (tmp_path / "out").exists()
@@ -74,7 +74,7 @@ def test_i386_loader_required_before_moving_files(tmp_path):
 def test_ambiguous_rootfs_is_rejected(tmp_path):
     root_fixture(tmp_path, "first")
     root_fixture(tmp_path, "second")
-    with pytest.raises(ValueError, match="Esperado um rootfs"):
+    with pytest.raises(ValueError, match="Expected an extracted"):
         collect(tmp_path, tmp_path / "out", tmp_path / "info.json")
 
 
@@ -82,6 +82,6 @@ def test_existing_destination_is_never_overwritten(tmp_path):
     source = root_fixture(tmp_path)
     destination = tmp_path / "out"
     destination.mkdir()
-    with pytest.raises(ValueError, match="já existe"):
+    with pytest.raises(ValueError, match="already exists"):
         collect(tmp_path, destination, tmp_path / "info.json")
     assert source.exists()

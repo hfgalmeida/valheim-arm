@@ -10,7 +10,9 @@ from .auth import set_password
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Valheim ARM — supervisor e administração local")
+    parser = argparse.ArgumentParser(
+        description="Valheim ARM — supervisor and local administration"
+    )
     parser.add_argument(
         "command", choices=("serve", "set-password", "health", "preflight", "prepare-access")
     )
@@ -22,15 +24,15 @@ def main():
         from .file_access import prepare
 
         if args.access_uid is None:
-            parser.error("--access-uid é obrigatório")
+            parser.error("--access-uid is required")
         prepare(data, args.access_uid)
-        print("Acesso aos arquivos preparado.")
+        print("File access prepared.")
     elif args.command == "set-password":
-        password = getpass.getpass("Nova senha administrativa (mínimo 12 caracteres): ")
-        if password != getpass.getpass("Repita a senha: "):
-            raise SystemExit("As senhas não conferem")
+        password = getpass.getpass("New administrator password (at least 12 characters): ")
+        if password != getpass.getpass("Repeat password: "):
+            raise SystemExit("Passwords do not match")
         set_password(data, password)
-        print("Senha atualizada; sessões anteriores foram invalidadas.")
+        print("Password updated; previous sessions invalidated.")
     elif args.command == "health":
         try:
             with urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3) as result:
@@ -41,7 +43,7 @@ def main():
         from .runtime import preflight
 
         preflight(data)
-        print("Preflight ARM/FEX aprovado.")
+        print("ARM/FEX preflight passed.")
     else:
         import uvicorn
         from .web import create_app

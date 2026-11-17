@@ -57,7 +57,7 @@ def test_incident_dedup_recovery_and_restart(runtime):
             alerts.incidents["backup"]["next_send"] = 0
             await alerts.poll(runtime)
             assert send.call_count == 2
-            assert "normalizado" in send.call_args.args[0]
+            assert "recovered" in send.call_args.args[0]
 
     with patch("app.alerts.shutil.disk_usage", return_value=SimpleNamespace(free=20 * 1024**3)):
         asyncio.run(scenario())

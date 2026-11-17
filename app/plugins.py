@@ -71,11 +71,13 @@ class Plugins:
 
     def safe(self, path):
         if any(part.is_symlink() for part in (path, *path.parents)):
-            raise ValueError("Links simbólicos não são permitidos nos plugins")
+            raise ValueError("Symbolic links are not allowed in plugins")
 
     def target(self, name):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}\.dll", name, re.IGNORECASE):
-            raise ValueError("Envie uma DLL com nome simples, sem pastas ou caracteres especiais")
+            raise ValueError(
+                "Upload a DLL with a simple filename, without directories or special characters"
+            )
         path = self.root / name
         self.safe(path)
         if self.root.is_dir() and any(
@@ -83,10 +85,10 @@ class Plugins:
             for item in self.root.iterdir()
         ):
             raise ValueError(
-                "Já existe uma DLL com esse nome em outra capitalização; use o nome exato"
+                "A DLL with a different capitalization already exists; use the exact filename"
             )
         if path.exists() and not path.is_file():
-            raise ValueError("O destino do plugin não é um arquivo")
+            raise ValueError("The plugin destination is not a file")
         return path
 
     def info(self, path):
@@ -136,16 +138,14 @@ class Plugins:
         target = self.target(name)
         data = temporary.read_bytes()
         if not data or len(data) > MAX_PLUGIN_SIZE or not managed_dll(data):
-            raise ValueError(
-                "Envie uma DLL .NET válida, de até 16 MiB, compatível com BepInEx/Mono"
-            )
+            raise ValueError("Upload a valid .NET DLL up to 16 MiB, compatible with BepInEx/Mono")
         if target.exists():
             current = self.info(target)["revision"]
             if current is None:
                 raise ValueError("A DLL existente ultrapassa 16 MiB; gerencie-a pelo SSH")
             if current != revision:
                 raise Conflict(
-                    "A DLL já existe ou mudou. Atualize a lista e confirme a substituição"
+                    "The DLL already exists or changed. Refresh the list and confirm replacement"
                 )
             backup = self.backups / (name + ".previous")
             self.safe(backup)
@@ -161,7 +161,7 @@ class Plugins:
             finally:
                 Path(old).unlink(missing_ok=True)
         elif revision is not None:
-            raise Conflict("A DLL mudou desde a confirmação; atualize a lista")
+            raise Conflict("The DLL changed since confirmation; refresh the list")
         os.replace(temporary, target)
         return self.info(target)
 
@@ -170,7 +170,7 @@ class Plugins:
         backup = self.backups / (name + ".previous")
         self.safe(backup)
         if not backup.is_file() or backup.stat().st_size > MAX_PLUGIN_SIZE:
-            raise ValueError("Não há versão anterior disponível para este plugin")
+            raise ValueError("No previous version available for this plugin")
         with self.staging(name) as (file, temporary):
             file.write(backup.read_bytes())
             file.flush()
@@ -193,7 +193,7 @@ class Plugins:
             or relative.suffix.lower() != ".dll"
         ):
             raise ValueError(
-                "Selecione uma DLL dentro da pasta de plugins, sem caminhos absolutos ou atalhos"
+                "Select a DLL inside the plugins folder, without absolute paths or shortcuts"
             )
         path = self.root.joinpath(*relative.parts)
         self.safe(path)
@@ -204,14 +204,14 @@ class Plugins:
                 item.name.casefold() == part.name.casefold() and item.name != part.name
                 for item in part.parent.iterdir()
             ):
-                raise Conflict("O caminho mudou de capitalização; atualize a lista de plugins")
+                raise Conflict("The path capitalization changed; refresh the plugin list")
         if path.exists() and not path.is_file():
-            raise ValueError("O plugin não é um arquivo regular")
+            raise ValueError("The plugin is not a regular file")
         return path
 
     def deleted_info(self, entry_id):
         if not re.fullmatch(r"[a-f0-9]{32}", entry_id):
-            raise ValueError("Identificador de plugin excluído inválido")
+            raise ValueError("Invalid deleted plugin identifier")
         entry = self.trash / entry_id
         metadata, payload = entry / "metadata.json", entry / "plugin.dll"
         self.safe(metadata)
@@ -222,7 +222,7 @@ class Plugins:
             or not payload.is_file()
             or payload.stat().st_size > MAX_PLUGIN_SIZE
         ):
-            raise ValueError("Cópia do plugin excluído indisponível")
+            raise ValueError("Deleted plugin copy unavailable")
         record = json.loads(metadata.read_text(encoding="utf-8"))
         if (
             not isinstance(record, dict)
@@ -232,11 +232,11 @@ class Plugins:
             or not isinstance(record.get("deleted_at"), (int, float))
             or not math.isfinite(record["deleted_at"])
         ):
-            raise ValueError("Registro de plugin excluído inválido")
+            raise ValueError("Invalid deleted plugin record")
         self.removable_target(record["name"])
         revision = hashlib.sha256(payload.read_bytes()).hexdigest()
         if revision != record["revision"]:
-            raise Conflict("A cópia do plugin excluído foi alterada; confira os arquivos no host")
+            raise Conflict("The deleted plugin copy changed; check the files on the host")
         return {
             "id": entry_id,
             "name": record["name"],
@@ -261,18 +261,18 @@ class Plugins:
                 result.append(self.deleted_info(entry.name))
             except (OSError, ValueError, KeyError):
                 logging.getLogger("valheim").warning(
-                    "Cópia excluída de plugin indisponível; preservada para inspeção no host"
+                    "Deleted plugin copy unavailable; preserved for inspection on the host"
                 )
         return sorted(result, key=lambda item: item["deleted_at"], reverse=True)
 
     def delete(self, name, revision):
         target = self.removable_target(name)
         if not target.is_file():
-            raise Conflict("O plugin não está mais instalado; atualize a lista")
+            raise Conflict("The plugin is no longer installed; refresh the list")
         if target.stat().st_size > MAX_PLUGIN_SIZE:
-            raise ValueError("A DLL ultrapassa 16 MiB; gerencie-a pelos arquivos compartilhados")
+            raise ValueError("The DLL exceeds 16 MiB; manage it through the shared files")
         if hashlib.sha256(target.read_bytes()).hexdigest() != revision:
-            raise Conflict("A DLL mudou desde a confirmação; atualize a lista antes de excluir")
+            raise Conflict("The DLL changed since confirmation; refresh the list before deleting")
         self.safe(self.trash)
         self.trash.mkdir(parents=True, exist_ok=True)
         entry_id = uuid.uuid4().hex
@@ -288,7 +288,7 @@ class Plugins:
                 or target.stat().st_size > MAX_PLUGIN_SIZE
                 or hashlib.sha256(target.read_bytes()).hexdigest() != revision
             ):
-                raise Conflict("A DLL mudou durante a exclusão; atualize a lista")
+                raise Conflict("The DLL changed during deletion; refresh the list")
             os.replace(target, payload)
         except BaseException:
             if not payload.exists():
@@ -300,11 +300,11 @@ class Plugins:
     def restore_deleted(self, entry_id, revision):
         record = self.deleted_info(entry_id)
         if record["revision"] != revision:
-            raise Conflict("A cópia excluída mudou; atualize a lista")
+            raise Conflict("The deleted copy changed; refresh the list")
         target = self.removable_target(record["name"])
         if target.exists():
             raise Conflict(
-                "Já existe uma DLL nesse caminho; a restauração não sobrescreve plugins instalados"
+                "A DLL already exists at this path; restoration never overwrites installed plugins"
             )
         target.parent.mkdir(parents=True, exist_ok=True)
         self.safe(target)
@@ -314,13 +314,13 @@ class Plugins:
         try:
             os.link(payload, target, follow_symlinks=False)
         except FileExistsError:
-            raise Conflict("Uma DLL foi instalada nesse caminho; restauração cancelada") from None
+            raise Conflict("A DLL was installed at this path; restoration cancelled") from None
         try:
             payload.unlink()
             (entry / "metadata.json").unlink()
             entry.rmdir()
         except OSError:
             logging.getLogger("valheim").warning(
-                "Plugin restaurado; cópia excluída remanescente preservada"
+                "Plugin restored; remaining deleted copy preserved"
             )
         return {"name": record["name"], "revision": revision}

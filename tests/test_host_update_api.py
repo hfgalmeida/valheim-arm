@@ -90,9 +90,9 @@ def test_client_preserves_unknown_inflight_update_until_status_is_confirmed():
 @pytest.mark.parametrize(
     "error,message",
     [
-        (FileNotFoundError(), "não está instalada"),
-        (PermissionError(), "não tem permissão"),
-        (ConnectionRefusedError(), "não está respondendo"),
+        (FileNotFoundError(), "is not installed"),
+        (PermissionError(), "cannot access"),
+        (ConnectionRefusedError(), "is not responding"),
     ],
 )
 def test_host_agent_diagnostics_distinguish_missing_mount_and_stopped_service(error, message):

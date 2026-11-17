@@ -1,4 +1,6 @@
 .env
+TODO.md
+valheim-diagnostics-*.tar.gz
 valheim-cloud.conf
 rclone.conf
 data/

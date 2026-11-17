@@ -96,7 +96,7 @@ def test_users_and_job_queue(runtime, monkeypatch):
     response = client.post("/api/v1/actions", json={"action": "backup"})
     assert response.status_code == 202
     job = response.json()
-    assert client.get("/api/v1/jobs/" + job["id"]).json()["state"] == "fila"
+    assert client.get("/api/v1/jobs/" + job["id"]).json()["state"] == "queued"
     assert (
         client.post("/api/v1/actions", json={"action": "restore", "backup": "x.tar.gz"}).status_code
         == 422
@@ -120,7 +120,7 @@ def test_login_origin_and_rate_limit(runtime, monkeypatch):
     response = client.post(
         "/api/v1/login", json={"password": "bad"}, headers={"Origin": "https://server.test"}
     )
-    assert "Muitas tentativas" in response.text
+    assert "Too many attempts" in response.text
     assert client.get("/api/v1/backups").status_code == 401
 
 
@@ -169,7 +169,7 @@ def test_player_identity_requires_confirmation_and_is_audited_without_changing_l
         assert data["known_players"][0]["confirmed"]
     events = client.get("/api/v1/audit?operation=player-directory").json()["events"]
     assert any(
-        event.get("changes", {}).get("nome", {}).get("depois") == body["name"] for event in events
+        event.get("changes", {}).get("name", {}).get("after") == body["name"] for event in events
     )
     client.cookies.clear()
     assert client.put("/api/v1/player-directory", json=body).status_code == 401

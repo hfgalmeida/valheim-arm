@@ -7,12 +7,13 @@ import threading
 import uuid
 
 from .config import atomic_json
+from .compatibility import operation_record
 
 log = logging.getLogger("valheim")
 LIMIT = 2000
 MAX_BYTES = 8 * 1024**2
 RETENTION = 90 * 86400
-SYSTEM = {"id": "system", "username": "automático", "role": "system"}
+SYSTEM = {"id": "system", "username": "system", "role": "system"}
 
 
 class Audit:
@@ -25,16 +26,18 @@ class Audit:
         try:
             if self.path.exists():
                 if self.path.stat().st_size > 16 * 1024**2:
-                    raise ValueError("Arquivo excessivo")
+                    raise ValueError("File is too large")
                 value = json.loads(self.path.read_text(encoding="utf-8"))
                 if not isinstance(value, list) or any(
                     not isinstance(v, dict) or not isinstance(v.get("time"), (int, float))
                     for v in value
                 ):
-                    raise ValueError("Auditoria inválida")
-                self.records = value[-LIMIT:]
+                    raise ValueError("Invalid audit data")
+                self.records = [operation_record(record) for record in value[-LIMIT:]]
         except (ValueError, OSError):
-            self.error = "Auditoria indisponível; confira espaço, permissões e integridade no host"
+            self.error = (
+                "Audit unavailable; check disk space, permissions, and integrity on the host"
+            )
             self.corrupt = True
         else:
             self.corrupt = False
@@ -77,14 +80,14 @@ class Audit:
         records = [r for r in self.records if r["time"] >= cutoff][-LIMIT + 1 :] + [entry]
         while len(json.dumps(records, ensure_ascii=False, indent=2).encode("utf-8")) > MAX_BYTES:
             if len(records) <= 1:
-                self.error = "Registro de auditoria excessivo"
+                self.error = "Audit record too large"
                 raise OSError(self.error)
             records = records[max(1, len(records) // 10) :]
         try:
             atomic_json(self.path, records)
         except OSError as exc:
-            log.error("Falha ao gravar auditoria: %s", type(exc).__name__)
-            self.error = "Não foi possível gravar a auditoria; confira espaço e permissões"
+            log.error("Could not write audit data: %s", type(exc).__name__)
+            self.error = "Could not write audit data; check disk space and permissions"
             raise
         self.records, self.error = records, None
         return entry
@@ -112,13 +115,13 @@ class Audit:
                     job.get("actor") or SYSTEM,
                     job["action"],
                     job["state"],
-                    job.get("backup_created") or job.get("backup") or "servidor",
+                    job.get("backup_created") or job.get("backup") or "server",
                     job.get("audit_request_id"),
                     job["id"],
                     kind="job",
                 )
             except OSError:
-                log.error("Falha ao persistir auditoria de manutenção")
+                log.error("Could not persist maintenance audit")
                 continue
             self.job_states[job["id"]] = signature
         visible = {job["id"] for job in jobs}
@@ -137,9 +140,9 @@ class Audit:
 
     def image_result(self, status):
         outcomes = {
-            "succeeded": "concluído",
-            "failed": "falha",
-            "rolled_back": "revertido",
+            "succeeded": "completed",
+            "failed": "failed",
+            "rolled_back": "rolled_back",
             "interrupted": "interrompido",
         }
         job_id = status.get("request_id")
@@ -164,4 +167,4 @@ class Audit:
                 kind="job",
             )
         except OSError:
-            log.error("Falha ao auditar resultado da atualização da imagem")
+            log.error("Could not audit the image update result")

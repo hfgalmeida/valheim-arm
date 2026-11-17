@@ -19,31 +19,31 @@ function acceptSession(value) {
   };
 }
 const labels = {
-  server_name: "Nome do servidor",
-  world_name: "Nome do mundo",
-  server_password: "Senha do jogo (vazio mantém)",
-  server_port: "Porta (Compose)",
-  public: "Listagem pública",
+  server_name: "Server name",
+  world_name: "World name",
+  server_password: "Game password (leave blank to keep)",
+  server_port: "Port (Compose)",
+  public: "Public listing",
   crossplay: "Crossplay",
   preset: "Preset",
-  modifier_combat: "Combate",
-  modifier_deathpenalty: "Penalidade de morte",
-  modifier_resources: "Recursos",
-  modifier_raids: "Incursões",
-  modifier_portals: "Portais",
-  key_nobuildcost: "Construção sem custo",
-  key_playerevents: "Eventos por jogador",
-  key_passivemobs: "Inimigos passivos",
-  key_nomap: "Sem mapa",
-  save_interval: "Salvar a cada (segundos)",
-  native_backups: "Backups nativos",
-  timezone: "Fuso horário",
-  restart_at: "Reinício diário (HH:MM ou off)",
-  backup_at: "Backup diário (HH:MM ou off)",
-  auto_update: "Atualizar jogo automaticamente",
-  retain_daily: "Retenção diária",
-  retain_weekly: "Retenção semanal",
-  bepinex: "Habilitar BepInEx",
+  modifier_combat: "Combat",
+  modifier_deathpenalty: "Death penalty",
+  modifier_resources: "Resources",
+  modifier_raids: "Raids",
+  modifier_portals: "Portals",
+  key_nobuildcost: "No build cost",
+  key_playerevents: "Player-based events",
+  key_passivemobs: "Passive enemies",
+  key_nomap: "No map",
+  save_interval: "Save interval (seconds)",
+  native_backups: "Native backups",
+  timezone: "Time zone",
+  restart_at: "Daily restart (HH:MM or off)",
+  backup_at: "Daily backup (HH:MM or off)",
+  auto_update: "Update game automatically",
+  retain_daily: "Daily retention",
+  retain_weekly: "Weekly retention",
+  bepinex: "Enable BepInEx",
 };
 function notice(text) {
   $("notice").textContent = text;
@@ -178,7 +178,7 @@ function chart(id, values, ceiling) {
 }
 function cloudStatus(c) {
   const last = c.last_success
-    ? " · Último envio: " +
+    ? " · Last upload: " +
       new Date(c.last_success * 1000).toLocaleString() +
       " (" +
       c.last_file +
@@ -186,13 +186,13 @@ function cloudStatus(c) {
     : "";
   $("cloud-status").textContent =
     (c.enabled
-      ? (c.uploading ? "Enviando" : "Ativado") +
+      ? (c.uploading ? "Enviando" : "Enabled") +
         (c.provider ? " · " + c.provider : "") +
-        " · Pendentes: " +
+        " · Pending: " +
         c.pending
-      : "Envio desativado") +
+      : "Uploads disabled") +
     last +
-    (c.error ? " · " + c.error + ". Nova tentativa automática em cinco minutos." : "");
+    (c.error ? " · " + c.error + ". Automatically retrying in five minutes." : "");
 }
 async function loadCloud() {
   const c = await api("/cloud");
@@ -205,54 +205,54 @@ async function loadCloud() {
 function alertStatus(a) {
   const names = {
     backup: "backup",
-    cloud: "envio à nuvem",
-    game: "recuperação do jogo",
-    disk: "espaço em disco",
-    backup_age: "backup local atrasado",
-    cloud_age: "envio à nuvem atrasado",
+    cloud: "cloud upload",
+    game: "game recovery",
+    disk: "disk space",
+    backup_age: "local backup overdue",
+    cloud_age: "cloud upload overdue",
   };
   $("alerts-status").textContent =
-    (a.enabled ? "Notificações ativadas." : "Notificações desativadas.") +
-    (a.configured ? " Webhook salvo." : " Webhook não configurado.") +
+    (a.enabled ? "Notifications enabled." : "Notifications disabled.") +
+    (a.configured ? " Webhook saved." : " Webhook not configured.") +
     (a.active.length
-      ? " Atenção: " + a.active.map((key) => names[key] || key).join(", ") + "."
-      : " Nenhum problema ativo.") +
+      ? " Attention: " + a.active.map((key) => names[key] || key).join(", ") + "."
+      : " No active incidents.") +
     (a.error ? " " + a.error : "");
   const states = {
-    ok: "Dentro do prazo",
-    overdue: "Atrasado ou indisponível",
-    grace: "Aguardando o primeiro sucesso, dentro da carência",
-    disabled: "Prazo desativado",
-    inactive: "Envio à nuvem desativado",
-    unknown: "Não foi possível verificar",
+    ok: "Within deadline",
+    overdue: "Overdue or unavailable",
+    grace: "Waiting for first success within the grace period",
+    disabled: "Deadline disabled",
+    inactive: "Cloud uploads disabled",
+    unknown: "Could not verify",
   };
   const date = (value) =>
     value
-      ? new Date(value * 1000).toLocaleString("pt-BR", {
+      ? new Date(value * 1000).toLocaleString("en-GB", {
           timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
         })
-      : "nenhum registro";
+      : "no record";
   const attention = [];
   for (const [name, id, label] of [
-    ["local", "local-backup-freshness", "Backup local"],
-    ["cloud", "cloud-backup-freshness", "Envio à nuvem"],
+    ["local", "local-backup-freshness", "Local backup"],
+    ["cloud", "cloud-backup-freshness", "Cloud upload"],
   ]) {
     const status = a.freshness?.[name];
     $(id).textContent = status
       ? label +
-        " · Último sucesso: " +
+        " · Last success: " +
         date(status.last_success) +
         ". " +
-        (states[status.state] || "Verificando") +
-        (status.max_age_hours ? ". Prazo: " + status.max_age_hours + " h" : "") +
-        (status.due_at ? ". Limite: " + date(status.due_at) : "") +
+        (states[status.state] || "Checking") +
+        (status.max_age_hours ? ". Deadline: " + status.max_age_hours + " h" : "") +
+        (status.due_at ? ". Due: " + date(status.due_at) : "") +
         (status.error ? ". " + status.error : "")
-      : label + " · Aguardando verificação…";
+      : label + " · Waiting for a check…";
     if (["overdue", "unknown"].includes(status?.state)) attention.push(label);
   }
   $("backup-age-warning").hidden = !attention.length;
   $("backup-age-warning").textContent = attention.length
-    ? "Backups exigem atenção: " + attention.join(", ") + ". Consulte a aba Backups."
+    ? "Backups need attention: " + attention.join(", ") + ". See the Backups tab."
     : "";
 }
 async function loadAlerts() {
@@ -265,25 +265,25 @@ async function loadAlerts() {
 }
 function modDiagnostics(d) {
   const states = {
-    disabled: "BepInEx desativado nesta sessão.",
-    awaiting_start: "Aguardando início do jogo com BepInEx.",
-    stopped: "Jogo parado. Exibindo a última sessão deste supervisor.",
-    complete: "Carregador BepInEx concluído; confira os avisos e erros abaixo.",
-    loading: "BepInEx detectado; carregamento em andamento.",
-    unconfirmed: "BepInEx habilitado, mas ainda sem confirmação nos logs.",
+    disabled: "BepInEx disabled for this session.",
+    awaiting_start: "Waiting for the game to start with BepInEx.",
+    stopped: "Game stopped. Showing the last supervisor session.",
+    complete: "BepInEx loader completed; check the warnings and errors below.",
+    loading: "BepInEx detected; loading in progress.",
+    unconfirmed: "BepInEx enabled, but not yet confirmed in logs.",
   };
-  $("mod-session-status").textContent = states[d.state] || "Estado desconhecido.";
+  $("mod-session-status").textContent = states[d.state] || "Unknown state.";
   $("mod-session-version").textContent =
-    "Versão detectada: " +
-    (d.version || "não identificada nos logs") +
+    "Detected version: " +
+    (d.version || "not identified in logs") +
     (d.started
-      ? " · Sessão iniciada em " +
-        new Date(d.started * 1000).toLocaleString("pt-BR", {
+      ? " · Session started: " +
+        new Date(d.started * 1000).toLocaleString("en-GB", {
           timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
         })
       : "");
   $("mod-session-pending").textContent =
-    (d.pending_config ? "Alteração de ativação do BepInEx aguarda novo início do jogo. " : "") +
+    (d.pending_config ? "BepInEx activation changes apply at the next game start. " : "") +
     (d.scan_error || "");
   const plugins = $("mod-session-plugins");
   plugins.replaceChildren();
@@ -295,15 +295,15 @@ function modDiagnostics(d) {
       plugin.version +
       " · " +
       (plugin.state === "failed"
-        ? "Falha ou carregamento ignorado"
+        ? "Failed or skipped loading"
         : d.complete
-          ? "Tentativa registrada; carregador concluído"
-          : "Carregamento iniciado");
+          ? "Load attempt recorded; loader finished"
+          : "Loading started");
     plugins.append(item);
   }
   if (!d.plugins.length) {
     const item = document.createElement("li");
-    item.textContent = "Nenhum plugin identificado nos logs desta sessão.";
+    item.textContent = "No plugins identified in this session log.";
     plugins.append(item);
   }
   const issues = $("mod-session-issues");
@@ -311,12 +311,16 @@ function modDiagnostics(d) {
   for (const issue of d.issues) {
     const item = document.createElement("li");
     item.textContent =
-      (issue.level === "warning" ? "Aviso" : "Erro") + " · " + issue.source + ": " + issue.message;
+      (issue.level === "warning" ? "Warning" : "Error") +
+      " · " +
+      issue.source +
+      ": " +
+      issue.message;
     issues.append(item);
   }
   if (!d.issues.length) {
     const item = document.createElement("li");
-    item.textContent = "Nenhum aviso ou erro capturado no diagnóstico.";
+    item.textContent = "No warnings or errors captured in diagnostics.";
     issues.append(item);
   }
 }
@@ -329,8 +333,8 @@ function update(s) {
   if (s.run_intent) {
     $("run-intent").textContent =
       (s.run_intent.running
-        ? "Após reiniciar o contêiner: iniciar o jogo automaticamente."
-        : "Após reiniciar o contêiner: manter o jogo parado.") +
+        ? "After container restart: start the game automatically."
+        : "After container restart: keep the game stopped.") +
       (s.run_intent.error ? " " + s.run_intent.error : "");
   }
   if (s.mods) modDiagnostics(s.mods);
@@ -339,33 +343,33 @@ function update(s) {
   $("crossplay-info").hidden = !s.crossplay;
   $("join-code").textContent =
     s.join_code ||
-    (s.running ? "Aguardando código do servidor…" : "Disponível ao iniciar o servidor");
+    (s.running ? "Waiting for the server code…" : "Available when the server starts");
   $("status").textContent =
-    "Estado: " + s.state + (s.recovery_error ? " — " + s.recovery_error : "");
-  $("panel-health").textContent = "Painel: conectado ao supervisor";
+    "State: " + s.state + (s.recovery_error ? " — " + s.recovery_error : "");
+  $("panel-health").textContent = "Panel: connected to supervisor";
   const diagnostic = s.diagnostics;
   const phases = {
-    ready: "Pronto para conexão",
-    starting: "Iniciando",
-    stopping: "Parando",
-    stopped: "Parado",
-    recovering: "Em recuperação",
-    failed: "Falha",
+    ready: "Ready for connections",
+    starting: "Starting",
+    stopping: "Stopping",
+    stopped: "Stopped",
+    recovering: "Recovering",
+    failed: "Failed",
   };
   if (diagnostic) {
-    $("status").textContent = "Jogo: " + (phases[diagnostic.phase] || s.state);
+    $("status").textContent = "Game: " + (phases[diagnostic.phase] || s.state);
     $("game-detail").textContent =
       diagnostic.detail +
       (diagnostic.retry_in_seconds === null
         ? ""
-        : " Nova tentativa em " + diagnostic.retry_in_seconds + " s.");
+        : " Next attempt in " + diagnostic.retry_in_seconds + " s.");
     const failure = diagnostic.last_failure;
     $("last-failure").hidden = !failure;
     $("last-failure").textContent = failure
-      ? "Última falha (" +
+      ? "Last failure (" +
         failure.source +
         ") · " +
-        new Date(failure.time * 1000).toLocaleString("pt-BR", {
+        new Date(failure.time * 1000).toLocaleString("en-GB", {
           timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
         }) +
         ": " +
@@ -376,44 +380,44 @@ function update(s) {
   const presence = s.players;
   const presenceDetails = [presence.reason];
   if (presence.source === "game_log") {
-    presenceDetails.push("Fonte: log do jogo (Connections)");
+    presenceDetails.push("Source: game log (Connections)");
     if (typeof presence.updated_at === "number") {
       presenceDetails.push(
-        "Observado em " +
-          new Date(presence.updated_at * 1000).toLocaleString("pt-BR", {
+        "Observed at " +
+          new Date(presence.updated_at * 1000).toLocaleString("en-GB", {
             timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
             hourCycle: "h23",
           }),
       );
     }
     if (typeof presence.age_seconds === "number")
-      presenceDetails.push("Há " + presence.age_seconds + "s");
+      presenceDetails.push("Age: " + presence.age_seconds + "s");
     if (presence.count === null && typeof presence.last_count === "number")
-      presenceDetails.push("Última contagem: " + presence.last_count + " (sem confirmação atual)");
+      presenceDetails.push("Last count: " + presence.last_count + " (not currently confirmed)");
     if (presence.count === 0 && typeof presence.idle_wait_seconds === "number")
       presenceDetails.push(
         presence.idle_wait_seconds > 0
-          ? "Zero no log: aguardando " + presence.idle_wait_seconds + "s para manutenção automática"
-          : "Zero no log há pelo menos 2 min; demais verificações ainda se aplicam",
+          ? "Zero in log: waiting " + presence.idle_wait_seconds + "s before automatic maintenance"
+          : "Zero in log for at least 2 min; other checks still apply",
       );
   }
   if (!s.crossplay && presence.steam?.updated_at) {
     presenceDetails.push(
-      "Última consulta Steam da manutenção: " +
-        (presence.steam.count === null ? "indisponível" : presence.steam.count + " jogador(es)") +
-        " · há " +
+      "Last maintenance Steam query: " +
+        (presence.steam.count === null ? "unavailable" : presence.steam.count + " player(s)") +
+        " · age " +
         presence.steam.age_seconds +
         "s",
     );
   }
   $("player-reason").textContent = presenceDetails.join(" · ");
   $("versions").textContent =
-    "Build instalado: " +
+    "Installed build: " +
     (s.installed_build || "—") +
-    " · Disponível: " +
+    " · Available: " +
     (s.available_build || "—");
   if (s.image_version) renderImageVersion(s.image_version);
-  $("pending").textContent = s.pending_config ? "Alterações aguardam reinício" : "";
+  $("pending").textContent = s.pending_config ? "Changes require a restart" : "";
   $("logs").textContent = s.logs
     .map((l) => new Date(l.time * 1000).toLocaleTimeString() + "  " + l.message)
     .join("\n");
@@ -430,9 +434,9 @@ function update(s) {
   $("network").textContent = bytes(m.network_in_bps) + " / " + bytes(m.network_out_bps) + "/s";
   $("disk").textContent = bytes(m.disk_used) + " / " + bytes(m.disk_total);
   $("metric-scope").textContent =
-    "Medição: " +
+    "Measurement: " +
     m.scope +
-    ". Disco: sistema de arquivos do volume. Histórico: até uma hora; atualização a cada 5 segundos.";
+    ". Disk: volume filesystem. History: up to one hour; refreshed every 5 seconds.";
   chart(
     "cpu-chart",
     samples.map((x) => x.cpu_percent),
@@ -456,40 +460,40 @@ function update(s) {
 function renderStartup(startup) {
   const history = startup?.history || [];
   const outcomes = {
-    starting: "Iniciando",
+    starting: "Starting",
     ready: "Online",
-    stopped: "Parada solicitada",
-    fatal: "Sinal fatal",
+    stopped: "Stop requested",
+    fatal: "Fatal signal",
     crashed: "Queda",
     exited: "Encerrado",
-    spawn_failed: "Falha ao criar processo",
-    interrupted: "Supervisor interrompido",
+    spawn_failed: "Process creation failed",
+    interrupted: "Supervisor interrupted",
   };
   const phases = {
-    before_scene: "antes da cena",
-    unknown: "fase desconhecida",
-    scene: "cena inicial",
-    world: "mundo",
-    ready: "pronto",
+    before_scene: "before first scene",
+    unknown: "unknown phase",
+    scene: "first scene",
+    world: "world",
+    ready: "ready",
   };
   $("startup-summary").textContent =
     startup?.error ||
     (history.length
-      ? "Perfil da última tentativa: " +
-        (history[0].profile === "compatible" ? "compatibilidade" : "padrão")
-      : "Nenhuma inicialização registrada nesta versão.");
+      ? "Last attempt profile: " +
+        (history[0].profile === "compatible" ? "compatibility" : "default")
+      : "No startup recorded by this version.");
   $("startup-history").replaceChildren();
   for (const item of history) {
     const row = document.createElement("li");
     row.textContent = [
-      new Date(item.started * 1000).toLocaleString("pt-BR", {
+      new Date(item.started * 1000).toLocaleString("en-GB", {
         timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
       }),
       outcomes[item.outcome] || item.outcome,
-      item.profile === "compatible" ? "compatibilidade" : "padrão",
+      item.profile === "compatible" ? "compatibility" : "default",
       phases[item.phase] || item.phase,
-      typeof item.signal === "number" ? "sinal " + item.signal : "",
-      typeof item.exit_code === "number" ? "saída " + item.exit_code : "",
+      typeof item.signal === "number" ? "signal " + item.signal : "",
+      typeof item.exit_code === "number" ? "exit " + item.exit_code : "",
       item.signature === "platform_initializer" ? "PlatformInitializer" : "",
     ]
       .filter(Boolean)
@@ -531,10 +535,10 @@ async function loadConfig(savedGroup = null) {
     if (["bepinex_url", "bepinex_sha256"].includes(key)) continue;
     const container = $(settingsContainers[configGroup(key)]);
     const heading = {
-      server_name: "Mundo e acesso",
-      preset: "Regras de jogo",
-      save_interval: "Salvamento",
-      timezone: "Rotina automática",
+      server_name: "World and access",
+      preset: "Game rules",
+      save_interval: "Saving",
+      timezone: "Automatic maintenance",
       bepinex: "Mods",
     }[key];
     if (heading) {
@@ -561,7 +565,7 @@ async function loadConfig(savedGroup = null) {
         const o = document.createElement("option");
         o.value = v;
         o.textContent =
-          v === "" ? "Padrão do mundo/preset" : v === "true" ? "Sim" : v === "false" ? "Não" : v;
+          v === "" ? "World/preset default" : v === "true" ? "Yes" : v === "false" ? "No" : v;
         input.append(o);
       });
       input.value = String(value);
@@ -577,21 +581,21 @@ async function loadConfig(savedGroup = null) {
     label.append(input);
     row.append(label);
     const source = document.createElement("small");
-    source.textContent = "Origem: " + currentConfig.sources[key];
+    source.textContent = "Source: " + currentConfig.sources[key];
     row.append(source);
-    if (currentConfig.sources[key] === "painel" && key !== "server_port") {
+    if (currentConfig.sources[key] === "panel" && key !== "server_port") {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "reset";
-      b.textContent = "Usar Compose";
+      b.textContent = "Use Compose";
       b.onclick = () =>
         guard(async () => {
           const world = key === "world_name";
-          if (world && !confirm("Voltar ao mundo do Compose? O save atual será preservado."))
+          if (world && !confirm("Use the Compose world? The current save will be preserved."))
             return;
           await api("/config", "PATCH", { reset: [key], confirm_world: world });
           await loadConfig(configGroup(key));
-          notice("Ajuste removido. Reinicie com segurança para aplicar ao jogo.");
+          notice("Override removed. Restart safely to apply game changes.");
         });
       row.append(b);
     }
@@ -612,12 +616,12 @@ function draftPlayers() {
 let knownPlayerRecords = [];
 function renderPlayers() {
   const entries = draftPlayers();
-  $("user-list-count").textContent = entries.length + " jogador(es) na lista";
+  $("user-list-count").textContent = entries.length + " player(s) in list";
   $("user-list").replaceChildren();
   if (!entries.length) {
     const empty = document.createElement("p");
     empty.className = "muted";
-    empty.textContent = "Nenhum jogador nesta lista.";
+    empty.textContent = "No players in this list.";
     $("user-list").append(empty);
   }
   entries.forEach((id) => {
@@ -630,14 +634,14 @@ function renderPlayers() {
       : id;
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "Remover";
-    remove.setAttribute("aria-label", "Remover " + id);
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", "Remove " + id);
     remove.onclick = () => {
       $("user-entries").value = draftPlayers()
         .filter((value) => value !== id)
         .join("\n");
       renderPlayers();
-      notice("Jogador removido da seleção. Salve a lista para aplicar.");
+      notice("Player removed from selection. Save the list to apply.");
     };
     row.append(label, remove);
     $("user-list").append(row);
@@ -649,9 +653,7 @@ function knownPlayers(players) {
   $("known-player").replaceChildren();
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = players.length
-    ? "Selecione um jogador"
-    : "Nenhum ID identificado ainda";
+  placeholder.textContent = players.length ? "Select a player" : "No IDs identified yet";
   $("known-player").append(placeholder);
   players.forEach((player) => {
     const option = document.createElement("option");
@@ -660,7 +662,7 @@ function knownPlayers(players) {
       player.name,
       player.platform,
       player.id,
-      player.confirmed === false ? "ID observado: confirmar no F2" : "",
+      player.confirmed === false ? "Observed ID: confirm in F2" : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -685,7 +687,7 @@ async function loadBackups() {
   const list = await api("/backups");
   $("backup-list").replaceChildren();
   if (!list.length) {
-    $("backup-list").textContent = "Nenhum backup criado ainda.";
+    $("backup-list").textContent = "No backups created yet.";
     return;
   }
   list.forEach((b) => {
@@ -696,19 +698,20 @@ async function loadBackups() {
     a.textContent = b.name + " · " + bytes(b.bytes);
     row.append(a);
     const button = document.createElement("button");
-    button.textContent = "Restaurar";
+    button.type = "button";
+    button.textContent = "Restore";
     button.onclick = () =>
       guard(async () => {
         if (
           !confirm(
-            "Restaurar " +
+            "Restore " +
               b.name +
-              "? Pare o jogo primeiro. Será criado um backup do estado atual.",
+              "? Stop the game first. A backup of the current state will be created.",
           )
         )
           return;
         await api("/actions", "POST", { action: "restore", backup: b.name, confirm: true });
-        notice("Restauração enviada. Acompanhe na aba Atividade.");
+        notice("Restore requested. Follow progress in Activity.");
       });
     row.append(button);
     $("backup-list").append(row);
@@ -718,14 +721,14 @@ async function signedIn() {
   $("login").hidden = true;
   $("logout").hidden = false;
   $("identity").textContent =
-    panelUser.username + " · " + (isAdmin() ? "Administrador" : "Operador");
+    panelUser.username + " · " + (isAdmin() ? "Administrator" : "Operator");
   $("own-password").hidden = false;
   if (panelUser.must_change_password) {
     $("dashboard").hidden = true;
     $("password-change").hidden = false;
     $("close-password-change").hidden = true;
     $("password-change-message").textContent =
-      "Troque a senha temporária para liberar o acesso ao painel.";
+      "Change your temporary password to unlock the panel.";
     return;
   }
   $("password-change").hidden = true;
@@ -736,10 +739,10 @@ async function signedIn() {
   });
   refreshMobileNavigation();
   selectTab($("tab-overview"));
-  $("history-title").textContent = isAdmin() ? "Histórico de manutenção" : "Suas operações";
+  $("history-title").textContent = isAdmin() ? "Maintenance history" : "Your operations";
   $("action-policy").textContent = isAdmin()
-    ? "Ações administrativas solicitam a parada imediatamente e podem desconectar jogadores. O jogo salva antes de encerrar."
-    : "Iniciar é imediato. Parar e reiniciar aguardam o jogo pronto e zero jogadores confirmado por dois minutos; no modo Steam também exigem consulta Steam. Acompanhe suas solicitações na aba Atividade.";
+    ? "Administrator actions request shutdown immediately and may disconnect players. The game saves before exiting."
+    : "Start is immediate. Stop and restart wait for the game to be ready and zero players to be confirmed for two minutes; Steam mode also requires a Steam query. Track requests in Activity.";
   if (isAdmin()) {
     await Promise.all([
       loadConfig(),
@@ -747,15 +750,9 @@ async function signedIn() {
       loadUsers(),
       loadBackups(),
       loadCloud(),
-      loadAlerts().catch((error) =>
-        notice("Não foi possível carregar os alertas: " + error.message),
-      ),
-      loadModConfigs().catch((error) =>
-        notice("Não foi possível carregar as configurações dos plugins: " + error.message),
-      ),
-      loadPlugins().catch((error) =>
-        notice("Não foi possível carregar a lista de plugins: " + error.message),
-      ),
+      loadAlerts().catch((error) => notice("Could not load alerts: " + error.message)),
+      loadModConfigs().catch((error) => notice("Could not load plugin settings: " + error.message)),
+      loadPlugins().catch((error) => notice("Could not load the plugin list: " + error.message)),
       loadAccounts(),
       loadAudit(),
     ]);
@@ -771,9 +768,9 @@ async function signedIn() {
   if (isAdmin()) imageUpdateTimer = setInterval(loadImageUpdateStatus, 3000);
   events.onerror = () => {
     api("/session").catch(() => {});
-    $("panel-health").textContent = "Painel: conexão interrompida; reconectando…";
-    $("status").textContent = "Jogo: estado sem atualização";
-    notice("Conexão interrompida; tentando reconectar ao supervisor…");
+    $("panel-health").textContent = "Panel: connection interrupted; reconnecting…";
+    $("status").textContent = "Game: status not updated";
+    notice("Connection interrupted; reconnecting to the supervisor…");
   };
 }
 async function guard(fn) {
@@ -803,33 +800,32 @@ $("logout").onclick = () =>
   });
 const actionConfirmations = {
   "image-update": {
-    title: "Atualizar a imagem do servidor?",
-    label: "Atualizar imagem",
+    title: "Update server image?",
+    label: "Update image",
     description:
-      "O host baixará e validará a nova imagem, criará um backup e trocará os contêineres. O painel pode desconectar e solicitar novo login. Em caso de falha após a troca, tentará retornar à imagem anterior.",
+      "The host will download and check the new image, create a backup, and switch containers. The panel may disconnect and require signing in again. If verification fails after switching, it will attempt to restore the previous image.",
   },
   stop: {
-    title: "Parar o servidor?",
-    label: "Parar servidor",
-    description: "O jogo será encerrado e permanecerá parado até uma nova solicitação de início.",
+    title: "Stop the server?",
+    label: "Stop server",
+    description: "The game will stop and remain stopped until a new start request.",
   },
   restart: {
-    title: "Reiniciar o servidor?",
-    label: "Reiniciar servidor",
-    description:
-      "O jogo será encerrado e iniciado novamente, aplicando as configurações pendentes.",
+    title: "Restart the server?",
+    label: "Restart server",
+    description: "The game will stop and start again, applying pending settings.",
   },
   update: {
-    title: "Atualizar o jogo?",
-    label: "Atualizar jogo",
+    title: "Update the game?",
+    label: "Update game",
     description:
-      "O supervisor verificará e instalará a atualização do jogo. A operação pode exigir a parada e a inicialização do servidor.",
+      "The supervisor will check and install game updates. This may require stopping and starting the server.",
   },
   backup: {
     title: "Criar backup agora?",
     label: "Criar backup",
     description:
-      "Para criar uma cópia consistente do mundo, o jogo será parado. Se estava em execução, será iniciado novamente após o backup.",
+      "To create a consistent world copy, the game will stop. If it was running, it will restart after the backup.",
   },
 };
 function confirmServerAction(action) {
@@ -840,7 +836,7 @@ function confirmServerAction(action) {
   $("action-confirm-description").textContent =
     info.description +
     (!isAdmin() && ["stop", "restart"].includes(action)
-      ? " Sua solicitação aguardará a confirmação de zero jogadores antes de parar o jogo."
+      ? " Your request will wait for zero players to be confirmed before stopping the game."
       : "");
   $("action-confirm-submit").textContent = info.label;
   dialog.returnValue = "cancel";
@@ -862,7 +858,7 @@ $("actions").onclick = (event) => {
       if (!(await confirmServerAction(action))) return;
       document.querySelectorAll("#actions button").forEach((item) => (item.disabled = true));
       await api("/actions", "POST", { action });
-      notice("Operação enviada. Acompanhe o resultado na aba Atividade.");
+      notice("Operation requested. Track the result in Activity.");
     } finally {
       actionPending = false;
       document.querySelectorAll("#actions button").forEach((item) => (item.disabled = false));
@@ -896,15 +892,13 @@ for (const [formId, group] of [
       if (
         world &&
         !confirm(
-          "Selecionar/criar o mundo “" +
-            changes.world_name +
-            "”? O mundo anterior será preservado.",
+          "Select/create world “" + changes.world_name + "”? The previous world will be preserved.",
         )
       )
         return;
       await api("/config", "PATCH", { changes, confirm_world: world });
       await loadConfig(group);
-      notice("Configuração salva. Alterações do jogo serão aplicadas na próxima inicialização.");
+      notice("Settings saved. Game changes apply at the next startup.");
     });
   };
 }
@@ -916,7 +910,7 @@ $("users-form").onsubmit = (e) => {
     if (
       kind === "permitted" &&
       $("user-entries").value.trim() &&
-      !confirm("Restringir o acesso somente aos IDs permitidos?")
+      !confirm("Restrict access to permitted IDs only?")
     )
       return;
     const saved = await api("/users/" + kind, "PUT", { entries: draftPlayers() });
@@ -924,7 +918,7 @@ $("users-form").onsubmit = (e) => {
       $("user-entries").value = saved.entries.join("\n");
       renderPlayers();
     }
-    notice("Lista salva. O jogo recarrega as listas; se necessário, reinicie com segurança.");
+    notice("List saved. The game reloads these lists; restart safely if needed.");
   });
 };
 $("refresh-backups").onclick = () => guard(loadBackups);
@@ -946,7 +940,7 @@ $("cloud-form").onsubmit = (e) => {
       config: $("cloud-config").value,
     });
     await loadCloud();
-    notice("Envio na nuvem salvo. Novos backups serão enviados automaticamente quando ativado.");
+    notice("Cloud upload settings saved. New backups will be uploaded automatically when enabled.");
   });
 };
 
@@ -954,7 +948,7 @@ $("cloud-file").onchange = () =>
   guard(async () => {
     const f = $("cloud-file").files[0];
     if (!f) return;
-    if (f.size > 65536) throw new Error("Arquivo de conexão muito grande (máximo 64 KiB)");
+    if (f.size > 65536) throw new Error("Connection file too large (maximum 64 KiB)");
     $("cloud-config").value = await f.text();
   });
 
@@ -1039,9 +1033,7 @@ $("known-player").onchange = () => {
   if (option.dataset.confirmed === "false") {
     $("player-id").value = "";
     $("player-identity-details").open = true;
-    notice(
-      "ID observado no transporte crossplay. Confira e corrija o ID no F2 antes de confirmar.",
-    );
+    notice("ID observed in crossplay transport. Check and correct the F2 ID before confirming.");
   } else $("player-id").value = option.value;
 };
 $("player-identity-form").onsubmit = (event) => {
@@ -1060,9 +1052,7 @@ $("player-identity-form").onsubmit = (event) => {
     $("directory-confirm").checked = false;
     $("player-identity-details").open = false;
     renderPlayers();
-    notice(
-      "Identificação salva. Adicione o jogador à lista desejada e salve para aplicar permissões.",
-    );
+    notice("Identity saved. Add the player to the desired list and save to apply permissions.");
   });
 };
 $("refresh-players").onclick = () =>
@@ -1078,20 +1068,20 @@ $("player-add-form").onsubmit = (event) => {
     if (/^\d{17}$/.test(id)) id = "Steam_" + id;
     if (!/^(?:[A-Za-z]+_)[A-Za-z0-9:_-]{1,128}$/.test(id))
       throw new Error(
-        "Cole um ID de plataforma completo, como Steam_ seguido do SteamID64, ou apenas os 17 dígitos do SteamID64.",
+        "Paste a complete platform ID, such as Steam_ followed by SteamID64, or the 17-digit SteamID64.",
       );
     const identity = (value) => (/^\d{17}$/.test(value) ? "Steam_" + value : value);
     const entries = draftPlayers();
     if (entries.some((value) => identity(value) === id)) {
-      notice("Esse jogador já está na lista selecionada.");
+      notice("This player is already in the selected list.");
       return;
     }
-    if (entries.length >= 1000) throw new Error("A lista aceita no máximo 1000 jogadores.");
+    if (entries.length >= 1000) throw new Error("The list supports up to 1000 players.");
     $("user-entries").value = [...entries, id].join("\n");
     $("player-id").value = "";
     $("known-player").value = "";
     renderPlayers();
-    notice("Jogador adicionado à seleção. Salve a lista para aplicar.");
+    notice("Player added to selection. Save the list to apply.");
   });
 };
 
@@ -1101,9 +1091,7 @@ async function loadModConfigs() {
   $("mod-config-file").replaceChildren();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = data.files.length
-    ? "Selecione um arquivo"
-    : "Nenhuma configuração encontrada";
+  empty.textContent = data.files.length ? "Select a file" : "No configuration files found";
   $("mod-config-file").append(empty);
   data.files.forEach((path) => {
     const option = document.createElement("option");
@@ -1128,7 +1116,7 @@ function discardModChanges() {
   return (
     !modConfig ||
     (!modConfig.previousLoaded && $("mod-config-content").value === modConfig.content) ||
-    confirm("Descartar as alterações não salvas deste arquivo?")
+    confirm("Discard unsaved changes to this file?")
   );
 }
 $("refresh-mod-configs").onclick = () => {
@@ -1165,7 +1153,7 @@ $("mod-config-form").onsubmit = (event) => {
       revision: modConfig.revision,
     });
     if ($("mod-config-file").value === saved.path) showModConfig(saved);
-    notice("Arquivo salvo. Inicie o jogo para aplicar a configuração do plugin.");
+    notice("File saved. Start the game to apply the plugin settings.");
   });
 };
 $("previous-mod-config").onclick = () =>
@@ -1176,7 +1164,7 @@ $("previous-mod-config").onclick = () =>
     if ($("mod-config-file").value === path) {
       showModConfig(data);
       modConfig.previousLoaded = true;
-      notice("Versão anterior carregada no editor. Clique em Salvar arquivo para restaurar.");
+      notice("Previous version loaded in the editor. Click Save file to restore it.");
     }
   });
 
@@ -1185,40 +1173,38 @@ async function loadPlugins() {
   if (data.diagnostics) modDiagnostics(data.diagnostics);
   $("plugin-list").replaceChildren();
   if (!data.files.length) {
-    $("plugin-list").textContent = "Nenhuma DLL instalada ainda.";
+    $("plugin-list").textContent = "No DLLs installed yet.";
   }
   data.files.forEach((file) => {
     const row = document.createElement("div");
     row.className = "plugin-entry";
     const label = document.createElement("span");
     const sessionStates = {
-      awaiting_start: "Aguarda início do jogo",
-      pending_restart: "Alterado após o último início; aguarda reinício",
-      present_at_start: "Presente no início; confira o carregamento acima",
-      last_session: "Presente na última sessão",
-      unknown: "Comparação com a sessão indisponível",
+      awaiting_start: "Waiting for game startup",
+      pending_restart: "Changed since last startup; restart required",
+      present_at_start: "Present at startup; check loading status above",
+      last_session: "Present in the last session",
+      unknown: "Session comparison unavailable",
     };
     label.textContent =
       file.name +
       " · " +
       bytes(file.bytes) +
       " · " +
-      (sessionStates[file.session_state] || "Carregamento não confirmado");
+      (sessionStates[file.session_state] || "Loading not confirmed");
     row.append(label);
     if (file.previous_available && file.revision) {
       const restore = document.createElement("button");
       restore.type = "button";
-      restore.textContent = "Restaurar anterior";
-      restore.setAttribute("aria-label", "Restaurar versão anterior de " + file.name);
+      restore.textContent = "Restore previous";
+      restore.setAttribute("aria-label", "Restore previous version of " + file.name);
       restore.onclick = () =>
         guard(async () => {
-          if (
-            !confirm("Restaurar a DLL anterior de " + file.name + "? O jogo precisa estar parado.")
-          )
+          if (!confirm("Restore the previous DLL for " + file.name + "? The game must be stopped."))
             return;
           await api("/plugins/restore", "POST", { name: file.name, revision: file.revision });
           await loadPlugins();
-          notice("DLL anterior restaurada. Inicie o jogo para carregá-la.");
+          notice("Previous DLL restored. Start the game to load it.");
         });
       row.append(restore);
     }
@@ -1227,8 +1213,8 @@ async function loadPlugins() {
       remove.type = "button";
       remove.dataset.pluginWrite = "true";
       remove.disabled = !pluginsEditable();
-      remove.textContent = "Excluir";
-      remove.setAttribute("aria-label", "Excluir plugin " + file.name);
+      remove.textContent = "Delete";
+      remove.setAttribute("aria-label", "Delete plugin " + file.name);
       remove.onclick = () =>
         guard(async () => {
           if (!(await confirmPluginChange("delete", file.name))) return;
@@ -1242,7 +1228,7 @@ async function loadPlugins() {
             });
             await loadPlugins();
             notice(
-              "Plugin excluído. Configurações preservadas; a cópia está em Plugins excluídos.",
+              "Plugin deleted. Settings preserved; the recovery copy is listed under Deleted plugins.",
             );
           } finally {
             pluginMutationPending = false;
@@ -1260,12 +1246,13 @@ async function loadPlugins() {
     const label = document.createElement("span");
     label.textContent =
       file.name +
-      " · Excluído em " +
-      new Date(file.deleted_at * 1000).toLocaleString("pt-BR", {
+      " · Deleted at " +
+      new Date(file.deleted_at * 1000).toLocaleString("en-GB", {
         timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
       });
     const restore = document.createElement("button");
-    restore.textContent = "Restaurar excluído";
+    restore.type = "button";
+    restore.textContent = "Restore deleted";
     restore.dataset.pluginWrite = "true";
     restore.dataset.restoreConflict = String(
       data.files.some(
@@ -1273,7 +1260,7 @@ async function loadPlugins() {
       ),
     );
     restore.disabled = !pluginsEditable() || restore.dataset.restoreConflict === "true";
-    restore.setAttribute("aria-label", "Restaurar plugin excluído " + file.name);
+    restore.setAttribute("aria-label", "Restore deleted plugin " + file.name);
     restore.onclick = () =>
       guard(async () => {
         if (!(await confirmPluginChange("restore", file.name))) return;
@@ -1286,7 +1273,7 @@ async function loadPlugins() {
             confirm: true,
           });
           await loadPlugins();
-          notice("Plugin restaurado. Inicie o jogo para carregá-lo.");
+          notice("Plugin restored. Start the game to load it.");
         } finally {
           pluginMutationPending = false;
           syncDeletedPluginControls();
@@ -1296,7 +1283,7 @@ async function loadPlugins() {
     $("deleted-plugin-list").append(row);
   }
   if (!(data.deleted || []).length)
-    $("deleted-plugin-list").textContent = "Nenhum plugin excluído disponível para restaurar.";
+    $("deleted-plugin-list").textContent = "No deleted plugins available to restore.";
   syncDeletedPluginControls();
   return data.files;
 }
@@ -1311,14 +1298,17 @@ $("plugin-upload-form").onsubmit = (event) => {
       file.size === 0 ||
       file.size > 16 * 1024 * 1024
     )
-      throw new Error("Selecione uma DLL de até 16 MiB, com nome simples e sem pastas.");
+      throw new Error("Select a DLL up to 16 MiB with a simple filename and no directories.");
     $("upload-plugin").disabled = true;
     try {
       const files = await loadPlugins();
       const existing = files.find((item) => item.name === file.name);
       if (existing && !existing.revision)
-        throw new Error("A DLL existente ultrapassa 16 MiB; gerencie-a pelo SSH.");
-      if (existing && !confirm("Substituir " + file.name + "? A versão anterior será preservada."))
+        throw new Error("The existing DLL exceeds 16 MiB; manage it through SSH.");
+      if (
+        existing &&
+        !confirm("Replace " + file.name + "? The previous version will be preserved.")
+      )
         return;
       $("plugin-upload-status").textContent = "Enviando " + file.name + "…";
       const query = new URLSearchParams({ name: file.name });
@@ -1332,15 +1322,15 @@ $("plugin-upload-form").onsubmit = (event) => {
       if (!response.ok) {
         if (response.status === 401) signedOut();
         throw new Error(
-          typeof result.detail === "string" ? result.detail : "Não foi possível enviar a DLL.",
+          typeof result.detail === "string" ? result.detail : "Could not upload the DLL.",
         );
       }
       $("plugin-file").value = "";
       $("plugin-upload-status").textContent =
-        "Plugin enviado: " + result.name + ". Inicie o jogo para carregá-lo.";
+        "Plugin uploaded: " + result.name + ". Start the game to load it.";
       await loadPlugins();
     } catch (error) {
-      $("plugin-upload-status").textContent = "Envio não concluído.";
+      $("plugin-upload-status").textContent = "Upload did not complete.";
       throw error;
     } finally {
       $("upload-plugin").disabled = false;
@@ -1359,19 +1349,19 @@ $("alerts-form").onsubmit = (event) => {
     });
     $("alerts-url").value = "";
     alertStatus(a);
-    notice("Alertas salvos.");
+    notice("Alerts saved.");
   });
 };
 $("alerts-test").onclick = () =>
   guard(async () => {
     await api("/alerts/test", "POST", {});
-    notice("Notificação de teste entregue ao Discord.");
+    notice("Test notification delivered to Discord.");
   });
 
 function renderImageUpdate(status) {
   $("update-image").disabled =
     imageUpdateRequesting || !status.available || status.state === "running";
-  $("image-update-status").textContent = status.message || "Estado da atualização indisponível.";
+  $("image-update-status").textContent = status.message || "Update status unavailable.";
 }
 async function loadImageUpdateStatus() {
   try {
@@ -1379,7 +1369,7 @@ async function loadImageUpdateStatus() {
   } catch (error) {
     $("update-image").disabled = true;
     $("image-update-status").textContent =
-      "Painel temporariamente indisponível; reconectando para consultar a atualização. Pode ser necessário entrar novamente.";
+      "Panel temporarily unavailable; reconnecting to check the update. You may need to sign in again.";
   }
 }
 $("update-image").onclick = () =>
@@ -1392,7 +1382,7 @@ $("update-image").onclick = () =>
       const request_id = crypto.randomUUID().replaceAll("-", "");
       renderImageUpdate(await api("/image-update", "POST", { confirm: true, request_id }));
       notice(
-        "Atualização solicitada. Acompanhe em Configurações do servidor; entre novamente se o painel pedir login após a troca.",
+        "Update requested. Track progress in Server settings; sign in again if prompted after the switch.",
       );
     } finally {
       imageUpdateRequesting = false;
@@ -1405,7 +1395,7 @@ function renderMaintenanceHistory() {
   const zone = currentConfig?.values.timezone || "America/Sao_Paulo";
   const format = (timestamp) =>
     typeof timestamp === "number" && Number.isFinite(timestamp)
-      ? new Date(timestamp * 1000).toLocaleString("pt-BR", { timeZone: zone, hourCycle: "h23" })
+      ? new Date(timestamp * 1000).toLocaleString("en-GB", { timeZone: zone, hourCycle: "h23" })
       : "—";
   const day = (timestamp) =>
     new Intl.DateTimeFormat("en-CA", {
@@ -1415,20 +1405,20 @@ function renderMaintenanceHistory() {
       day: "2-digit",
     }).format(new Date(timestamp * 1000));
   const origins = {
-    administrator: "Administrador",
-    operator: "Operador",
+    administrator: "Administrator",
+    operator: "Operator",
     schedule: "Agendamento",
-    recovery: "Recuperação",
+    recovery: "Recovery",
   };
   const actions = {
-    start: "Início",
-    stop: "Parada",
-    restart: "Reinício",
+    start: "Start",
+    stop: "Stop",
+    restart: "Restart",
     backup: "Backup",
-    update: "Atualização do jogo",
-    restore: "Restauração",
-    "check-update": "Verificação de atualização",
-    "recover-startup": "Recuperação da inicialização",
+    update: "Game update",
+    restore: "Restore",
+    "check-update": "Update check",
+    "recover-startup": "Startup recovery",
   };
   $("jobs").replaceChildren();
   const jobs = [...maintenanceJobs].reverse().filter((job) => {
@@ -1445,10 +1435,10 @@ function renderMaintenanceHistory() {
     const row = document.createElement("div");
     row.className = "job";
     const when = document.createElement("time");
-    when.textContent = "Solicitado em " + format(job.created);
+    when.textContent = "Requested at " + format(job.created);
     if (typeof job.created === "number" && Number.isFinite(job.created))
       when.dateTime = new Date(job.created * 1000).toISOString();
-    when.title = "Horários em " + zone;
+    when.title = "Times in " + zone;
     const heading = document.createElement("strong");
     heading.textContent =
       (actions[job.action] || job.action) +
@@ -1460,20 +1450,20 @@ function renderMaintenanceHistory() {
     const duration = typeof job.duration === "number" ? Math.round(job.duration) + "s" : "—";
     details.textContent =
       origins[job.origin || (job.scheduled ? "schedule" : "administrator")] +
-      " · Início: " +
+      " · Started: " +
       format(job.started) +
-      " · Término: " +
+      " · Finished: " +
       format(job.finished) +
-      " · Duração em execução: " +
+      " · Running duration: " +
       duration +
-      " · Tentativas: " +
+      " · Attempts: " +
       (job.attempts || 0);
     row.append(when, heading, details);
     for (const text of [
       job.error,
       job.result,
-      job.backup_created ? "Backup criado: " + job.backup_created : null,
-      job.backup ? "Backup restaurado: " + job.backup : null,
+      job.backup_created ? "Backup created: " + job.backup_created : null,
+      job.backup ? "Restored backup: " + job.backup : null,
     ]) {
       if (text) {
         const line = document.createElement("p");
@@ -1484,7 +1474,7 @@ function renderMaintenanceHistory() {
     $("jobs").append(row);
   }
   if (!jobs.length)
-    $("jobs").textContent = "Nenhuma operação neste período com os filtros selecionados.";
+    $("jobs").textContent = "No operations in this period match the selected filters.";
 }
 for (const id of ["history-origin", "history-state", "history-from", "history-to"]) {
   $(id).addEventListener("change", renderMaintenanceHistory);
@@ -1494,8 +1484,8 @@ $("own-password").onclick = () => {
   $("password-change").hidden = false;
   $("close-password-change").hidden = panelUser.must_change_password;
   $("password-change-message").textContent = panelUser.must_change_password
-    ? "Troque a senha temporária para liberar o painel."
-    : "Alterar a senha encerra suas sessões. Entre novamente depois de salvar.";
+    ? "Change your temporary password to unlock the panel."
+    : "Changing your password ends your sessions. Sign in again after saving.";
 };
 $("close-password-change").onclick = () => {
   $("password-change").hidden = true;
@@ -1505,13 +1495,13 @@ $("password-change-form").onsubmit = (event) => {
   event.preventDefault();
   guard(async () => {
     if ($("new-password").value !== $("repeat-password").value)
-      throw new Error("As novas senhas não conferem");
+      throw new Error("The new passwords do not match");
     await api("/password", "POST", {
       current_password: $("current-password").value,
       password: $("new-password").value,
     });
     signedOut();
-    notice("Senha alterada. Entre novamente com sua nova senha.");
+    notice("Password changed. Sign in again with your new password.");
   });
 };
 async function loadAccounts() {
@@ -1524,10 +1514,10 @@ async function loadAccounts() {
     const name = document.createElement("strong");
     name.textContent = user.username;
     const role = document.createElement("select");
-    role.setAttribute("aria-label", "Perfil de " + user.username);
+    role.setAttribute("aria-label", "Role for " + user.username);
     for (const [value, label] of [
-      ["operator", "Operador"],
-      ["admin", "Administrador"],
+      ["operator", "Operator"],
+      ["admin", "Administrator"],
     ]) {
       const option = document.createElement("option");
       option.value = value;
@@ -1538,11 +1528,12 @@ async function loadAccounts() {
     const label = document.createElement("label");
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
-    enabled.setAttribute("aria-label", "Conta ativa de " + user.username);
+    enabled.setAttribute("aria-label", "Active account for " + user.username);
     enabled.checked = user.enabled;
-    label.append(enabled, document.createTextNode(" Conta ativa"));
+    label.append(enabled, document.createTextNode(" Active account"));
     const save = document.createElement("button");
-    save.textContent = "Salvar " + user.username;
+    save.type = "button";
+    save.textContent = "Save " + user.username;
     role.disabled = enabled.disabled = save.disabled = user.id === "admin";
     save.onclick = () =>
       guard(async () => {
@@ -1552,12 +1543,12 @@ async function loadAccounts() {
         });
         await loadAccounts();
         await loadAudit();
-        notice("Conta atualizada; sessões e solicitações pendentes foram invalidadas.");
+        notice("Account updated; sessions and pending requests invalidated.");
       });
     const info = document.createElement("small");
     info.textContent = user.must_change_password
-      ? "Troca de senha pendente"
-      : "Senha pessoal definida";
+      ? "Password change required"
+      : "Personal password set";
     row.append(name, role, label, save, info);
     $("account-list").append(row);
     const option = document.createElement("option");
@@ -1578,7 +1569,7 @@ $("account-create-form").onsubmit = (event) => {
       $("account-create-form").reset();
       await loadAccounts();
       await loadAudit();
-      notice("Usuário cadastrado. Ele deverá trocar a senha temporária no primeiro acesso.");
+      notice("User created. They must change the temporary password at first sign-in.");
     } finally {
       $("account-password").value = "";
     }
@@ -1595,7 +1586,7 @@ $("account-reset-form").onsubmit = (event) => {
       );
       await loadAccounts();
       await loadAudit();
-      notice("Senha redefinida. Sessões encerradas; troca obrigatória no próximo acesso.");
+      notice("Password reset. Sessions ended; password change required at next sign-in.");
     } finally {
       $("account-reset-password").value = "";
     }
@@ -1614,25 +1605,25 @@ async function loadAudit() {
   $("audit-warning").textContent = data.error || "";
   $("audit-list").replaceChildren();
   const labels = {
-    configuration: "Configuração",
-    "server-action": "Solicitação de operação",
-    start: "Iniciar",
-    stop: "Parar",
-    restart: "Reiniciar",
+    configuration: "Configuration",
+    "server-action": "Operation request",
+    start: "Start",
+    stop: "Stop",
+    restart: "Restart",
     backup: "Backup",
-    restore: "Restauração",
-    update: "Atualizar jogo",
-    "image-update": "Atualizar imagem",
-    "password-change": "Trocar senha",
-    accounts: "Contas",
+    restore: "Restore",
+    update: "Update game",
+    "image-update": "Update image",
+    "password-change": "Change password",
+    accounts: "Accounts",
     plugins: "Plugins",
-    "plugin-config": "Configuração de plugin",
-    "player-lists": "Listas de jogadores",
-    alerts: "Alertas",
-    cloud: "Nuvem",
-    "backup-download": "Download de backup",
-    login: "Entrada",
-    logout: "Saída",
+    "plugin-config": "Plugin configuration",
+    "player-lists": "Player lists",
+    alerts: "Alerts",
+    cloud: "Cloud",
+    "backup-download": "Backup download",
+    login: "Sign in",
+    logout: "Sign out",
   };
   for (const entry of data.events) {
     const row = document.createElement("div");
@@ -1641,12 +1632,12 @@ async function loadAudit() {
     title.textContent = (labels[entry.operation] || entry.operation) + " · " + entry.outcome;
     const detail = document.createElement("p");
     detail.textContent =
-      new Date(entry.time * 1000).toLocaleString("pt-BR", {
+      new Date(entry.time * 1000).toLocaleString("en-GB", {
         timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
       }) +
       " · " +
       entry.actor.username +
-      (entry.job_id ? " · Operação " + entry.job_id.slice(0, 8) : "");
+      (entry.job_id ? " · Operation " + entry.job_id.slice(0, 8) : "");
     row.append(title, detail);
     if (entry.changes) {
       const changes = document.createElement("pre");
@@ -1655,8 +1646,7 @@ async function loadAudit() {
     }
     $("audit-list").append(row);
   }
-  if (!data.events.length)
-    $("audit-list").textContent = "Nenhum registro com os filtros selecionados.";
+  if (!data.events.length) $("audit-list").textContent = "No records match the selected filters.";
 }
 $("audit-filter-form").onsubmit = (event) => {
   event.preventDefault();
@@ -1665,20 +1655,20 @@ $("audit-filter-form").onsubmit = (event) => {
 
 function renderImageVersion(version) {
   const text =
-    "Instalada: " +
-    (version.installed || "não identificada") +
-    " · Disponível no Docker Hub: " +
-    (version.available || "a consultar") +
-    (version.update_available ? " · Nova versão disponível" : "") +
+    "Installed: " +
+    (version.installed || "not identified") +
+    " · Available on Docker Hub: " +
+    (version.available || "not checked yet") +
+    (version.update_available ? " · New version available" : "") +
     (version.checked
-      ? " · Última consulta: " +
-        new Date(version.checked * 1000).toLocaleString("pt-BR", {
+      ? " · Last check: " +
+        new Date(version.checked * 1000).toLocaleString("en-GB", {
           timeZone: currentConfig?.values.timezone || "America/Sao_Paulo",
         })
       : "") +
     (version.error ? " · " + version.error : "") +
-    (version.stale && !version.error ? " · Informação aguardando atualização" : "");
-  $("image-version").textContent = text + (version.checking ? " · Consulta em andamento" : "");
+    (version.stale && !version.error ? " · Information awaiting refresh" : "");
+  $("image-version").textContent = text + (version.checking ? " · Checking" : "");
   $("image-version-status").textContent = $("image-version").textContent;
 }
 $("check-image-version").onclick = () =>
@@ -1695,17 +1685,16 @@ function confirmPluginChange(action, name) {
   const dialog = $("plugin-confirmation");
   if (dialog.open) return Promise.resolve(false);
   $("plugin-confirm-title").textContent =
-    action === "delete" ? "Excluir plugin?" : "Restaurar plugin excluído?";
+    action === "delete" ? "Delete plugin?" : "Restore deleted plugin?";
   $("plugin-confirm-description").textContent =
     action === "delete"
-      ? "Excluir “" +
+      ? "Delete “" +
         name +
-        "”? O jogo precisa estar parado. Será preservada uma cópia recuperável e as configurações serão mantidas. Plugins dependentes podem deixar de funcionar."
-      : "Restaurar “" +
+        "”? The game must be stopped. A recovery copy and its settings will be preserved. Dependent plugins may stop working."
+      : "Restore “" +
         name +
-        "”? O jogo precisa estar parado. Uma DLL já instalada nesse caminho não será sobrescrita.";
-  $("plugin-confirm-submit").textContent =
-    action === "delete" ? "Excluir plugin" : "Restaurar plugin";
+        "”? The game must be stopped. An installed DLL at this path will not be overwritten.";
+  $("plugin-confirm-submit").textContent = action === "delete" ? "Delete plugin" : "Restore plugin";
   dialog.returnValue = "cancel";
   return new Promise((resolve) => {
     dialog.addEventListener("close", () => resolve(dialog.returnValue === "confirm"), {
@@ -1722,7 +1711,9 @@ function pluginsEditable() {
     lastPanelState &&
     !lastPanelState.running &&
     !pluginMutationPending &&
-    !(lastPanelState.jobs || []).some((job) => ["fila", "executando", "adiado"].includes(job.state))
+    !(lastPanelState.jobs || []).some((job) =>
+      ["queued", "running", "deferred"].includes(job.state),
+    )
   );
 }
 function syncDeletedPluginControls() {
@@ -1730,9 +1721,9 @@ function syncDeletedPluginControls() {
     const conflict = button.dataset.restoreConflict === "true";
     button.disabled = !pluginsEditable() || conflict;
     if (conflict) {
-      button.title = "Já existe uma DLL instalada nesse caminho; ela não será sobrescrita";
+      button.title = "A DLL is already installed at this path; it will not be overwritten";
       return;
     }
-    button.title = button.disabled ? "Pare o jogo e aguarde as operações pendentes terminarem" : "";
+    button.title = button.disabled ? "Stop the game and wait for pending operations to finish" : "";
   });
 }

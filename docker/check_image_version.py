@@ -23,13 +23,13 @@ def ensure_unpublished(
     image, version, opener=urllib.request.urlopen, *, username=None, password=None
 ):
     if not re.fullmatch(r"[a-z0-9]+(?:[._-][a-z0-9]+)*/[a-z0-9]+(?:[._-][a-z0-9]+)*", image):
-        raise ValueError("Imagem inválida; use namespace/repositorio do Docker Hub")
+        raise ValueError("Invalid image; use a Docker Hub namespace/repository")
     number = r"(?:0|[1-9][0-9]*)"
     if not re.fullmatch(rf"{number}\.{number}\.{number}", version):
-        raise ValueError("Versão inválida; use X.Y.Z sem prefixo v")
+        raise ValueError("Invalid version; use X.Y.Z without a v prefix")
     if bool(username) != bool(password):
         raise ValueError(
-            "Configure DOCKERHUB_USERNAME e DOCKERHUB_TOKEN juntos para autenticar a consulta"
+            "Set both DOCKERHUB_USERNAME and DOCKERHUB_TOKEN to authenticate the query"
         )
 
     # Authenticate the token exchange, not the manifest request with the PAT.
@@ -43,13 +43,13 @@ def ensure_unpublished(
         headers["Authorization"] = "Basic " + credential
     query = urllib.parse.urlencode(parameters)
     request = urllib.request.Request("https://auth.docker.io/token?" + query, headers=headers)
-    stage = "obter autorização"
+    stage = "request authorization"
     try:
         with opener(request, timeout=30) as response:
             body = json.load(response)
         token = (body.get("token") or body.get("access_token")) if isinstance(body, dict) else None
         if not isinstance(token, str) or not token:
-            raise ValueError("Docker Hub não retornou um token de consulta válido")
+            raise ValueError("Docker Hub did not return a valid query token")
         request = urllib.request.Request(
             f"https://registry-1.docker.io/v2/{image}/manifests/{version}",
             headers={
@@ -58,7 +58,7 @@ def ensure_unpublished(
                 "User-Agent": "valheim-arm-release-check",
             },
         )
-        stage = "consultar a tag"
+        stage = "checking the tag"
         try:
             with opener(request, timeout=30):
                 pass
@@ -82,20 +82,20 @@ def ensure_unpublished(
     except urllib.error.HTTPError as error:
         if error.code in (401, 403):
             raise RuntimeError(
-                f"Docker Hub negou acesso ao {stage} (HTTP {error.code}). "
-                "Confira DOCKERHUB_USERNAME (Docker ID, não e-mail), DOCKERHUB_TOKEN e o namespace de DOCKERHUB_IMAGE; "
-                "publicação bloqueada"
+                f"Docker Hub denied access during {stage} (HTTP {error.code}). "
+                "Check DOCKERHUB_USERNAME (Docker ID, not email), DOCKERHUB_TOKEN, and the DOCKERHUB_IMAGE namespace; "
+                "publication blocked"
             ) from None
         raise RuntimeError(
-            f"Consulta ao Docker Hub falhou (HTTP {error.code}); publicação bloqueada"
+            f"Docker Hub request failed (HTTP {error.code}); publication blocked"
         ) from error
     except (urllib.error.URLError, OSError, ValueError) as error:
         raise RuntimeError(
-            "Não foi possível confirmar a ausência da tag no Docker Hub; publicação bloqueada"
+            "Could not confirm that the Docker Hub tag is absent; publication blocked"
         ) from error
 
     raise RuntimeError(
-        f"A imagem {image}:{version} já está publicada. Aumente VERSION para publicar outra versão."
+        f"Image {image}:{version} is already published. Increase VERSION to publish another version."
     )
 
 
@@ -113,7 +113,7 @@ def main():
         )
     except (ValueError, RuntimeError) as error:
         raise SystemExit(str(error)) from None
-    print(f"Tag {args.image}:{args.version} ainda não publicada; verificação aprovada.")
+    print(f"Tag {args.image}:{args.version} is not published yet; check passed.")
 
 
 if __name__ == "__main__":

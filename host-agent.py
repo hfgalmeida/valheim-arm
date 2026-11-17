@@ -20,15 +20,15 @@ from http.server import BaseHTTPRequestHandler
 
 log = logging.getLogger("valheim-host-agent")
 PHASES = {
-    "reconciling": "Validando a instalação atual, sem trocar a imagem.",
-    "queued": "Atualização solicitada.",
+    "reconciling": "Verifying the current installation without switching images.",
+    "queued": "Update requested.",
     "downloading": "Baixando a imagem Docker.",
     "preflight": "Validando a nova imagem.",
-    "stopping": "Parando o jogo graciosamente.",
-    "backup": "Criando backup antes da troca.",
-    "switching": "Aplicando a nova imagem; o painel pode desconectar.",
-    "verifying": "Verificando o painel e o estado desejado do jogo.",
-    "rollback": "Tentando retornar à imagem anterior.",
+    "stopping": "Stopping the game gracefully.",
+    "backup": "Creating a backup before switching.",
+    "switching": "Applying the new image; the panel may disconnect.",
+    "verifying": "Checking the panel and desired game state.",
+    "rollback": "Trying to restore the previous image.",
 }
 
 
@@ -72,7 +72,7 @@ class Agent:
         self.root, self.path, self.factory, self.image = root, state_path, updater_factory, image
         self.mutex = threading.Lock()
         self.worker = None
-        self.state = {"state": "idle", "message": "Pronto para atualizar pelo painel."}
+        self.state = {"state": "idle", "message": "Ready to update through the panel."}
         if self.path.exists():
             try:
                 state = json.loads(self.path.read_text())
@@ -90,12 +90,12 @@ class Agent:
             except (OSError, ValueError):
                 self.state = {
                     "state": "interrupted",
-                    "message": "Histórico do agente indisponível; confira o serviço no host.",
+                    "message": "Agent history unavailable; check the host service.",
                 }
         if self.state["state"] == "running":
             self.state.update(
                 state="interrupted",
-                message="O serviço foi interrompido durante a atualização. Confira o servidor antes de tentar novamente.",
+                message="The service was interrupted during the update. Check the server before trying again.",
                 finished=time.time(),
             )
             atomic_json(self.path, self.state)
@@ -106,26 +106,26 @@ class Agent:
 
     def progress(self, phase):
         with self.mutex:
-            self.state.update(phase=phase, message=PHASES.get(phase, "Atualização em andamento."))
+            self.state.update(phase=phase, message=PHASES.get(phase, "Update in progress."))
             try:
                 atomic_json(self.path, self.state)
             except OSError:
-                log.exception("Falha ao persistir progresso; atualização continuará")
+                log.exception("Could not persist progress; update will continue")
 
     def request(self, request_id):
         if not re.fullmatch(r"[a-f0-9]{32}", request_id):
-            raise ValueError("Solicitação inválida.")
+            raise ValueError("Invalid request.")
         with self.mutex:
             if self.state.get("request_id") == request_id:
                 return public_state(self.state)
             if self.state["state"] == "running":
-                raise ValueError("Uma atualização já está em andamento.")
+                raise ValueError("An update is already in progress.")
             if time.time() - self.state.get("finished", 0) < 60:
-                raise ValueError("Aguarde um minuto antes de solicitar outra atualização.")
+                raise ValueError("Wait one minute before requesting another update.")
             try:
                 lock = update_lock(self.root)
             except BlockingIOError:
-                raise ValueError("Outra atualização está em andamento no host.") from None
+                raise ValueError("Another update is running on the host.") from None
             state = {
                 "state": "running",
                 "phase": "queued",
@@ -146,11 +146,11 @@ class Agent:
                 lock.close()
                 self.state.update(
                     state="failed",
-                    message="Não foi possível iniciar a atualização.",
+                    message="Could not start the update.",
                     finished=time.time(),
                 )
                 atomic_json(self.path, self.state)
-                raise OSError("Falha ao criar worker") from None
+                raise OSError("Could not create worker") from None
             return public_state(state)
 
     def apply(self, lock):
@@ -158,18 +158,18 @@ class Agent:
             self.factory(self.root, progress=self.progress).update(self.image)
             outcome, message = (
                 "succeeded",
-                "Atualização concluída; estado desejado do jogo preservado.",
+                "Update complete; desired game state preserved.",
             )
         except Exception as exc:
-            log.exception("Atualização da imagem não foi concluída")
+            log.exception("Image update did not complete")
             outcome, message = (
                 "failed",
-                "Atualização não concluída. Consulte os logs do serviço no host.",
+                "Update did not complete. Check the host service logs.",
             )
             messages = {
-                "readiness_timeout": "O jogo não confirmou prontidão no prazo. Confira o diagnóstico do jogo e os logs do serviço.",
-                "rollback_unverified": "A imagem anterior foi reaplicada, mas o jogo não confirmou prontidão. É necessário concluir a recuperação no host antes de tentar novamente.",
-                "recovery_required": "Uma atualização anterior ficou incompleta. É necessário concluir a recuperação no host antes de tentar novamente.",
+                "readiness_timeout": "The game did not become ready before the deadline. Check game diagnostics and service logs.",
+                "rollback_unverified": "The previous image was reapplied, but the game did not become ready. Complete recovery on the host before trying again.",
+                "recovery_required": "A previous update is incomplete. Complete recovery on the host before trying again.",
             }
             message = messages.get(getattr(exc, "code", None), message)
             try:
@@ -180,7 +180,7 @@ class Agent:
                 ):
                     outcome, message = (
                         "rolled_back",
-                        "Atualização falhou; imagem anterior restaurada.",
+                        "Update failed; previous image restored.",
                     )
             except (OSError, ValueError):
                 pass
@@ -191,7 +191,7 @@ class Agent:
             try:
                 atomic_json(self.path, self.state)
             except OSError:
-                log.exception("Falha ao gravar resultado do agente")
+                log.exception("Could not write agent result")
 
 
 def peer_allowed(connection):
@@ -221,32 +221,30 @@ class Handler(BaseHTTPRequestHandler):
         if not peer_allowed(self.connection):
             return self.reply(403, {"detail": "Acesso negado."})
         if self.path != "/status":
-            return self.reply(404, {"detail": "Operação indisponível."})
+            return self.reply(404, {"detail": "Operation unavailable."})
         self.reply(200, self.server.agent.status())
 
     def do_POST(self):
         if not peer_allowed(self.connection):
             return self.reply(403, {"detail": "Acesso negado."})
         if self.path != "/update":
-            return self.reply(404, {"detail": "Operação indisponível."})
+            return self.reply(404, {"detail": "Operation unavailable."})
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 256 or self.headers.get("Transfer-Encoding"):
-                raise ValueError("Corpo inválido.")
+                raise ValueError("Invalid request body.")
             body = json.loads(self.rfile.read(length))
             if (
                 not isinstance(body, dict)
                 or set(body) != {"request_id"}
                 or not isinstance(body["request_id"], str)
             ):
-                raise ValueError("Solicitação inválida.")
+                raise ValueError("Invalid request.")
             self.reply(202, self.server.agent.request(body["request_id"]))
         except (ValueError, UnicodeError) as exc:
-            self.reply(
-                409, {"detail": str(exc) if type(exc) is ValueError else "Solicitação inválida."}
-            )
+            self.reply(409, {"detail": str(exc) if type(exc) is ValueError else "Invalid request."})
         except OSError:
-            self.reply(503, {"detail": "Não foi possível registrar a atualização no host."})
+            self.reply(503, {"detail": "Could not record the update on the host."})
 
 
 class Server(
@@ -256,7 +254,7 @@ class Server(
 
     def __init__(self, *args, **kwargs):
         if not hasattr(socketserver, "UnixStreamServer"):
-            raise OSError("O agente de atualização requer Linux e sockets Unix.")
+            raise OSError("The updater agent requires Linux and Unix sockets.")
         self.slots = threading.BoundedSemaphore(16)
         super().__init__(*args, **kwargs)
 
@@ -280,14 +278,14 @@ class Server(
 def compose_sources(root):
     env = root / ".env"
     if any(part.is_symlink() for part in (env, *env.parents)):
-        raise ValueError("O .env não pode ser um link simbólico.")
+        raise ValueError("The .env file must not be a symbolic link.")
     text = env.read_text()
     matches = re.findall(r"(?m)^\s*(?:export\s+)?COMPOSE_FILE\s*=([^\r\n]*)$", text)
     if matches:
         value = matches[-1].strip().strip("\"'")
         if not re.fullmatch(r"[A-Za-z0-9_./ :+-]+", value):
             raise ValueError(
-                "COMPOSE_FILE usa sintaxe avançada; simplifique a lista de arquivos antes de instalar o agente."
+                "COMPOSE_FILE uses advanced syntax; simplify the file list before installing the agent."
             )
         files = value.split(":")
     else:
@@ -306,19 +304,19 @@ def compose_sources(root):
             or path.resolve().is_relative_to(root / "data")
         ):
             raise ValueError(
-                "Arquivos Compose devem ficar na pasta da instalação, fora de data e sem links simbólicos."
+                "Compose files must be inside the installation directory, outside data, without symbolic links."
             )
         if re.search(r"(?m)^\s*(?:include|extends)\s*:", path.read_text()):
-            raise ValueError("O agente requer arquivos Compose locais sem include/extends.")
+            raise ValueError("The agent requires local Compose files without include/extends.")
     return text, files
 
 
 def install(root):
     if os.geteuid() != 0:
-        raise ValueError("Execute a instalação do agente com sudo.")
+        raise ValueError("Install the agent with sudo.")
     root = root.absolute()
     if any(part.is_symlink() for part in (root, *root.parents)):
-        raise ValueError("A pasta da instalação não pode conter links simbólicos.")
+        raise ValueError("The installation directory must not contain symbolic links.")
     for parent in (root, *root.parents):
         stat = parent.stat()
         if (
@@ -329,13 +327,11 @@ def install(root):
             or stat.st_mode & 0o002
         ):
             raise ValueError(
-                "A pasta da instalação e seus pais não podem ser graváveis pelo UID/GID do contêiner ou por todos."
+                "The installation directory and its parents must not be writable by the container UID/GID or by everyone."
             )
     for path in (root / "update-server.py", root / ".update-server.py.previous"):
         if path.is_symlink():
-            raise ValueError(
-                "O atualizador local e sua cópia anterior não podem ser links simbólicos."
-            )
+            raise ValueError("The local updater and its previous copy must not be symbolic links.")
     env_text, files = compose_sources(root)
     identity = hashlib.sha256(str(root).encode()).hexdigest()[:12]
     library = Path("/usr/local/lib/valheim-arm") / identity
@@ -360,7 +356,7 @@ def install(root):
             != "services:\n  valheim:\n    volumes:\n      - ./.update-agent:/run/valheim-update:ro\n"
         ):
             raise ValueError(
-                "compose.update-agent.yaml já existe com outro conteúdo; preserve-o e escolha outro nome antes de instalar."
+                "compose.update-agent.yaml already exists with different content; preserve it and choose another filename before installing."
             )
         override.write_text(
             "services:\n  valheim:\n    volumes:\n      - ./.update-agent:/run/valheim-update:ro\n"
@@ -420,7 +416,7 @@ def install(root):
         subprocess.run(["systemctl", "daemon-reload"], check=True)
         subprocess.run(["systemctl", "enable", service], check=True)
         subprocess.run(["systemctl", "restart", service], check=True)
-        print("Agente de atualização instalado: " + service)
+        print("Updater agent installed: " + service)
     finally:
         lock.close()
 
@@ -445,7 +441,7 @@ def serve(config_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Agente local de atualização do Valheim ARM")
+    parser = argparse.ArgumentParser(description="Valheim ARM local update agent")
     commands = parser.add_subparsers(dest="command", required=True)
     setup = commands.add_parser("install")
     setup.add_argument("--directory", type=Path, required=True)

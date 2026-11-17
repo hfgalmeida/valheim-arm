@@ -75,20 +75,20 @@ class StartupDiagnostics:
                         clean["outcome"] = "interrupted"
                     self.history.append(clean)
         except (OSError, ValueError):
-            self.error = "Histórico de inicialização indisponível; confira espaço e permissões"
+            self.error = "Startup history unavailable; check disk space and permissions"
 
     def save(self):
         try:
             atomic_json(self.path, self.history[-LIMIT:])
             self.error = None
         except OSError:
-            self.error = "Não foi possível persistir o diagnóstico de inicialização"
+            self.error = "Could not persist startup diagnostics"
             logging.getLogger("valheim").warning(self.error)
 
     def environment(self):
         mode = os.environ.get("FEX_GAME_MODE", "auto")
         if mode not in ("auto", "standard", "compatible"):
-            raise ValueError("FEX_GAME_MODE deve ser auto, standard ou compatible")
+            raise ValueError("FEX_GAME_MODE must be auto, standard, or compatible")
         compatible = mode == "compatible" or (mode == "auto" and self.compatibility_requested)
         env = os.environ.copy()
         if compatible:

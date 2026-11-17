@@ -88,7 +88,7 @@ def test_disk_failure_preserves_previous(tmp_path, config):
     backups = Backups(tmp_path)
     original = backups.create("daily", config.effective())
     with patch("app.backups.shutil.disk_usage", return_value=shutil._ntuple_diskusage(100, 100, 0)):
-        with pytest.raises(ValueError, match="Espaço"):
+        with pytest.raises(ValueError, match="space"):
             backups.create("daily", config.effective())
     assert backups.resolve(original).exists()
     assert not list(backups.root.glob("*.partial"))
@@ -127,7 +127,7 @@ def test_tampering_prevents_restore(tmp_path, config):
     name = backups.create("manual", config.effective())
     with backups.resolve(name).open("ab") as file:
         file.write(b"tampered")
-    with pytest.raises(ValueError, match="Checksum"):
+    with pytest.raises(ValueError, match="checksum"):
         backups.restore(name)
     assert (saves / "Dedicated.db").read_bytes() == b"world-data"
 

@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a problem installing or running Valheim ARM
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. Do not post passwords, webhook URLs, cloud tokens, or private keys.
+        Generate a support report with `sudo python3 scripts/collect-diagnostics.py --include-logs` in the installation directory.
+        Extract and review `report.json` before attaching the archive. The collector never uploads it automatically.
+  - type: input
+    id: version
+    attributes:
+      label: Image version
+      description: Copy the installed version from Server settings. Include the image digest if available.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: ARM host and configuration
+      description: Hardware/CPU, RAM, Linux version, page size, Docker/Compose versions, crossplay, and BepInEx/plugins.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, what happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and recent changes
+      description: Attach the reviewed support archive or paste relevant redacted output. Note any recent image, game, mod, or configuration changes.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I reviewed attachments and removed credentials and personal information.
+          required: true

@@ -47,7 +47,7 @@ def connection(text):
             raise ValueError
     except (configparser.Error, KeyError, ValueError, TypeError):
         raise ValueError(
-            "Importe uma única conexão rclone autorizada de OneDrive, Dropbox ou Google Drive, sem opções avançadas"
+            "Import a single authorized rclone connection for OneDrive, Dropbox, or Google Drive, without advanced options"
         ) from None
     result = configparser.ConfigParser(interpolation=None)
     result["cloud"] = values
@@ -80,14 +80,14 @@ class Cloud:
         except (OSError, ValueError):
             self.settings = {
                 "enabled": False,
-                "error": "Estado da exportação inválido; reconfigure a nuvem no painel",
+                "error": "Invalid export state; reconfigure cloud storage in the panel",
             }
             self.receipts = {}
         filename = self.settings.get("connection", "rclone.conf")
         if not isinstance(filename, str) or not re.fullmatch(r"rclone[\w.-]*\.conf", filename):
             filename = "rclone.conf"
             self.settings.update(
-                enabled=False, error="Conexão inválida; reconfigure a nuvem no painel"
+                enabled=False, error="Invalid connection; reconfigure cloud storage in the panel"
             )
         self.remote_path = self.root / filename
         self.backups = backups
@@ -130,7 +130,7 @@ class Cloud:
 
     def configure(self, enabled, folder, config=""):
         if self.busy:
-            raise ValueError("Aguarde o envio em andamento antes de alterar a conexão")
+            raise ValueError("Wait for the upload to finish before changing the connection")
         folder = folder.strip()
         path = PurePosixPath(folder)
         if (
@@ -140,7 +140,7 @@ class Cloud:
             or any(c in folder for c in "\\:\r\n\0")
             or any(ord(c) < 32 for c in folder)
         ):
-            raise ValueError("Informe uma pasta relativa, como Valheim/backups")
+            raise ValueError("Enter a relative folder, such as Valheim/backups")
         settings = self.settings | {"enabled": enabled, "folder": folder, "error": None}
         replacement = None
         if config.strip():
@@ -158,7 +158,7 @@ class Cloud:
             settings["provider"] = provider
             settings["connection"] = replacement.name
         if enabled and replacement is None and not self.remote_path.is_file():
-            raise ValueError("Importe a conexão antes de ativar o envio")
+            raise ValueError("Import a connection before enabling uploads")
         if enabled:
             settings.setdefault("since", time.time())
         target_changed = replacement is not None or folder != self.settings.get(
@@ -226,7 +226,7 @@ class Cloud:
             raise
         if code:
             raise RuntimeError(
-                "Envio falhou. Verifique a conexão, as permissões e o espaço na nuvem"
+                "Upload failed. Check the connection, permissions, and cloud storage space"
             )
 
     async def upload_one(self):
@@ -242,7 +242,7 @@ class Cloud:
                 checksum.is_symlink()
                 or await asyncio.to_thread(digest, source) != checksum.read_text().strip()
             ):
-                raise RuntimeError("Checksum local inválido; exportação suspensa para este arquivo")
+                raise RuntimeError("Invalid local checksum; export suspended for this archive")
             target = "cloud:" + self.settings["folder"] + "/" + name
             await self.copy(source, target)
             await self.copy(checksum, target + ".sha256")
@@ -266,7 +266,7 @@ class Cloud:
             self.settings["error"] = (
                 str(exc)
                 if type(exc) is RuntimeError
-                else "Não foi possível exportar o backup; verifique a conexão e o armazenamento local"
+                else "Could not export the backup; check the connection and local storage"
             )
             self.next_attempt = time.monotonic() + 300
             atomic_json(self.config_path, self.settings)

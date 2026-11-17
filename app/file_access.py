@@ -22,13 +22,13 @@ class FileAccess:
         if not self.profile.exists():
             return None
         if not self.safe(self.profile):
-            raise ValueError("Perfil de acesso inválido")
+            raise ValueError("Invalid access role")
         profile = json.loads(self.profile.read_text(encoding="utf-8"))
         if not isinstance(profile, dict):
-            raise ValueError("Perfil de acesso inválido")
+            raise ValueError("Invalid access role")
         value = profile.get("uid")
         if type(value) is not int or not 0 < value < 2**31:
-            raise ValueError("UID de acesso aos arquivos inválido")
+            raise ValueError("Invalid file access UID")
         return value
 
     def safe(self, path):
@@ -91,7 +91,7 @@ class FileAccess:
         except (OSError, ValueError, subprocess.SubprocessError):
             if not self.failed:
                 log.warning(
-                    "Acesso SSH aos arquivos não pôde ser sincronizado; confira as permissões e o pacote acl"
+                    "SSH file access could not be synchronized; check permissions and the acl package"
                 )
             self.failed = True
 
@@ -103,14 +103,14 @@ class FileAccess:
 
 def prepare(data, uid):
     if os.getuid() != 0 or not 0 < uid < 2**31:
-        raise ValueError("Preparação de acesso exige root e um UID de usuário não root")
+        raise ValueError("File access setup requires root and a non-root user UID")
     access = FileAccess(data)
     if not access.safe(data):
-        raise ValueError("A pasta data não pode ser um link simbólico")
+        raise ValueError("The data directory must not be a symbolic link")
     for name in ("config", "saves", "backups", "mods"):
         path = data / name
         if not access.safe(path):
-            raise ValueError("Links simbólicos não são aceitos nos diretórios de dados")
+            raise ValueError("Symbolic links are not allowed in data directories")
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chown(path, 10001, 10001)
     from .config import atomic_json
@@ -119,4 +119,4 @@ def prepare(data, uid):
     os.chown(access.profile, 10001, 10001)
     access.sync()
     if access.failed:
-        raise RuntimeError("Não foi possível preparar o acesso aos arquivos")
+        raise RuntimeError("Could not prepare file access")

@@ -25,7 +25,7 @@ def permission_id(value):
         or not re.fullmatch(r"[A-Za-z]+_[A-Za-z0-9:_-]+", value)
         or value.split("_", 1)[0].casefold() == "playfab"
     ):
-        raise ValueError("Use o ID completo de permissões exibido no F2, sem códigos de conexão")
+        raise ValueError("Use the complete permission ID shown in F2, without connection codes")
     return value
 
 
@@ -88,9 +88,7 @@ class PlayerDirectory:
             self.prune()
         except (OSError, ValueError):
             # Optional discovery must never prevent the server from starting.
-            log.warning(
-                "Não foi possível ler os IDs conhecidos; o cadastro manual continua disponível"
-            )
+            log.warning("Could not read known IDs; manual registration remains available")
 
     def prune(self):
         self.entries = dict(
@@ -106,7 +104,7 @@ class PlayerDirectory:
             or len(value) > 80
             or any(ord(c) < 32 or ord(c) == 127 for c in value)
         ):
-            raise ValueError("O nome deve ter até 80 caracteres, sem quebras de linha")
+            raise ValueError("The name must not exceed 80 characters or contain line breaks")
         return value.strip()
 
     def register(self, player_id, name, platform_name=""):
@@ -114,7 +112,7 @@ class PlayerDirectory:
         name = self.valid_name(name)
         platform_name = self.valid_name(platform_name) or platform(player_id)
         if len(platform_name) > 40:
-            raise ValueError("A plataforma deve ter até 40 caracteres")
+            raise ValueError("The platform name must not exceed 40 characters")
         previous = self.entries.get(player_id, {})
         record = {
             "last_seen": previous.get("last_seen"),
@@ -167,9 +165,7 @@ class PlayerDirectory:
                 self.last_write = now
             except OSError:
                 # Disk errors here must not stop draining the game's stdout.
-                log.warning(
-                    "Não foi possível persistir os IDs conhecidos; a sessão atual mantém os dados em memória"
-                )
+                log.warning("Could not persist known IDs; this session retains the data in memory")
 
     def describe(self):
         return [

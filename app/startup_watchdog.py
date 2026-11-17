@@ -1,4 +1,4 @@
-"""Narrow detection of the fatal first-scene startup observed on Oracle/FEX."""
+"""Narrow detection of the fatal first-scene startup observed under FEX."""
 
 import re
 

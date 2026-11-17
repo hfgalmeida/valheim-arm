@@ -42,7 +42,7 @@ def test_agent_limits_requests_and_keeps_job_across_reconnection(tmp_path):
         first = agent.request("a" * 32)
         assert first["state"] == "running"
         assert agent.request("a" * 32)["request_id"] == "a" * 32
-        with pytest.raises(ValueError, match="andamento"):
+        with pytest.raises(ValueError, match="in progress"):
             agent.request("b" * 32)
         release.set()
         agent.worker.join(3)
@@ -50,7 +50,7 @@ def test_agent_limits_requests_and_keeps_job_across_reconnection(tmp_path):
     restored = agent_module.Agent(tmp_path, tmp_path / "status.json", factory)
     assert restored.status()["state"] == "succeeded"
     assert restored.request("a" * 32)["state"] == "succeeded"
-    with pytest.raises(ValueError, match="minuto"):
+    with pytest.raises(ValueError, match="minute"):
         restored.request("b" * 32)
 
 
@@ -264,8 +264,8 @@ def test_install_writes_service_and_permissions_without_touching_host(tmp_path):
 @pytest.mark.parametrize(
     "code,expected",
     [
-        ("recovery_required", "anterior ficou incompleta"),
-        ("rollback_unverified", "anterior foi reaplicada"),
+        ("recovery_required", "previous update is incomplete"),
+        ("rollback_unverified", "previous image was reapplied"),
     ],
 )
 def test_update_errors_have_safe_actionable_message(tmp_path, code, expected):

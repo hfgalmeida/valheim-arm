@@ -66,7 +66,7 @@ def test_bad_profile_does_not_break_supervisor(tmp_path, profile):
 
 
 @pytest.mark.skipif(
-    os.name != "posix" or not shutil.which("setfacl"), reason="ACL Linux real necessária"
+    os.name != "posix" or not shutil.which("setfacl"), reason="Real Linux ACL support required"
 )
 def test_real_acl_reapplies_access_after_private_atomic_replacement(tmp_path):
     access = data_tree(tmp_path)

@@ -5,10 +5,11 @@ import math
 import time
 
 from .config import atomic_json
+from .compatibility import operation_record
 
 LIMIT = 200
 RETENTION = 30 * 86400
-ACTIVE = {"fila", "executando", "adiado"}
+ACTIVE = {"queued", "running", "deferred"}
 FIELDS = {
     "actor",
     "audit_request_id",
@@ -49,7 +50,7 @@ class MaintenanceHistory:
             if not self.path.exists():
                 return []
             if self.path.stat().st_size > 2 * 1024**2:
-                raise ValueError("Histórico muito grande")
+                raise ValueError("History too large")
             records = json.loads(self.path.read_text(encoding="utf-8"))
             if not isinstance(records, list) or any(
                 not isinstance(j, dict)
@@ -58,11 +59,11 @@ class MaintenanceHistory:
                 or not math.isfinite(j["created"])
                 for j in records
             ):
-                raise ValueError("Histórico inválido")
-            return [{k: v for k, v in j.items() if k in FIELDS} for j in records]
+                raise ValueError("Invalid history")
+            return [operation_record({k: v for k, v in j.items() if k in FIELDS}) for j in records]
         except (OSError, ValueError):
             self.load_error = self.error = (
-                "Não foi possível ler o histórico de manutenção; confira os arquivos no host."
+                "Could not read maintenance history; check the files on the host."
             )
             return []
 
@@ -74,7 +75,7 @@ class MaintenanceHistory:
                 if isinstance(record.get(field), str):
                     for secret in secrets:
                         if secret:
-                            record[field] = record[field].replace(secret, "[senha]")
+                            record[field] = record[field].replace(secret, "[password]")
                     record[field] = record[field][:1000]
             records.append(record)
         try:
@@ -84,9 +85,7 @@ class MaintenanceHistory:
                 self.cached = text
             self.error = self.load_error
         except OSError:
-            self.error = (
-                "Não foi possível salvar o histórico de manutenção; confira espaço e permissões."
-            )
+            self.error = "Could not save maintenance history; check disk space and permissions."
 
 
 def prune(jobs):

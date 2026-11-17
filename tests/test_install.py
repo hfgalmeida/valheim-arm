@@ -9,7 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BASH = shutil.which("bash") or ("C:/Program Files/Git/bin/bash.exe" if os.name == "nt" else None)
-pytestmark = pytest.mark.skipif(not BASH, reason="Bash necessário para testar o instalador")
+pytestmark = pytest.mark.skipif(not BASH, reason="Bash is required to test the installer")
 
 
 def shell(code, *args, env=None, input=None):
@@ -130,7 +130,7 @@ prepare_firewall
 """
     result = shell(script)
     assert result.returncode == 0, result.stderr
-    assert "OCI" in result.stdout
+    assert "provider firewalls" in result.stdout
 
 
 def test_ufw_status_failure_stops_before_changing_rules(tmp_path):
@@ -150,7 +150,7 @@ def test_ufw_status_failure_stops_before_changing_rules(tmp_path):
         "trailing-backslash\\",
         "slash\\'quote\"end",
         "$$literal \\n text",
-        "senha çãõ",
+        "password çãõ",
     ],
 )
 def test_compose_reads_quoted_password_literally(tmp_path, password):
@@ -162,9 +162,9 @@ def test_compose_reads_quoted_password_literally(tmp_path, password):
             command + ["version"], capture_output=True, text=True, encoding="utf-8"
         )
     except OSError:
-        pytest.skip("Compose não instalado")
+        pytest.skip("Compose is not installed")
     if result.returncode:
-        pytest.skip("Compose não instalado")
+        pytest.skip("Compose is not installed")
     config = shell('env_value PASSWORD "$TEST_PASSWORD"', env={"TEST_PASSWORD": password})
     (tmp_path / ".env").write_text(config.stdout, encoding="utf-8")
     compose = tmp_path / "compose.yaml"
@@ -275,7 +275,7 @@ def test_install_then_repeat_preserves_password_and_running_world(tmp_path):
     assert "sudo docker compose up -d --no-deps valheim" in result.stdout
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Permissões POSIX reais necessárias")
+@pytest.mark.skipif(os.name == "nt", reason="Real POSIX permissions required")
 def test_installation_directories_are_accessible_but_secrets_stay_private(tmp_path):
     target = tmp_path / "server"
     target.mkdir(parents=True)

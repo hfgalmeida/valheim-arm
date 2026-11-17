@@ -93,7 +93,7 @@ def test_symlink_target_cannot_escape_plugins(tmp_path):
     try:
         (plugins.root / "test.dll").symlink_to(outside)
     except OSError:
-        pytest.skip("Symlinks indisponíveis")
+        pytest.skip("Symbolic links unavailable")
     with pytest.raises(ValueError):
         upload(plugins, "test.dll", dll(2))
     assert outside.read_bytes() == dll()
@@ -132,7 +132,7 @@ def test_deletion_conflict_and_failed_archive_leave_active_dll_intact(tmp_path):
 
     def fail_move(source, target):
         if source == plugins.root / "example.dll":
-            raise OSError("move failed")
+            raise OSError("move Failed")
         return replace(source, target)
 
     with patch("app.plugins.os.replace", side_effect=fail_move):
@@ -214,7 +214,7 @@ def test_delete_refuses_symlinked_parent_and_keeps_external_dll(tmp_path):
     try:
         (plugins.root / "linked").symlink_to(external, target_is_directory=True)
     except OSError:
-        pytest.skip("Symlinks indisponíveis")
+        pytest.skip("Symbolic links unavailable")
     with pytest.raises(ValueError):
         plugins.delete("linked/example.dll", "a" * 64)
     assert (external / "example.dll").read_bytes() == dll()

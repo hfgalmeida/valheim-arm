@@ -195,7 +195,7 @@ def test_steam_divergence_invalidates_and_never_confirms_empty_from_query_alone(
     players.observe_steam(1)
     assert players.current() is None and not players.idle()
     assert players.status()["steam"]["count"] == 1
-    assert "divergente" in players.status()["reason"]
+    assert "disagrees" in players.status()["reason"]
     players.observe_steam(None)
     assert players.status()["steam"]["count"] is None
     assert players.current() is None

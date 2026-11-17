@@ -33,18 +33,18 @@ def test_completed_history_survives_without_replaying_actions(runtime):
     assert restored.jobs[0]["id"] == job["id"]
     assert restored.jobs[0]["backup_created"] == "test.tar.gz"
     assert restored.jobs[0]["origin"] == "administrator"
-    assert restored.jobs[0]["state"] == "concluído"
+    assert restored.jobs[0]["state"] == "completed"
 
 
 def test_deferred_attempt_is_not_finished_and_keeps_origin(runtime):
     async def execute(job):
-        raise MaintenanceDeferred("Jogadores online")
+        raise MaintenanceDeferred("Players online")
 
     runtime.execute = execute
     runtime.schedule_once("restart")
     run_jobs(runtime)
     job = runtime.jobs[0]
-    assert job["state"] == "adiado"
+    assert job["state"] == "deferred"
     assert "finished" not in job
     assert job["last_attempt_finished"] >= job["started"]
     assert job["origin"] == "schedule"
@@ -54,7 +54,7 @@ def test_deferred_attempt_is_not_finished_and_keeps_origin(runtime):
 
     runtime.execute = success
     runtime.queue = asyncio.Queue(maxsize=32)
-    job["state"] = "fila"
+    job["state"] = "queued"
     runtime.queue.put_nowait(job)
     run_jobs(runtime)
     assert job["attempts"] == 2
@@ -64,20 +64,20 @@ def test_deferred_attempt_is_not_finished_and_keeps_origin(runtime):
 
 def test_interrupted_manual_operation_is_never_replayed(runtime):
     job = runtime.submit("restart")
-    job["state"] = "executando"
+    job["state"] = "running"
     runtime.persist_history()
     restored = Runtime(runtime.data, runtime.config)
     assert restored.queue.empty()
-    assert restored.jobs[0]["state"] == "falha"
-    assert "interrompida" in restored.jobs[0]["error"]
+    assert restored.jobs[0]["state"] == "failed"
+    assert "interrupted" in restored.jobs[0]["error"]
 
 
 def test_retention_preserves_pending_and_limits_terminal_records():
     now = time.time()
-    jobs = [{"id": str(i), "state": "concluído", "created": now} for i in range(250)]
+    jobs = [{"id": str(i), "state": "completed", "created": now} for i in range(250)]
     jobs += [
-        {"id": "pending", "state": "adiado", "created": 1},
-        {"id": "expired", "state": "falha", "created": 1},
+        {"id": "pending", "state": "deferred", "created": 1},
+        {"id": "expired", "state": "failed", "created": 1},
     ]
     result = prune(jobs)
     assert len(result) == 201
@@ -87,18 +87,18 @@ def test_retention_preserves_pending_and_limits_terminal_records():
 
 def test_history_failure_does_not_stop_operations_and_redacts_password(runtime):
     async def execute(job):
-        raise RuntimeError("failed: " + runtime.config.effective().server_password)
+        raise RuntimeError("Failed: " + runtime.config.effective().server_password)
 
     runtime.execute = execute
     runtime.submit("restart")
     with patch("app.maintenance_history.atomic_json", side_effect=OSError("disk full")):
         run_jobs(runtime)
-    assert runtime.jobs[0]["state"] == "falha"
+    assert runtime.jobs[0]["state"] == "failed"
     assert runtime.status()["maintenance_history_error"]
     runtime.persist_history()
     text = runtime.maintenance_history.path.read_text()
     assert runtime.config.effective().server_password not in text
-    assert "[senha]" in text
+    assert "[password]" in text
     assert runtime.maintenance_history.error is None
 
 
@@ -116,13 +116,13 @@ def test_recovery_origin_and_cancelled_requests_are_persisted(runtime):
     records = json.loads(runtime.maintenance_history.path.read_text())
     recovery = next(j for j in records if j["action"] == "recover-startup")
     assert recovery["origin"] == "recovery"
-    assert recovery["state"] == "cancelado"
+    assert recovery["state"] == "cancelled"
     assert recovery["finished"] >= recovery["created"]
 
 
 def test_hourly_prune_expires_terminal_records_without_new_operations(runtime):
     job = runtime.submit("restart")
-    job["state"] = "concluído"
+    job["state"] = "completed"
     job["created"] = time.time() - 31 * 86400
     runtime.next_history_prune = 0
     runtime.closing = True

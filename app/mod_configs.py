@@ -19,35 +19,35 @@ class ModConfigs:
 
     def safe_root(self):
         if any(path.is_symlink() for path in (self.root, *self.root.parents)):
-            raise ValueError("Links simbólicos não são permitidos nas configurações")
+            raise ValueError("Symbolic links are not allowed in configuration files")
 
     def resolve(self, name):
         self.safe_root()
         if not name or "\\" in name or ":" in name or len(name) > 256:
-            raise ValueError("Caminho de configuração inválido")
+            raise ValueError("Invalid configuration path")
         relative = Path(name)
         if (
             relative.is_absolute()
             or ".." in relative.parts
             or relative.suffix.lower() not in EXTENSIONS
         ):
-            raise ValueError("Selecione um arquivo de configuração de texto")
+            raise ValueError("Select a text configuration file")
         path = self.root / relative
         if any(part.is_symlink() for part in (path, *path.parents)):
-            raise ValueError("Links simbólicos não são permitidos")
+            raise ValueError("Symbolic links are not allowed")
         if not path.is_file():
-            raise FileNotFoundError("Configuração não encontrada")
+            raise FileNotFoundError("Configuration not found")
         return path
 
     def text(self, path):
         with path.open("rb") as file:
             data = file.read(LIMIT + 1)
         if len(data) > LIMIT or b"\x00" in data:
-            raise ValueError("O editor aceita arquivos de texto UTF-8 de até 32 KiB")
+            raise ValueError("The editor supports UTF-8 text files up to 32 KiB")
         try:
             return data.decode("utf-8-sig"), data
         except UnicodeError as exc:
-            raise ValueError("A configuração precisa estar codificada em UTF-8") from exc
+            raise ValueError("Configuration must use UTF-8 encoding") from exc
 
     def list(self):
         self.safe_root()
@@ -70,7 +70,7 @@ class ModConfigs:
         available = backup.is_file() and not backup.is_symlink()
         if previous:
             if not available:
-                raise FileNotFoundError("Não há versão anterior deste arquivo")
+                raise FileNotFoundError("No previous version of this file")
             current, _ = self.text(backup)
         return {
             "path": name,
@@ -94,10 +94,10 @@ class ModConfigs:
         path = self.resolve(name)
         _, original = self.text(path)
         if hashlib.sha256(original).hexdigest() != revision:
-            raise Conflict("O arquivo mudou desde a abertura; atualize antes de salvar")
+            raise Conflict("The file changed since it was opened; refresh before saving")
         encoded = content.encode("utf-8")
         if len(encoded) > LIMIT or "\x00" in content:
-            raise ValueError("O editor aceita texto UTF-8 de até 32 KiB, sem caracteres nulos")
+            raise ValueError("The editor supports UTF-8 text up to 32 KiB without null characters")
         # Persist the old bytes before replacing the active configuration.
         self.write_atomic(path.with_name(path.name + ".panel-backup"), original)
         self.write_atomic(path, encoded)

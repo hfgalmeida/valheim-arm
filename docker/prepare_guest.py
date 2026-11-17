@@ -31,7 +31,7 @@ def check_elf(path):
         or header[:6] != b"\x7fELF\x02\x01"
         or struct.unpack("<H", header[18:20])[0] != 62
     ):
-        raise ValueError(f"Biblioteca amd64 ausente ou de arquitetura incorreta: {path}")
+        raise ValueError(f"Missing amd64 library or incorrect architecture: {path}")
 
 
 def apt_config(work):
@@ -81,7 +81,7 @@ def package_metadata(path):
         or not fields["Package"]
         or not fields["Version"]
     ):
-        raise ValueError(f"Pacote de arquitetura inesperada: {path.name}")
+        raise ValueError(f"Unexpected package architecture: {path.name}")
     with path.open("rb") as file:
         checksum = hashlib.file_digest(file, "sha256").hexdigest()
     return {
@@ -141,7 +141,7 @@ def prepare(root, info_path):
         )
         archives = sorted((work / "cache/archives").glob("*.deb"))
         if not archives:
-            raise ValueError("APT não baixou as bibliotecas amd64")
+            raise ValueError("APT did not download the amd64 libraries")
         metadata = [package_metadata(path) for path in archives]
         for path in archives:
             subprocess.run(["dpkg-deb", "--extract", str(path), str(root)], check=True)

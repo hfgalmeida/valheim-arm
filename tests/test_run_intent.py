@@ -31,7 +31,7 @@ def test_latest_start_stop_request_wins_and_stale_job_cannot_overwrite(runtime):
     first = runtime.submit("start")
     stop = runtime.submit("stop")
     last = runtime.submit("start")
-    assert first["state"] == stop["state"] == "cancelado"
+    assert first["state"] == stop["state"] == "cancelled"
     assert runtime.submit("start") is last
     runtime.start = AsyncMock()
 
@@ -84,7 +84,7 @@ def test_failed_save_rejects_action_without_queueing_or_changing_running_state(
     with patch("app.run_intent.atomic_json", side_effect=OSError("disk full")):
         response = client.post("/api/v1/actions", json={"action": "stop"})
     assert response.status_code == 409
-    assert "Operação não aceita" in response.json()["detail"]
+    assert "Operation rejected" in response.json()["detail"]
     assert runtime.want_running and runtime.run_intent.running
     assert runtime.queue.empty()
 
@@ -104,7 +104,7 @@ def test_stopped_boot_discards_old_automatic_maintenance(runtime):
     runtime.run_intent.set(False)
     restored = Runtime(runtime.data, runtime.config)
     assert restored.queue.empty()
-    assert all(job["state"] == "cancelado" for job in restored.jobs)
+    assert all(job["state"] == "cancelled" for job in restored.jobs)
 
 
 def test_manual_stop_during_backup_prevents_its_finally_from_starting_game(runtime):
@@ -160,7 +160,7 @@ def test_stop_arriving_during_install_prevents_process_launch(runtime):
     ):
         asyncio.run(runtime.start())
     spawn.assert_not_awaited()
-    assert runtime.state == "parado" and runtime.clean_stop
+    assert runtime.state == "stopped" and runtime.clean_stop
     assert not runtime.clean_marker.exists()
 
 

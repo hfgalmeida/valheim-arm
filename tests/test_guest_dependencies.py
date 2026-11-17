@@ -34,7 +34,7 @@ def test_guest_packages_are_downloaded_in_isolation_for_amd64(tmp_path):
 def test_native_arm_library_is_rejected(tmp_path):
     path = tmp_path / "libatomic.so.1"
     elf(path, machine=183)
-    with pytest.raises(ValueError, match="arquitetura"):
+    with pytest.raises(ValueError, match="architecture"):
         GUEST["check_elf"](path)
     elf(path)
     GUEST["check_elf"](path)
@@ -46,7 +46,7 @@ def test_native_arm_deb_is_rejected_before_extraction(tmp_path):
         "subprocess.check_output",
         return_value="Package: libatomic1\nVersion: 1\nArchitecture: arm64\n",
     ):
-        with pytest.raises(ValueError, match="arquitetura"):
+        with pytest.raises(ValueError, match="architecture"):
             GUEST["package_metadata"](package)
 
 

@@ -17,9 +17,9 @@ if version == "latest":
     with urllib.request.urlopen(request, timeout=60) as response:
         version = json.load(response)["tag_name"]
 if not re.fullmatch(r"FEX-\d{4}(?:\.\d+)?", version):
-    raise SystemExit("FEX_VERSION deve ser latest ou uma tag estável FEX-AAAA[.N]")
+    raise SystemExit("FEX_VERSION must be latest or a stable FEX-YYYY[.N] tag")
 if not jobs.isdigit() or not 1 <= int(jobs) <= 8:
-    raise SystemExit("BUILD_JOBS deve estar entre 1 e 8")
+    raise SystemExit("BUILD_JOBS must be between 1 and 8")
 subprocess.run(
     [
         "git",
@@ -67,7 +67,7 @@ binary = next(
     None,
 )
 if binary is None:
-    raise SystemExit("O build não instalou um interpretador FEX")
+    raise SystemExit("The build did not install a FEX interpreter")
 for alias in ("FEX", "FEXInterpreter"):
     path = binary.parent / alias
     if not path.exists():

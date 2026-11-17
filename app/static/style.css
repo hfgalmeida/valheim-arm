@@ -1044,3 +1044,115 @@ button {
     font-size: 16px;
   }
 }
+
+/* Shared control geometry and action placement. */
+button,
+.backup button,
+.player-entry button,
+.plugin-entry button,
+.reset {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+button {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+input:not([type="checkbox"]),
+select {
+  min-height: 44px;
+}
+textarea {
+  min-height: 120px;
+}
+.section-title {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.section-title h2 {
+  margin-bottom: 0;
+}
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+.form-actions button {
+  min-width: 144px;
+}
+#actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.backup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.backup a {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin-right: 0;
+  overflow-wrap: anywhere;
+}
+.plugin-entry {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.plugin-entry > span {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.plugin-entry button {
+  min-width: 104px;
+}
+label:has(> input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+label > input[type="checkbox"],
+.account-row input[type="checkbox"],
+#directory-confirm {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+#backup-age-warning:not(:empty) {
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+}
+#startup-history {
+  padding-left: 20px;
+}
+#startup-history li {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  #actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .form-actions {
+    align-items: stretch;
+  }
+  .form-actions button {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  .section-title > button {
+    width: 100%;
+  }
+}

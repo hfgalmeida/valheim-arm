@@ -71,7 +71,7 @@ def test_reject_unsafe_destinations(runtime, folder):
 def test_upload_and_durable_receipt_without_secrets(runtime):
     old = archive(runtime)
     c = runtime.cloud
-    c.configure(True, "Valheim/meu mundo", remote())
+    c.configure(True, "Valheim/meu world", remote())
     assert old not in c.pending()
     name = archive(runtime)
     c.copy = AsyncMock()
@@ -79,7 +79,7 @@ def test_upload_and_durable_receipt_without_secrets(runtime):
     assert c.copy.await_count == 2
     assert c.copy.await_args_list[0].args == (
         runtime.backups.resolve(name),
-        "cloud:Valheim/meu mundo/" + name,
+        "cloud:Valheim/meu world/" + name,
     )
     assert c.copy.await_args_list[1].args[1].endswith(".tar.gz.sha256")
     reloaded = Cloud(runtime.data, runtime.backups)
@@ -127,7 +127,7 @@ def test_checksum_corruption_blocks_export(runtime):
     c.copy = AsyncMock()
     assert not asyncio.run(c.upload_one())
     c.copy.assert_not_awaited()
-    assert "Checksum" in c.describe()["error"]
+    assert "checksum" in c.describe()["error"]
 
 
 def test_disabled_and_config_changes_during_upload(runtime):
@@ -136,7 +136,7 @@ def test_disabled_and_config_changes_during_upload(runtime):
         c.configure(True, "Valheim")
     c.configure(True, "Valheim", remote())
     c.busy = True
-    with pytest.raises(ValueError, match="andamento"):
+    with pytest.raises(ValueError, match="upload to finish"):
         c.configure(False, "other")
     c.busy = False
     c.configure(False, "Valheim")

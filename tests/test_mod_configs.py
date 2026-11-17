@@ -56,7 +56,7 @@ def test_symlink_is_not_listed_or_read(editor, tmp_path):
     try:
         (editor.root / "link.cfg").symlink_to(outside)
     except OSError:
-        pytest.skip("Criação de symlink indisponível")
+        pytest.skip("Symbolic link creation unavailable")
     assert editor.list() == ["plugin.cfg"]
     with pytest.raises(ValueError):
         editor.read("link.cfg")

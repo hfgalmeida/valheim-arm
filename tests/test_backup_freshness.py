@@ -66,15 +66,15 @@ def test_missing_grace_survives_restart_then_notifies_once_and_normalizes(runtim
             now[0] += 1
             await restored.poll(runtime)
             await restored.poll(runtime)
-            assert send.call_count == 1 and "atrasado" in send.call_args.args[0]
+            assert send.call_count == 1 and "overdue" in send.call_args.args[0]
             assert "backup_age" in restored.describe()["active"]
             runtime.backups.latest_completed.return_value = {
                 "time": now[0],
-                "name": "completed.tar.gz",
+                "name": "Completed.tar.gz",
             }
             now[0] += 301
             await restored.poll(runtime)
-            assert send.call_count == 2 and "novamente" in send.call_args.args[0]
+            assert send.call_count == 2 and "again" in send.call_args.args[0]
             assert restored.describe()["freshness"]["local"]["state"] == "ok"
             assert "backup_age" not in restored.describe()["active"]
 
@@ -184,7 +184,7 @@ def test_thresholds_are_private_audited_and_legacy_requests_preserve_them(runtim
         )
     events = client.get("/api/v1/audit?operation=alerts").json()["events"]
     assert any(
-        event.get("changes", {}).get("backup_max_age_hours", {}).get("depois") == 48
+        event.get("changes", {}).get("backup_max_age_hours", {}).get("after") == 48
         for event in events
     )
     client.cookies.clear()

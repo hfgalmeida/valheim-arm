@@ -20,7 +20,7 @@ root = Path('/data')
 with (root / 'config/supervisor.lock').open('a') as lock:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     if (root / 'config/game-active.json').exists():
-        raise SystemExit('Parada limpa não confirmada; atualização cancelada.')
+        raise SystemExit('Clean shutdown not confirmed; update cancelled.')
     print(Backups(root).create('image-update', ConfigStore(root).effective()))
 """
 HEALTH_CODE = "import json,urllib.request; print(json.dumps(json.load(urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3))))"
@@ -70,7 +70,7 @@ class Updater:
             timeout=2400,
         )
         if result.returncode:
-            raise RuntimeError("Comando Docker falhou: " + " ".join(args[:2]))
+            raise RuntimeError("Docker command failed: " + " ".join(args[:2]))
         return result.stdout.strip() if capture else ""
 
     def compose(self, *args, **kwargs):
@@ -87,7 +87,7 @@ class Updater:
             return True
         except (OSError, ValueError):
             raise RuntimeError(
-                "Preferência de execução inválida; corrija pelo painel antes de atualizar."
+                "Invalid run preference; correct it in the panel before updating."
             ) from None
         if (
             not isinstance(value, dict)
@@ -95,9 +95,7 @@ class Updater:
             or value.get("version") != 1
             or type(value.get("running")) is not bool
         ):
-            raise RuntimeError(
-                "Preferência de execução inválida; corrija pelo painel antes de atualizar."
-            )
+            raise RuntimeError("Invalid run preference; correct it in the panel before updating.")
         return value["running"]
 
     def require_intent_support(self, image):
@@ -118,7 +116,7 @@ class Updater:
             )
         except RuntimeError:
             raise RuntimeError(
-                "A imagem escolhida não suporta manter o jogo parado. Troca recusada antes de interromper o contêiner; use uma imagem compatível ou solicite Iniciar antes de retornar a essa versão."
+                "The selected image cannot keep the game stopped. Switch refused before stopping the container; use a compatible image or start the game before rolling back."
             ) from None
 
     def wait_ready(self):
@@ -139,17 +137,23 @@ class Updater:
                         capture=True,
                     )
                 )
-                game = status.get("game")
+                game = {
+                    "parado": "stopped",
+                    "iniciando": "starting",
+                    "falha": "failed",
+                    "parando": "stopping",
+                    "instalando": "installing",
+                }.get(status.get("game"), status.get("game"))
                 game = (
                     game
-                    if game in ("online", "parado", "iniciando", "falha", "parando", "instalando")
-                    else "desconhecido"
+                    if game in ("online", "stopped", "starting", "failed", "stopping", "installing")
+                    else "unknown"
                 )
                 detail = (
-                    "Verificação: jogo="
+                    "Check: game="
                     + game
-                    + "; esperado="
-                    + ("online" if expected_running else "parado")
+                    + "; expected="
+                    + ("online" if expected_running else "stopped")
                 )
                 if detail != last_detail:
                     print(detail, flush=True)
@@ -158,16 +162,15 @@ class Updater:
                     status.get("supervisor") == "ok"
                     and not status.get("run_intent_error")
                     and (
-                        status.get("game") == "online"
+                        game == "online"
                         if expected_running
-                        else status.get("game") == "parado"
-                        and status.get("desired_running") is False
+                        else game == "stopped" and status.get("desired_running") is False
                     )
                 )
                 if ready:
                     stable_since = stable_since or time.monotonic()
                     if time.monotonic() - stable_since >= 30:
-                        last_detail = "Jogo estável; validando o proxy HTTPS"
+                        last_detail = "Game stable; checking the HTTPS proxy"
                         print(last_detail, flush=True)
                         self.compose(
                             "exec",
@@ -188,8 +191,8 @@ class Updater:
                 stable_since = None
             time.sleep(5)
         raise UpdateFailure(
-            "O jogo não ficou pronto e estável no estado solicitado dentro do prazo. "
-            + (last_detail or "Painel ou verificação de saúde indisponível."),
+            "The game did not become ready and stable in the requested state before the deadline. "
+            + (last_detail or "Panel or health check unavailable."),
             "readiness_timeout",
         )
 
@@ -200,7 +203,7 @@ class Updater:
             container = self.compose("ps", "--quiet", service, capture=True)
             if not container:
                 raise UpdateFailure(
-                    "Contêiner esperado não está em execução; reconciliação recusada.",
+                    "Expected container is not running; reconciliation refused.",
                     "recovery_required",
                 )
             info = json.loads(self.run("inspect", container, capture=True))[0]
@@ -208,13 +211,13 @@ class Updater:
             expected = json.loads(self.run("image", "inspect", reference, capture=True))[0]["Id"]
             if not info.get("State", {}).get("Running") or info["Image"] != expected:
                 raise UpdateFailure(
-                    "Imagem em execução difere da configuração; reconciliação recusada.",
+                    "Running image differs from configuration; reconciliation refused.",
                     "recovery_required",
                 )
             result.append((service, info["Id"], info["Image"]))
         if result[0][2] != result[1][2]:
             raise UpdateFailure(
-                "Valheim e proxy usam imagens diferentes; reconciliação recusada.",
+                "Valheim and proxy use different images; reconciliation refused.",
                 "recovery_required",
             )
         return result
@@ -232,20 +235,20 @@ class Updater:
             return False
         if not state.get("previous") or not state.get("target"):
             raise UpdateFailure(
-                "Registro de recuperação incompleto; reconciliação recusada.", "recovery_required"
+                "Incomplete recovery record; reconciliation refused.", "recovery_required"
             )
         status_path = self.root / ".update-agent/status.json"
         status = json.loads(status_path.read_text()) if status_path.exists() else None
         if status and status.get("state") == "running":
             raise UpdateFailure(
-                "Agente indica operação em andamento; confira o host.", "recovery_required"
+                "The agent reports an operation in progress; check the host.", "recovery_required"
             )
         self.progress("reconciling")
         identity = self.deployment_identity()
         self.wait_ready()
         if identity != self.deployment_identity():
             raise UpdateFailure(
-                "A instalação mudou durante a validação; reconciliação recusada.",
+                "The installation changed during verification; reconciliation refused.",
                 "recovery_required",
             )
         old = dict(state)
@@ -264,11 +267,11 @@ class Updater:
                 state="reconciled",
                 phase="reconciling",
                 finished=time.time(),
-                message="Estado antigo encerrado após validar a instalação atual. Pronto para uma nova atualização; nenhuma imagem foi trocada nesta verificação.",
+                message="Old state closed after verifying the current installation. Ready for another update; no image was switched during this check.",
             )
             atomic_write(status_path, json.dumps(status, ensure_ascii=False))
         print(
-            "Instalação atual validada; registro antigo reconciliado sem reiniciar contêineres.",
+            "Current installation verified; old record reconciled without restarting containers.",
             flush=True,
         )
         return True
@@ -276,7 +279,7 @@ class Updater:
     def restore(self, state):
         if state.get("rollback_eligible") is False:
             raise UpdateFailure(
-                "O registro antigo foi reconciliado; não representa um retorno da instalação atual.",
+                "The old record was reconciled; it does not represent a rollback of the current installation.",
                 "recovery_required",
             )
         self.progress("rollback")
@@ -294,17 +297,17 @@ class Updater:
             state["phase"] = "rollback-unverified"
             self.save(state)
             raise UpdateFailure(
-                "Imagem anterior reaplicada, mas sua prontidão não foi confirmada. A recuperação precisa ser concluída no host.",
+                "Previous image reapplied, but readiness was not confirmed. Recovery must be completed on the host.",
                 "rollback_unverified",
             ) from exc
         state["phase"] = "rolled-back"
         self.save(state)
-        print("Imagem anterior restaurada. Saves e configurações preservados.")
+        print("Previous image restored. Saves and settings preserved.")
 
     def update(self, image, rollback=False):
         if rollback:
             if not self.state.exists():
-                raise RuntimeError("Não há atualização anterior registrada.")
+                raise RuntimeError("No previous update is recorded.")
             self.restore(json.loads(self.state.read_text()))
             return
         if self.state.exists() and json.loads(self.state.read_text()).get("phase") in (
@@ -314,13 +317,13 @@ class Updater:
             "rollback-unverified",
         ):
             raise UpdateFailure(
-                "Atualização interrompida. Execute --rollback antes de tentar novamente.",
+                "Update interrupted. Run --rollback before trying again.",
                 "recovery_required",
             )
         self.desired_running()
         container = self.compose("ps", "--quiet", "valheim", capture=True)
         if not container:
-            raise RuntimeError("Inicie a instalação existente antes de atualizar.")
+            raise RuntimeError("Start the existing installation before updating.")
         previous_info = json.loads(self.run("inspect", container, capture=True))[0]
         previous_id = previous_info["Image"]
         world = next(
@@ -332,13 +335,13 @@ class Updater:
             "WORLD_NAME=Dedicated",
         )
         if shutil.disk_usage(self.root / "data").free < 6 * 1024**3:
-            raise RuntimeError("Libere pelo menos 6 GiB no disco de dados antes de atualizar.")
+            raise RuntimeError("Free at least 6 GiB on the data disk before updating.")
         # Fetch and preflight while the current world is still available.
         self.progress("downloading")
         self.run("pull", "--platform", "linux/arm64", image)
         target_id = json.loads(self.run("image", "inspect", image, capture=True))[0]["Id"]
         if previous_id == target_id:
-            print("A imagem instalada já é a solicitada. Nenhuma interrupção necessária.")
+            print("The requested image is already installed. No interruption needed.")
             return
         self.progress("preflight")
         self.require_intent_support(target_id)
@@ -422,7 +425,7 @@ class Updater:
             state["phase"] = "aborted"
             self.save(state)
             raise RuntimeError(
-                "Backup não confirmado; imagem atual preservada. Consulte os logs."
+                "Backup not confirmed; current image preserved. Check the logs."
             ) from None
         state["phase"] = "switching"
         self.save(state)
@@ -433,35 +436,35 @@ class Updater:
             self.progress("verifying")
             self.wait_ready()
         except (Exception, KeyboardInterrupt):
-            print("Nova imagem não validada. Tentando retornar à anterior…")
+            print("New image verification failed. Attempting to restore the previous image…")
             self.restore(state)
-            raise RuntimeError("Atualização cancelada; imagem anterior restaurada.") from None
+            raise RuntimeError("Update cancelled; previous image restored.") from None
         state["phase"] = "completed"
         self.save(state)
-        print("Atualização concluída. Painel validado; estado desejado do jogo preservado.")
-        print("Retorno manual: sudo python3 update-server.py --rollback")
+        print("Update complete. Panel verified; desired game state preserved.")
+        print("Manual rollback: sudo python3 update-server.py --rollback")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Atualizar imagem do Valheim com backup e retorno automático."
+        description="Update the Valheim image with backup and automatic rollback."
     )
     parser.add_argument("--image", default="hfgalmeida/valheim-arm:latest")
     parser.add_argument("--rollback", action="store_true")
     parser.add_argument(
         "--reconcile",
         action="store_true",
-        help="Validar a instalação atual e encerrar um registro antigo, sem reiniciar contêineres",
+        help="Verify the current installation and close an old record without restarting containers",
     )
     parser.add_argument(
-        "--directory", type=Path, help="Pasta da instalação, para uso pelo agente no host"
+        "--directory", type=Path, help="Installation directory used by the host agent"
     )
     parser.add_argument(
-        "--timeout", type=int, default=900, help="Prazo de inicialização em segundos (padrão: 900)."
+        "--timeout", type=int, default=900, help="Startup timeout in seconds (default: 900)."
     )
     args = parser.parse_args()
     if args.timeout < 60:
-        parser.error("--timeout deve ser pelo menos 60")
+        parser.error("--timeout must be at least 60")
     import fcntl
 
     if args.rollback and args.reconcile:
@@ -469,12 +472,14 @@ def main():
     root = args.directory.resolve() if args.directory else Path(__file__).resolve().parent
     os.umask(0o077)
     if not (root / ".env").is_file() or not (root / "compose.yaml").is_file():
-        parser.error("Execute o script na pasta da instalação, junto ao compose.yaml e .env.")
+        parser.error(
+            "Run the script in the installation directory containing compose.yaml and .env."
+        )
     with (root / ".image-update.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            parser.error("Outra atualização já está em andamento.")
+            parser.error("Another update is already in progress.")
         try:
             updater = Updater(root, args.timeout)
             if args.reconcile:

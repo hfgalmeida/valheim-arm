@@ -89,7 +89,7 @@ def test_manual_stop_cancels_queued_fatal_recovery(runtime):
     asyncio.run(runtime.tick())
     runtime.submit("stop")
     assert not runtime.want_running
-    assert runtime.jobs[0]["state"] == "cancelado"
+    assert runtime.jobs[0]["state"] == "cancelled"
     with patch("app.runtime.os.killpg", create=True) as send:
         asyncio.run(runtime.recover_startup())
         send.assert_not_called()

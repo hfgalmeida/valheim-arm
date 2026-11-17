@@ -64,14 +64,16 @@ class Settings(BaseModel):
     @classmethod
     def world(cls, value):
         if not re.fullmatch(r"[\w -]+", value) or value != value.strip():
-            raise ValueError("Mundo: use letras, números, espaços internos, hífen ou sublinhado")
+            raise ValueError(
+                "World name: use letters, numbers, internal spaces, hyphens, or underscores"
+            )
         return value
 
     @field_validator("server_name", "server_password")
     @classmethod
     def plain(cls, value):
         if any(ord(c) < 32 for c in value):
-            raise ValueError("Caracteres de controle não permitidos")
+            raise ValueError("Control characters are not allowed")
         return value
 
     @field_validator("preset")
@@ -87,7 +89,7 @@ class Settings(BaseModel):
             "immersive",
             "hammer",
         ):
-            raise ValueError("Preset inválido")
+            raise ValueError("Invalid preset")
         return value.lower()
 
     @field_validator(
@@ -100,7 +102,7 @@ class Settings(BaseModel):
     @classmethod
     def modifier(cls, value, info):
         if value not in MODIFIERS[info.field_name.removeprefix("modifier_")]:
-            raise ValueError("Modificador inválido")
+            raise ValueError("Invalid modifier")
         return value
 
     @field_validator("timezone")
@@ -109,7 +111,7 @@ class Settings(BaseModel):
         try:
             ZoneInfo(value)
         except (KeyError, ValueError):
-            raise ValueError("Fuso horário inválido")
+            raise ValueError("Invalid time zone")
         return value
 
     @field_validator("restart_at", "backup_at")
@@ -129,7 +131,7 @@ class Settings(BaseModel):
                 or not re.fullmatch(r"[a-fA-F0-9]{64}", self.bepinex_sha256)
             )
         ):
-            raise ValueError("Pacote personalizado exige URL HTTPS e SHA256 de 64 caracteres")
+            raise ValueError("A custom package requires an HTTPS URL and a 64-character SHA256")
         return self
 
     def arguments(self, save_dir: Path):
@@ -187,14 +189,14 @@ class ConfigStore:
 
     def change(self, changes: dict, reset: list[str], confirm_world=False):
         if any(key not in Settings.model_fields for key in changes.keys() | set(reset)):
-            raise ValueError("Configuração desconhecida")
+            raise ValueError("Unknown setting")
         if "server_port" in changes or "server_port" in reset:
-            raise ValueError("A porta é definida no Compose e exige recriar o contêiner")
+            raise ValueError("The port is set in Compose and requires recreating the container")
         overrides = {k: v for k, v in self.overrides.items() if k not in reset} | changes
         result = Settings(**(self.base | overrides))
         if result.world_name != self.effective().world_name and not confirm_world:
             raise ValueError(
-                "Confirme a seleção/criação de outro mundo; o mundo anterior será preservado"
+                "Confirm selecting or creating another world; the previous world will be preserved"
             )
         atomic_json(self.path, overrides)
         self.overrides = overrides
@@ -207,7 +209,7 @@ class ConfigStore:
         return {
             "values": values,
             "sources": {
-                k: "painel" if k in self.overrides else "compose" if k in self.base else "padrão"
+                k: "panel" if k in self.overrides else "compose" if k in self.base else "default"
                 for k in values
             },
             "pending": running is not None and running != self.effective(),

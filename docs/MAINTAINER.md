@@ -1,487 +1,165 @@
-# Guia do mantenedor
+# Maintainer guide
 
-Desenvolvimento, publicação, API e validação técnica do projeto. Para instalar ou configurar uma instância, consulte o [README](../README.md) e a [referência do servidor](REFERENCE.md).
+Architecture, development, and release procedures for Valheim ARM. Deployment and server administration belong in [README](../README.md) and [REFERENCE](REFERENCE.md).
 
-- [Arquitetura](#arquitetura)
-- [Desenvolvimento](#desenvolvimento)
-- [Publicação no Docker Hub](#publicacao)
-- [API do painel](#api)
-- [Validação na Oracle](#validacao)
-- [Ciclo de vida do servidor](#ciclo-de-vida)
-- [Recuperação avançada](#recuperacao-avancada)
+## Architecture
 
-<a id="arquitetura"></a>
-## Arquitetura
+One `linux/arm64` image contains FEX, an x86 root filesystem, the Python supervisor, bundled BepInEx, and Caddy. Compose runs two separate containers using that same image:
 
-Uma única imagem ARM64 contém FEX, rootfs x86, supervisor Python e Caddy. O Compose executa dois contêineres separados, `valheim-server` e `valheim-proxy`, usando essa mesma imagem. A API 8080 fica na rede interna; somente HTTPS e as portas UDP do jogo são publicados.
+```mermaid
+flowchart LR
+    Browser -->|HTTPS 443| Proxy[Caddy proxy]
+    Proxy -->|internal HTTP 8080| Panel[FastAPI supervisor]
+    Players -->|UDP 2456–2457| Game[Valheim under FEX]
+    Panel -->|process lifecycle| Game
+    Panel --> Data[Persistent data bind mount]
+    Panel -->|restricted Unix socket| Agent[Host updater]
+    Agent --> Docker[Docker Compose]
+```
 
-| Componente | Local |
+| Component | Responsibility |
 |---|---|
-| Build nativo FEX, rootfs e Caddy | `Dockerfile`, `docker/` |
-| Jogo, tarefas, reinícios e agendamento | `app/runtime.py` |
-| Contagem de jogadores e consulta Steam | `app/players.py` |
-| Histórico de IDs conhecidos, separado da presença online | `app/player_directory.py` |
-| Backups e envio para nuvem | `app/backups.py`, `app/cloud.py` |
-| API, autenticação e interface | `app/web.py`, `app/auth.py`, `app/static/` |
-| Instalação e implantação | `install.sh`, `compose.yaml` |
+| `Dockerfile`, `docker/` | Native ARM64 FEX build, x86 rootfs/dependencies, bundled packages, Caddy |
+| `app/runtime.py` | Serialized lifecycle, maintenance queue, scheduling, clean-save checks |
+| `app/startup_watchdog.py`, `startup_diagnostics.py` | Startup phases, fatal-signal boundaries, bounded startup history, compatibility profile |
+| `app/game_logs.py` | Bounded log-line draining without accepting oversized tails as messages |
+| `app/players.py` | Conservative player snapshots and Steam A2S corroboration |
+| `app/player_directory.py` | Persistent identity suggestions; never an online-player source |
+| `app/backups.py`, `cloud.py` | Consistent archives, validation/restore, retention, rclone uploads |
+| `app/alerts.py`, `backup_freshness.py` | Discord delivery, deduplication, backup-age monitoring |
+| `app/auth.py`, `accounts.py`, `audit.py` | Sessions, roles, account lifecycle, private audit trail |
+| `app/web.py`, `app/static/` | Authenticated API, server-sent events, responsive English interface |
+| `app/file_access.py` | Selective persistent ACL access for the SSH user |
+| `update-server.py`, `host-agent.py` | Controlled image updates and restricted host integration |
+| `scripts/collect-diagnostics.py` | Local, bounded, redacted support reports |
 
-O instalador aceita Ubuntu 24.04 e 26.04 ARM64 com páginas de 4 KiB; a imagem usa Ubuntu 24.04. A instalação na Oracle não compila FEX nem instala binfmt. O binário Caddy é copiado para um inode sem file capabilities, permitindo a validação com `cap-drop ALL` e `no-new-privileges`.
+The installer targets Ubuntu 24.04/26.04 ARM64 with 4 KiB pages. The image requires a Linux kernel >=5.15 and ARMv8.2 features including atomics/CRC/ASIMD. It does not install binfmt or compile FEX on the deployment host. The panel/API process is native Python; the game and SteamCMD use FEX.
 
-O instalador preserva `.env`, Compose, senhas e saves existentes. Não substitua essa regra por sobrescrita automática de configurações do administrador. A descoberta de IDs também não deve interferir na leitura do log nem ser usada como contagem de jogadores online.
+## Lifecycle and maintenance
 
-<a id="desenvolvimento"></a>
-## Desenvolvimento
+A single worker serializes destructive operations. Persisted run intent is independent of container restart policy: a manual stop keeps the game stopped after reboot, while the panel remains available.
 
-Para publicar uma nova versão da imagem, altere somente [VERSION](../VERSION), por exemplo de `0.1.0` para `0.1.1`, e envie a mudança à `main`. O GitHub Actions publica as tags `0.1.1`, `latest` e a identificação do commit após os testes e o preflight. Detalhes em [publicação](#publicacao).
+Automatic maintenance and operator stop/restart requests require a ready game, a valid zero-player log snapshot for 120 seconds, applicable Steam A2S confirmation, and a final admission check. Steam queries alone cannot establish an empty server. Connection/reconnection messages invalidate the snapshot; expired or unknown presence never authorizes automatic maintenance. Administrator actions bypass admission/idle waiting but retain clean shutdown/save requirements.
 
-O ambiente abaixo serve aos testes do código-fonte na máquina do mantenedor/CI. A instalação na Oracle usa exclusivamente as imagens Docker Hub descritas acima. Para desenvolver, use Python 3.12 e Node:
+SIGINT requests a graceful save and shutdown. A full archive/update requires both process exit and a completed-save marker (`World saved` or final chunked-save stage). Failed/uncertain saves retain the unclean marker and prevent subsequent backup/update work.
+
+Fatal startup cleanup permits escalation only after an explicit fatal first-scene failure, before any world activity, with a known phase. Unknown/advanced phases suspend recovery. Retries share a five-failure limit; stable sessions can reset the counter. `FEX_GAME_MODE=auto` selects compatibility for later attempts after eligible early crashes; explicit `standard`/`compatible` modes are available. The compatibility profile is a mitigation, not a guaranteed root-cause fix, and may reduce performance.
+
+The compatibility environment is passed only to the game FEX process: full SMC checking, MonoHacks/multiblock/disk cache disabled, TSO retained. It stays in effect for that process. Startup history contains at most 20 metadata records, not raw logs or credentials.
+
+## Persistent data and privacy
+
+| Path | Contents / access |
+|---|---|
+| `data/saves` | World files and game permission lists; shared with the SSH user |
+| `data/backups` | Complete archives and checksums; shared |
+| `data/mods` | Plugin DLLs/configuration and recovery copies; shared |
+| `data/config/overrides.json` | Editable panel overrides; selectively shared |
+| `data/config/admin.json`, `panel-users.json` | Private Argon2 credentials |
+| `data/config/audit.json` | Private bounded audit records |
+| `data/config/maintenance*.json`, `run-intent.json` | Queue/history and desired run state |
+| `data/config/startup-history.json` | Private bounded startup evidence |
+| `data/config/alerts.json`, `alert-state.json`, `backup-age-state.json` | Private notification credentials/state and persistent grace periods |
+| `data/cloud` | Private rclone connection, settings, upload receipts |
+| `data/installs`, `current`, `home`, `cache` | Internal installations, symlink, emulation home/cache |
+| `caddy_data`, `caddy_config` | Persistent proxy certificate authority and Caddy state |
+
+The installer preserves existing `.env`, Compose, passwords, and saves. ACL synchronization grants access only to intended shared paths and repairs permissions after private atomic replacements. Never recursively expose all of `data` to the SSH user.
+
+Backups validate manifests, hashes, extraction bounds, and relative paths. They exclude panel/cloud credentials and private notification/audit state. Saves are restored atomically with a protected pre-restore archive. Plugin DLLs and deleted-plugin copies are managed separately from world backups.
+
+Cloud uploads verify local checksums, then transfer archive and checksum before recording success. Pending local copies are protected from retention. Cloud copies have no automatic deletion policy. Backup-age monitoring observes native archive creation timestamps with completion sidecars, not mutable mtime, and does not revalidate entire world archives on every poll.
+
+## Authentication and API
+
+Sessions use Argon2-backed credentials, HTTP-only cookies, same-origin checks, and CSRF tokens for mutations. Account changes invalidate sessions and pending requests. Temporary/reset passwords block normal access until changed. Operators are denied by default and receive a filtered state stream with only their own operations. Never rely on hidden buttons as authorization.
+
+| Endpoint (`/api/v1` prefix) | Purpose |
+|---|---|
+| POST `/login`, `/logout`, `/password`; GET `/session` | Sign-in, sign-out, own-password change, session metadata |
+| GET `/state`, `/events` | Current state/metrics/history; SSE updates with session revalidation |
+| POST `/actions`; GET `/jobs/{id}` | Queue lifecycle/backup/update/restore work; role-filtered results |
+| GET/PATCH `/config` | Effective settings, sources, validated overrides |
+| GET/PUT `/users/{kind}` | Game administrator/banned/permitted lists and identity suggestions |
+| PUT `/player-directory` | Administrator-confirmed ID/name/platform registration |
+| GET/POST `/plugins` | Inspect/upload bounded managed DLLs |
+| POST `/plugins/restore`, `/plugins/delete`, `/plugins/restore-deleted` | Revision-checked plugin recovery/deletion |
+| GET `/mod-configs`, `/mod-config`; PUT `/mod-config`; POST `/mod-config/restore` | Bounded UTF-8 plugin settings editor |
+| GET `/backups`, `/backups/{name}` | List/download complete archives |
+| GET/PUT `/cloud`, `/alerts`; POST `/alerts/test` | Private cloud/notification settings and tests |
+| GET `/image-version`, `/image-update`; POST `/image-update` | Public version lookup and restricted host update requests |
+| GET/POST `/accounts`; PATCH `/accounts/{id}`; POST `/accounts/{id}/password` | Administrative account lifecycle |
+| GET `/audit` | Administrator audit filters |
+
+`/healthz` exposes only minimal supervisor/game health and desired-running state. Configuration and detailed diagnostics require authentication. HTTP 401/403/404/409/422 identify session, authorization, missing-resource, conflict, and validation errors; unavailable audit storage can reject mutations with 503.
+
+Maintenance states are `queued`, `running`, `deferred`, `completed`, `failed`, and `cancelled`. `app/compatibility.py` normalizes pre-1.0 persisted operation states and audit field names on read, preserving user names/settings and historical text. Never enqueue terminal history records merely because a locale changed.
+
+## Host updater
+
+The agent is a separate root-owned systemd service with a restricted Unix socket mounted read-only into the game container. It checks the peer UID and accepts fixed status/update requests. Containers never receive the Docker socket or arbitrary host-command execution.
+
+Installation uses a directory-derived identity, protected copies under `/usr/local/lib/valheim-arm/ID`, `/etc/valheim-arm/ID.json`, a generated Compose override, and `valheim-arm-updater-ID.service`. The installer enables the service automatically. It preserves a previous CLI copy when updating the managed version.
+
+Image updates are serialized, honor persisted run intent, preflight before shutdown, back up before switching both containers, and verify stable readiness and HTTPS. Rollback preserves current persistent data. Interrupted or unverified recovery blocks new updates until resolved. For advanced host recovery:
 
 ```sh
-python -m venv .venv
+sudo python3 update-server.py --directory /PATH/TO/INSTALLATION --rollback
+sudo python3 update-server.py --directory /PATH/TO/INSTALLATION --reconcile
+```
+
+Reconciliation verifies the existing deployment without pulling, stopping, or switching images. It is for completing a stale record after the actual installation has already been recovered; it is not a substitute for repairing an unhealthy deployment.
+
+## Development
+
+Use Python 3.12 and Node.js. The application uses English text and state names. Dependency/game logs and user-provided names/configuration may use their own language. The local planning file is intentionally untracked and excluded from release archives.
+
+```sh
+python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
 python -m pytest -q
 node --check app/static/panel.js
+bash -n install.sh
+shellcheck install.sh
+python -m black --check app tests scripts host-agent.py update-server.py
+python -m ruff check app tests scripts host-agent.py update-server.py
 ```
 
-Os testes usam um runtime isolado, sem executar o jogo nem acessar Steam/Oracle. A API privada do painel está documentada em [API](#api).
-
-O teste opcional de navegador usa a interface real com respostas de API determinísticas, verificando login, formulários, ações e layout móvel. Não representa uma sessão real do jogo:
+Optional browser checks:
 
 ```sh
 pip install -r requirements-browser.txt
 python -m playwright install chromium
-RUN_BROWSER_TESTS=1 python -m pytest -q tests/test_panel_browser.py
+RUN_BROWSER_TESTS=1 python -m pytest tests/test_panel_browser.py -q
 ```
 
-No Windows com Edge instalado, use `$env:RUN_BROWSER_TESTS='1'` e `$env:BROWSER_CHANNEL='msedge'` no PowerShell; não é necessário baixar Chromium nesse caso. A captura gerada fica em `.artifacts/panel.png` e contém dados de teste. O workflow `Checks` executa os testes do supervisor e oferece build ARM/preflight manual por `workflow_dispatch`. O workflow `Publish Docker Hub` também constrói e verifica a imagem antes de publicar, nos disparos descritos em [publicação](#publicacao). Esses testes não substituem a aceitação OCI.
+The `Checks` workflow runs source-level tests and static checks. Its native ARM image-build job is opt-in. CI does not download/start Valheim for gameplay tests. Keep synthetic tests isolated from production saves and avoid putting credentials into test output.
 
-<a id="publicacao"></a>
-## Publicar imagem
+## Versioning and release
 
-O workflow `.github/workflows/dockerhub.yaml` testa o supervisor, constrói a imagem em um runner **ARM64 nativo**, executa o preflight do FEX e publica a mesma imagem testada no Docker Hub. Não usa QEMU nem outro emulador para construir a imagem.
+Change only `VERSION` for the image version, using `X.Y.Z` without `v`. Pushes to `main` trigger `Publish Docker Hub`, even when VERSION is unchanged. An existing exact image tag blocks publication; an unpublished version may receive multiple corrective commits.
 
-Este guia é para o mantenedor que publica a imagem. Para instalar o servidor, siga o [README](../README.md): somente Docker Compose e arquivos de configuração são necessários na Oracle. A compilação fica no GitHub Actions.
+Configure repository secret `DOCKERHUB_TOKEN` and variable (or existing secret) `DOCKERHUB_USERNAME`. Optional `DOCKERHUB_IMAGE` overrides the default lowercased GitHub owner/repository. Pulling the public image needs no Docker Hub login.
 
-O repositório GitHub [hfgalmeida/valheim-arm](https://github.com/hfgalmeida/valheim-arm) é público: os arquivos de instalação e o código podem ser baixados sem autenticação GitHub. A visibilidade da imagem Docker é uma configuração própria do Docker Hub. Para distribuir a instalação sem exigir login na Oracle, publique a imagem em um repositório Docker Hub público.
-
-### Configuração deste repositório
-
-Configurações de um projeto não são copiadas automaticamente para outro. Secrets e variables de repositório precisam existir em **hfgalmeida/valheim-arm**. Se forem de uma organização, conceda acesso a este repositório na política desses secrets/variables. Secrets vinculados a um Environment não são lidos por este workflow, que não seleciona Environment.
-
-No GitHub, abra **Settings → Secrets and variables → Actions** neste repositório:
-
-| Tipo | Nome | Valor |
-|---|---|---|
-| Variable | `DOCKERHUB_USERNAME` | Seu usuário real no Docker Hub; não precisa ser igual ao GitHub |
-| Secret | `DOCKERHUB_TOKEN` | Token Docker Hub com permissão de leitura e escrita no repositório de destino |
-| Variable opcional | `DOCKERHUB_IMAGE` | Sobrescreve o destino padrão, por exemplo `suaorganizacao/valheim-arm`; sem registry ou tag |
-
-Se `DOCKERHUB_IMAGE` estiver ausente, o workflow usa `GITHUB_REPOSITORY` em minúsculas: proprietário e nome do repositório GitHub. Neste projeto, o destino é automaticamente `hfgalmeida/valheim-arm`; não é necessário configurar o nome da imagem. `DOCKERHUB_USERNAME` é usado somente para autenticação no Docker Hub, e a conta deve ter permissão para publicar nesse destino. O workflow também aceita `DOCKERHUB_USERNAME` como secret para aproveitar esse padrão quando já utilizado em outros projetos.
-
-Crie o repositório `valheim-arm` no namespace desejado no Docker Hub e selecione **Public** para permitir downloads públicos. Se ele já existir, abra **My Hub → Repositories → valheim-arm → Settings → Visibility settings → Make public** e confirme o nome, conforme o [guia de visibilidade Docker Hub](https://docs.docker.com/docker-hub/repos/manage/access/). Essa alteração é feita no Docker Hub; o workflow não muda a visibilidade do repositório.
-
-Crie ou reutilize um token com permissão de escrita nesse destino e salve-o como `DOCKERHUB_TOKEN` nos secrets do GitHub Actions. A publicação exige autenticação mesmo para uma imagem pública. Tokens pessoais usam as permissões dos repositórios acessíveis pela conta; tokens de organização podem precisar de autorização específica para o destino. Não cadastre o token no código, no `.env` da Oracle ou nos logs.
-
-Confirme que GitHub Actions está habilitado e que a política do repositório permite as actions `actions/*` e `docker/*`. O workflow usa o runner padrão ARM64 `ubuntu-24.04-arm`, disponível gratuitamente para repositórios públicos segundo a [documentação do GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). Mantenha esse runner ARM64, pois o Dockerfile exige compilação nativa.
-
-Fontes: [secrets do GitHub Actions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets), [autenticação e publicação Docker](https://docs.docker.com/build/ci/github-actions/push-multi-registries/), [runners GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
-
-### Disparos e tags
-
-O arquivo [VERSION](../VERSION) na raiz do repositório define a versão da imagem. Ele deve conter somente um número no formato `X.Y.Z`, sem prefixo `v` e sem zeros à esquerda. Essa é a versão deste projeto/imagem, independente das versões do Valheim e do FEX.
-
-Para publicar a próxima versão, altere **apenas esse arquivo**:
-
-```text
-0.1.1
-```
-
-Faça commit e push da alteração para a `main`, ou edite o arquivo pela interface do GitHub e mescle o PR. O Actions lê o número, executa os testes, constrói e verifica a imagem ARM64, e publica `0.1.1`, `latest` e a tag do commit. Não é preciso criar tag Git, GitHub Release, token GitHub adicional ou usar Conventional Commits.
-
-| Disparo | Tags publicadas |
-|---|---|
-| Qualquer push na `main`, se a versão ainda não estiver publicada | `<VERSION>`, `latest` e `sha-<commit completo>` |
-| Execução manual na `main` | `<VERSION>`, `latest` e `sha-<commit completo>` |
-| Execução manual em outra branch | Somente `sha-<commit completo>` |
-
-Todo push na `main` inicia o workflow de publicação, mesmo sem alterar `VERSION`. Você pode enviar vários commits com o mesmo número enquanto a imagem dessa versão ainda não tiver sido publicada. Quando a publicação for concluída, os próximos builds com esse número serão bloqueados; altere `VERSION` para publicar novamente. Pushes de tags Git e pull requests não publicam imagens. O workflow `Checks` continua validando os commits independentemente da publicação.
-
-Use um número novo para cada versão. O workflow não incrementa o arquivo por conta própria. Antes de compilar, ele consulta a tag exata no Docker Hub: se já existir, encerra com erro e pede para aumentar `VERSION`. A verificação é repetida antes do envio da imagem. Uma execução manual também passa por essa validação, incluindo execuções em outras branches. Falhas de rede, autenticação, limite de consultas ou respostas inesperadas bloqueiam a publicação; somente a confirmação de tag ausente permite continuar. `latest` pode ser atualizada ao publicar uma nova versão. Execuções de publicação são serializadas.
-
-As duas consultas usam `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` já configurados no Actions para obter autorização no registry, inclusive na primeira publicação. O token é passado por variável de ambiente e não aparece nos argumentos do comando. Se ocorrer HTTP 401/403, confirme que o usuário é o Docker ID, que o token está válido com leitura/escrita e que `DOCKERHUB_IMAGE` aponta para um namespace em que essa conta pode publicar. Esses erros não são tratados como tag disponível. O download público na Oracle continua dispensando login.
-
-Após enviar os arquivos ao GitHub e cadastrar as credenciais, abra **Actions → Publish Docker Hub → Run workflow**. O formulário permite `fex_version=latest` ou uma tag estável como `FEX-2611`. Pushes automáticos usam a última release estável.
-
-A versão do FEX é resolvida antes do build e passada como argumento fixo. Assim, o cache não esconde uma release nova do emulador. A tag FEX aparece nos labels da imagem e sua proveniência completa em `/opt/build-info.json`. O cache de construção é armazenado no GitHub Actions.
-
-O build complementa o rootfs com as bibliotecas amd64 de atomic, C++ e PulseAudio necessárias ao jogo/PlayFab. O APT nativo usa fontes Ubuntu 24.04 assinadas e uma base de estado isolada para baixar a cadeia de dependências amd64; `dpkg-deb` extrai os arquivos sem executar scripts de instalação x86. Cada pacote, versão, arquitetura e SHA256 aparece em `guest_packages` no `/opt/build-info.json`. A publicação falha se uma biblioteca principal não for x86_64 ou se o carregador não resolver suas dependências pelo FEX. A verificação usa diretamente `ld-linux-x86-64.so.2 --list`, pois `ldd` sob emulação pode acabar listando dependências ARM do próprio emulador.
-
-Enquanto a versão ainda não tiver sido publicada, uma nova tentativa pode incorporar um FEX/rootfs/base atualizado. Após publicar, escolha outro número em `VERSION` para gerar uma nova imagem. Use o digest Docker para identificar exatamente o artefato publicado. O resumo do workflow lista as tags, e os logs de push informam o digest. A imagem é somente `linux/arm64`, ajustada a Neoverse N1. Antes de publicar, o workflow executa os testes do supervisor, o preflight FEX e a validação da configuração HTTPS. O GitHub Actions não baixa nem inicia o Valheim; inicialização, conexão, salvamento e parada do jogo são validados diretamente no servidor Oracle.
-
-O preflight não instala SteamCMD nem executa o Valheim, e não substitui a aceitação de crossplay, BepInEx ou desempenho na Oracle. Consulte [validação na Oracle](#validacao).
-
-<a id="api"></a>
-## API
-
-Base `/api/v1`, JSON. A API é acessada pelo mesmo HTTPS do painel. Não publique 8080. O usuário principal admin é preservado, e o administrador pode cadastrar contas adicionais de administrador/operador. A troca da própria senha é feita pelo painel; senhas temporárias bloqueiam o restante do acesso até serem trocadas.
-
-1. `POST /login` com `{"password":"..."}` e cabeçalho `Origin` exatamente igual a `PANEL_ORIGIN`.
-2. Guardar o cookie `session` (Secure, HttpOnly, SameSite=Strict) e o `csrf` retornado.
-3. Em mutações autenticadas, enviar `Origin` e `X-CSRF-Token`. O cookie autentica leituras e SSE.
-
-| Método e caminho | Entrada / saída |
-|---|---|
-| GET `/session` | Recupera token CSRF da sessão atual |
-| POST `/logout` | Invalida sessão |
-| GET `/state` | Estado do jogo, contagem e motivo, crossplay e código de entrada, builds, operações, últimos 500 logs, histórico de até 720 métricas e proveniência da imagem |
-| GET `/cloud` | Configuração pública e status do envio, sem tokens: `enabled`, `configured`, `provider`, `folder`, `pending`, `uploading`, `last_success`, `last_file`, `error` |
-| PUT `/cloud` | `{"enabled":true,"folder":"Valheim/backups","config":"..."}`; `config` vazio mantém a conexão salva. Exige sessão e CSRF; recusa alterações durante um envio |
-| GET `/events` | SSE a cada cinco segundos, com estado, operações, logs e métrica mais recente; termina ao expirar a sessão |
-| GET `/config` | `values`, `sources`, `pending`, opções de modificadores; senha do jogo sempre vazia |
-| PATCH `/config` | `{"changes":{"crossplay":true},"reset":[],"confirm_world":false}`; trocar o mundo exige confirmação |
-| POST `/actions` | `{"action":"backup"}`; aceita start, stop, restart, update, backup, restore |
-| GET `/jobs/{id}` | Consulta resultado da operação retornada com HTTP 202 |
-| GET `/plugins` | DLLs instaladas, tamanho, hash `revision` e disponibilidade da versão anterior |
-| POST `/plugins` | Corpo binário `application/octet-stream`, query `name` e hash `revision` quando substitui. Limite de 16 MiB, sessão/CSRF e jogo parado, também verificados ao terminar a transferência |
-| POST `/plugins/restore` | `{name,revision}`; troca para a versão anterior com jogo parado |
-| GET `/mod-configs` | Arquivos de texto existentes em BepInEx/config; leitura autenticada |
-| GET `/mod-config` | `path` relativo e `previous=true` opcional; retorna conteúdo, hash `revision` e disponibilidade de versão anterior |
-| PUT `/mod-config` | `{path,content,revision}`; exige jogo parado, sem operação/fila ativa, sessão e CSRF. Gravação atômica, cópia anterior `.panel-backup`, conflito HTTP 409 se o hash mudou. Limite de 32 KiB UTF-8, sem traversal ou symlinks |
-| GET `/backups` | Lista de nomes e tamanhos |
-| GET `/backups/{name}` | Download autenticado do tar.gz |
-| GET `/users/{kind}` | Listas `admins`, `banned`, `permitted`: `entries` contém os IDs atuais; `known_players` reúne sugestões com ID, nome, plataforma, origem, confirmação e última observação de logs/listas, sem indicar presença online. Exige sessão administrativa |
-| PUT `/users/{kind}` | Substitui a lista após validar/deduplicar IDs |
-
-Restauração exige `{"action":"restore","backup":"NOME.tar.gz","confirm":true}` e jogo parado. Somente arquivos do diretório de backups podem ser selecionados. Não há upload web de backups nem execução de comandos arbitrários. DLLs individuais podem ser enviadas por `/plugins`. Configurações e listas não podem ser alteradas durante operação em execução.
-
-Operações têm `id`, `action`, `state`, `created` e, quando disponíveis, `result` ou `error`. Estados: `fila`, `executando`, `concluído`, `falha`, `adiado`, `cancelado`. Retornar 202 confirma entrada na fila, não conclusão nem prontidão do jogo. O estado `online` exige evidência de mundo carregado e backend disponível; em crossplay, exige também um join code de sessão registrado. A conclusão final do ZNet confirma o mundo; quando essa mensagem é omitida, aceitam-se chunks totalmente carregados seguidos de sessão PlayFab ativa, ou atividade do mundo (resumo de conexões/ZDOS ou personagem conectado) após o início do ZNet. A mensagem inicial `Loading: Done, Total time` do Unity, o início dos chunks e o registro antecipado do backend não bastam. Manutenções automáticas aguardam essa prontidão antes de consultar atualizações ou agendar paradas.
-
-O estado e os eventos incluem `crossplay` (configuração em execução, ou a configuração efetiva quando parado) e `join_code` (texto de seis dígitos ou `null`). O código é extraído das mensagens de registro/atividade da sessão no log, preservando zeros iniciais; veja um [exemplo do formato do log](https://github.com/husjon/valheim_server_oci_setup#crossplay-console--game-pass). Ele é limpo ao iniciar uma nova execução, encerrar o jogo ou falhar a leitura do log. O painel aguarda o código quando crossplay está ativo e só o exibe dentro da sessão administrativa autenticada.
-
-O campo `cloud` de `/state` e dos eventos contém o mesmo status público de GET `/cloud`, permitindo acompanhar os envios sem recarregar o painel.
-
-HTTP 401 indica sessão ausente/expirada ou login recusado; 403 indica origem/CSRF incorretos; 404, recurso ausente; 409, conflito/fila cheia; 422, configuração inválida ou confirmação ausente. Erros de validação não retornam o valor de senha enviado.
-
-`GET /healthz` não exige sessão, é interno e verifica a disponibilidade do supervisor. O estado do jogo é um campo separado. Métricas CPU/memória usam cgroup v2 quando disponível; a alternativa mede apenas o supervisor e é identificada no payload/painel. CPU usa 100% por núcleo; rede corresponde ao namespace do contêiner e disco ao sistema de arquivos que contém `/data`.
-
-
-
-### Upload de plugins
-
-`app/plugins.py` verifica os cabeçalhos [PE/CLR](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) sem carregar a DLL. Isso valida o formato de assembly gerenciado, não a compatibilidade com BepInEx, autenticidade ou segurança do código. Somente o administrador autenticado envia plugins de fontes confiáveis.
-
-A API recebe o binário em stream, limita 16 MiB e grava em arquivo temporário sem extensão DLL. Revalida sessão, estado do jogo e fila antes de substituir o destino atomicamente. O hash esperado impede substituição silenciosa de uma versão alterada durante o envio. Nomes são simples, sem caminhos; symlinks e nomes que diferem apenas na capitalização são recusados.
-
-Antes de substituir uma DLL, a cópia anterior é persistida em `data/mods/plugin-backups/NOME.dll.previous`, fora da pasta carregada pelo BepInEx. Restauração e nova atualização alternam a versão anterior; não há histórico ilimitado. Esses binários não fazem parte dos arquivos completos de backup do mundo. Caddy permite corpos maiores somente no caminho exato `/api/v1/plugins`; as demais rotas continuam com 64 KB. Testes usam cabeçalhos sintéticos sem executar plugins; a compatibilidade real permanece na validação Oracle.
-
-
-<a id="validacao"></a>
-## Validação na Oracle
-
-**Validado pelo administrador na Oracle ARM:** inicialização do servidor e conexão de jogador com crossplay desativado (Steam) e ativado (PlayFab). A inicialização e a entrada foram relatadas como rápidas, mas ainda não há medições formais.
-
-**Próximas validações:** desempenho no Ampere A1, contagem de jogadores e compatibilidade de plugins adicionais. O BepInEx embutido com ServerInfo e JsonDotNET já teve conexão e jogo normal confirmados nos dois modos, conforme o registro abaixo. Os demais itens de aceitação abaixo permanecem pendentes quando não marcados; a conexão bem-sucedida não comprova, por si só, restauração de saves, contagem de jogadores ou estabilidade prolongada.
-
-Execute em Ubuntu 24.04 ARM64, 2 OCPUs/12 GB, começando em um mundo descartável. Registre tag/commit do projeto, `uname -a`, `getconf PAGESIZE`, versão Docker/Compose e conteúdo de `/opt/build-info.json`. Guarde somente dados sem senhas.
-
-### Etapa 1 — prova funcional obrigatória
-
-- [ ] Configurar `VALHEIM_IMAGE` com a imagem publicada, executar `docker compose pull valheim` e `preflight`, sem compilar na instância nem instalar binfmt, privilégios adicionais, FUSE ou outro emulador. Registrar também o digest da imagem baixada.
-- [x] Iniciar vanilla e entrar com cliente Steam, com crossplay desativado; confirmado pelo administrador.
-- [ ] Identificar `Connections N ZDOS:` nos logs; confirmar estado desconhecido antes do primeiro snapshot e durante conexões/desconexões.
-- [x] Habilitar crossplay e conectar um jogador ao servidor; confirmado pelo administrador.
-- [ ] Completar a verificação com cliente de outra plataforma e confirmar que eventos PlayFab invalidam a contagem até o próximo snapshot. Guardar amostras anonimizadas para atualizar os testes.
-- [ ] Instalar um BepInExPack Linux com SHA256 conhecido e plugin de teste compatível; confirmar carregamento no log e conexão. Repetir a verificação de contagem com BepInEx ativo.
-- [ ] Validar que o SIGINT entregue através do FEX salva o mundo e encerra o processo. Se o texto de save/conexões diferir, adaptar o parser e os testes antes de continuar.
-
-Interrompa a aceitação se qualquer combinação exigida não funcionar. Não substitua FEX por outro emulador para contornar a incompatibilidade.
-
-### Etapa 2 — painel e manutenção
-
-- [ ] Confiar na CA obtida via SSH e entrar em `https://IP`; verificar bloqueio de acesso não autenticado à API e aos backups.
-- [ ] Conferir métricas contra `docker stats`: CPU por núcleo, memória do cgroup, rede e disco. Deixar a página aberta para observar gráficos em atualização.
-- [ ] Alterar nome, senha e modificadores; confirmar indicação pendente, aplicação após reinício e origem dos valores. Usar “Usar Compose”, recriar o contêiner e confirmar precedência/persistência.
-- [ ] Trocar mundo com confirmação e voltar ao anterior; verificar que os saves originais permanecem.
-- [ ] Editar administradores, banidos e permitidos e conferir comportamento no jogo.
-- [ ] Solicitar atualização/reinício pelo painel com jogadores conectados: confirmar parada imediata com salvamento e desconexão. Agendar tarefa automática e confirmar adiamento sem desconexão.
-- [ ] Sair do jogo, aguardar snapshot completo e dois minutos vazios; confirmar execução da tarefa adiada, save e retorno do jogo.
-- [ ] Tentar conectar durante a verificação final, em Steam e crossplay; verificar cancelamento caso o evento já tenha sido processado e comportamento de suspensão/retomada do grupo FEX.
-- [ ] Simular contagem desconhecida e consulta A2S indisponível; confirmar que nenhum SIGINT é enviado automaticamente.
-- [ ] Agendar backup e reinício no mesmo horário e combinar uma atualização pendente; observar uma única manutenção.
-- [ ] Recriar o supervisor com manutenção adiada e confirmar retomada da intenção persistida.
-
-### Etapa 3 — dados e falhas
-
-- [ ] Criar backup com o jogo parado, baixar no navegador e validar manifesto/checksum.
-- [ ] Alterar algo no mundo, parar, restaurar e confirmar o estado anterior no jogo. Verificar criação do backup pré-restauração.
-- [ ] Em volume descartável, simular disco sem espaço e download Steam interrompido; confirmar preservação do backup/instalação anteriores e erro visível.
-- [ ] Confirmar rejeição de arquivo adulterado e de entradas tar com caminhos externos ou links.
-- [ ] Simular encerramento anormal em mundo descartável; confirmar marcador e bloqueio da manutenção até recuperação/parada limpa.
-- [ ] Desligar e ligar a instância; verificar volumes, configurações, senha administrativa e certificado persistentes.
-
-### Medição de desempenho
-
-Use o mesmo mundo, mesmas áreas e jogadores, e registre três execuções por configuração: vanilla sem cache, vanilla com cache quente e BepInEx com a lista exata de plugins. Anote tempo até ficar online, consumo ocioso, pico de memória, CPU e atrasos de save durante pelo menos 30 minutos de jogo. Altere uma opção FEX de cada vez.
-
-| Cenário | FEX / build jogo | Jogadores / mods | Inicialização | CPU média/pico | RAM pico | Save / observações |
-|---|---|---|---|---|---|---|
-| Vanilla sem cache | pendente | pendente | pendente | pendente | pendente | pendente |
-| Vanilla cache quente | pendente | pendente | pendente | pendente | pendente | pendente |
-| BepInEx cache quente | pendente | pendente | pendente | pendente | pendente | pendente |
-
-A aceitação termina quando os cenários exigidos funcionarem e as evidências forem registradas. Não há promessa prévia de número de jogadores ou melhoria percentual.
-
-<a id="ciclo-de-vida"></a>
-## Ciclo de vida do servidor
-
-### Parada do contêiner e reinícios
-
-O Docker envia SIGTERM ao supervisor; ele suspende o agendador e os envios à nuvem e solicita a saída do jogo com SIGINT. `docker compose down`, `stop` e `restart` não aguardam os jogadores saírem, mas aguardam o salvamento e a saída do processo. As operações manuais do administrador solicitam a parada imediatamente, mesmo com jogadores conectados ou consulta Steam indisponível; o operador mantém as verificações de servidor vazio. A fila continua serializada e aguarda uma operação já em execução terminar. Parar, reiniciar, atualizar e criar backup como administrador dispensam a espera de dois minutos e as verificações de jogadores/A2S, mas preservam o encerramento gracioso e a confirmação de salvamento antes de backups ou atualizações. Manutenções automáticas e paradas/reinícios do operador exigem zero jogadores confirmado por dois minutos, confirmação A2S no modo Steam e uma verificação final das conexões.
-
-O limite para o jogo encerrar é de 150 segundos após o primeiro SIGINT. Se uma tarefa de manutenção já solicitou a parada, o desligamento reutiliza o pedido e o prazo, evitando enviar sinais repetidos ou reiniciar a contagem. A cada 15 segundos, o log informa a espera. Se o processo já saiu mas um descendente manteve o pipe de log aberto, o supervisor limita a drenagem final a dois segundos, mantendo a exigência de confirmação de salvamento concluído (`World save (5/5) done.` no formato atual ou `World saved` no antigo) antes de marcar a parada como limpa.
-
-Uma operação que já escreve saves ou backups tem até 120 segundos para concluir antes do cancelamento da tarefa; consultas de metadados da Steam são canceladas diretamente. O Compose mantém `stop_grace_period: 6m` para acomodar o encerramento HTTP, a operação e a saída do jogo. Portanto, alguns minutos de espera no `down` podem ser normais. Acompanhe em outra sessão com `sudo docker logs -f valheim-server`; evite encurtar o prazo com `down --timeout` durante um salvamento.
-
-Sem confirmação de saída e salvamento, o supervisor mantém o marcador de encerramento incompleto e não cria um backup que poderia ser inconsistente. Manutenções normais não enviam SIGKILL ao jogo (o watchdog da primeira cena é a exceção restrita descrita abaixo); se o processo não encerrar dentro do prazo do contêiner, o Docker pode terminar forçadamente os processos restantes. Uma vez iniciado o desligamento, tarefas e a recuperação automática não voltam a iniciar o jogo. Uma nova inicialização do contêiner respeita a preferência persistida pelo administrador; somente inicia o jogo se a preferência for manter ligado.
-
-Somente impedimentos de segurança anteriores ao SIGINT (jogo ainda carregando, jogadores presentes ou contagem indisponível) e falhas de persistência anteriores à execução adiam automaticamente uma manutenção. Erros de salvamento, backup, atualização ou retorno do jogo encerram a tarefa com falha; a operação inteira não é repetida. Se necessário, a recuperação do jogo ocorre separadamente. Uma versão cuja atualização falhou não provoca novas paradas automáticas no mesmo supervisor: tente novamente pelo painel ou aguarde outra versão disponível.
-
-Os horários diários passam a valer a partir da inicialização do supervisor: instalar ou recriar o contêiner depois do horário não dispara imediatamente um reinício retroativo. Tarefas apenas aguardando na fila são preservadas e aguardam o jogo ficar pronto; uma manutenção interrompida durante a execução é registrada como falha, pois não é seguro repetir efeitos já realizados. Cliques repetidos na mesma operação pendente compartilham a tarefa existente; uma manutenção manual concluída cancela tarefas automáticas equivalentes ainda pendentes.
-
-A recuperação automática tenta novamente após 15, 30 e 60 segundos nas primeiras quedas durante a inicialização; a tentativa seguinte espera cinco minutos. Falhas de instalação e quedas após a prontidão usam cinco minutos. Após cinco falhas consecutivas, a recuperação é suspensa. Dez minutos de sessão pronta zeram a sequência; uma nova ação manual **Iniciar** libera tentativas novamente.
-
-A confirmação de save aceita `World saved` e o estágio final `World save (5/5) done.`. Estágios intermediários, saída zero ou ausência de jogadores não substituem a confirmação de salvamento. Uma parada manual efetivamente sinalizada não deve provocar recuperação automática, mesmo se a confirmação falhar.
-
-A aceitação de mudanças nesse fluxo deve cobrir parada/reinício manual com jogadores conectados, tarefas automáticas adiadas, falhas após o SIGINT, reinício do supervisor com tarefas persistidas e desligamento do contêiner. Mantenha os testes reais do Valheim na Oracle; o CI não deve baixar nem iniciar o jogo.
-
-<a id="recuperacao-avancada"></a>
-## Recuperação avançada
-
-Os procedimentos a seguir são para diagnóstico e recuperação offline, com o serviço parado e uma cópia externa dos dados. A restauração normal pelo painel está na [referência do servidor](REFERENCE.md#backups).
-
-### Rollback de instalação
-
-Se uma atualização mudar o formato do save, uma versão antiga do jogo pode não conseguir carregá-lo. Preserve os arquivos atuais e escolha um backup criado **antes** da atualização.
-
-1. Solicite parada pelo painel. Se o jogo já falhou, pare o serviço Docker e mantenha-o parado durante a recuperação.
-2. Liste `data/installs` e identifique a instalação anterior pela data e pelo arquivo `steamapps/appmanifest_896660.acf`.
-3. Com o serviço parado, ajuste `data/current` para a instalação anterior. Use o procedimento dentro do contêiner de manutenção, que conhece os caminhos internos `/data`. Substitua `IDENTIFICADOR` pela pasta confirmada no passo anterior:
+A native ARM64 runner builds FEX/rootfs and publishes the same image after supervisor tests, FEX preflight, and proxy configuration checks. FEX is resolved to a fixed release for each build. The image records FEX/package provenance in `/opt/build-info.json` and OCI labels. Tags include the semantic version, `latest`, and commit identification. Releases are serialized; authentication/network ambiguity blocks publication.
 
 ```sh
-sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
- 'from pathlib import Path; p=Path("/data/installs/IDENTIFICADOR"); assert p.is_dir() and not p.is_symlink(); n=Path("/data/.rollback-current"); n.symlink_to(p); n.replace("/data/current")'
+git add -A
+git commit -m "Prepare release 1.0.0"
+git push origin main
 ```
 
-Antes, inspecione um eventual `.rollback-current` deixado por uma tentativa anterior e remova somente esse link temporário, se necessário.
-
-4. Se precisar recuperar os saves offline, veja o procedimento abaixo; depois inicie o serviço e confirme versão, mundo e conexão.
-
-### Queda de energia ou parada incompleta
-
-O supervisor deixa `data/config/game-active.json` enquanto o jogo estiver ativo e só remove o marcador após confirmar save e saída limpa. Se houver timeout de 150 segundos ou o jogo terminar sem confirmação final de salvamento, backup/atualização são cancelados. Os saves anteriores não são sobrescritos pela manutenção.
-
-Primeiro confira logs e espaço em disco. Se o mundo ainda iniciar, inicie o jogo e solicite uma parada limpa antes de retomar a manutenção. Caso precise restaurar sem conseguir iniciar o mundo:
-
-1. Pare o serviço e guarde uma cópia externa de `data/saves`, `data/config` e `data/backups`.
-2. Use um contêiner de manutenção, mantendo o supervisor parado, para validar e restaurar um arquivo. O método abaixo verifica o sidecar SHA256, os caminhos e o manifesto antes de substituir saves:
+After the publication workflow succeeds and the exact image is available, create the matching GitHub release using the committed notes:
 
 ```sh
-sudo docker compose stop valheim
-sudo docker compose run --rm --no-deps --entrypoint python valheim -c \
- 'from pathlib import Path; from app.backups import Backups; print(Backups(Path("/data")).restore("NOME.tar.gz"))'
+gh release create 1.0.0 --target COMMIT_SHA --title "Valheim ARM 1.0.0" --notes-file CHANGELOG.md
 ```
 
-3. Após preservar o estado anterior e concluir a restauração, arquive o marcador de encerramento incompleto (renomeie `data/config/game-active.json` para `game-active.recovered.json`). Não remova o marcador só para contornar uma falha sem conferir os saves.
-4. Selecione o mundo correto nas configurações e inicie com `sudo docker compose up -d`. O painel pode estar indisponível enquanto somente o serviço do jogo estiver parado; ajustes offline devem ser feitos com o supervisor parado e JSON válido.
+Do not republish an existing semantic image tag or claim hardware/plugin compatibility without evidence. Update the release version for fixes.
 
+## Support reports
 
-## Formatação e revisão estática
+The collector uses read-only host/container queries, strict metadata allowlists, bounded command output/timeouts, and optional redacted recent logs. It never archives the data directory, raw environment/Compose output, credential files, saves, or binaries. Reports contain only generated JSON and instructions, are private by default, and are never uploaded automatically. Under sudo, the archive is assigned to the invoking SSH user for download. Review optional plugin logs before sharing publicly.
 
-```sh
-python -m black app docker tests
-python -m ruff check app docker tests
-npx --yes prettier@3.5.3 --write "app/static/*.html" "app/static/*.css" "app/static/*.js"
-```
-
-Para apenas verificar, use `black --check` e `prettier --check` nos mesmos caminhos. As configurações ficam em `pyproject.toml` e `.prettierrc.json`; os formatadores não são dependências da imagem de produção. Uploads em andamento ficam em `data/mods/plugin-staging`, fora da pasta varrida pelo BepInEx, e são removidos ao concluir ou abortar a requisição.
-
-
-## Acesso aos dados do administrador
-
-`prepare-access --access-uid UID` é executado automaticamente pelo instalador em um contêiner temporário root, com apenas CHOWN/FOWNER/DAC_OVERRIDE adicionadas para preparar ACLs e propriedade dos diretórios. O serviço normal permanece UID 10001, sem essas capabilities. O perfil privado `data/config/file-access.json` registra o UID SSH obtido de SUDO_UID.
-
-`app/file_access.py` sincroniza ACLs a cada 30 segundos em saves/backups/mods e overrides.json; data/config e data recebem somente travessia/listagem. Credenciais e diretórios internos ficam fora da varredura. Defaults ajudam arquivos novos; a sincronização corrige máscaras 0600 de gravações atômicas. O cache por inode/modo/ctime evita regravar ACLs inalteradas. Falhas são registradas sem parar o supervisor. Os testes Linux exercitam setfacl real, inclusive substituição por arquivo privado.
-
-### Atualizador de imagem no host
-
-`update-server.py` usa apenas Python 3 e Docker Compose no host, sem acesso ao socket pelo painel. O instalador distribui esse arquivo junto ao Compose. A imagem inclui `VERSION` em `/opt/valheim/VERSION`; a consulta pública compara tags semânticas cujo digest ARM64 corresponde a `latest` no Docker Hub, a cada seis horas. Não basta alterar o arquivo do GitHub para anunciar uma imagem publicada.
-
-Os testes em `tests/test_host_update.py` simulam comandos Docker para validar ordem das operações, falha de backup, preflight, recusa sem espaço e retorno à imagem anterior; em Linux também exercitam backup offline e bloqueio do volume. A validação real da troca e do retorno deve ser realizada na Oracle. O backup anterior à troca usa as APIs de backup da imagem instalada; mantenha compatibilidade com esse caminho nas próximas versões. Retorno de imagem não reverte saves, configurações nem atualizações dos binários do jogo.
-
-### Resultado da validação de restauração — 14/11/2026
-
-Executada na instância Oracle de testes com o jogo existente: parada graciosa e ausência do marcador de saída incompleta; criação e validação de backup, com cópia preservada em `data/restore-validation/20261114T143729Z`; inclusão de um arquivo de teste adicional; backup pré-restauração; restauração pelas APIs `Backups.restore`; comparação dos hashes e do conjunto completo dos 9 arquivos de saves. Todos corresponderam ao backup e o arquivo adicional foi removido.
-
-O jogo foi iniciado novamente e atingiu `online`, após carregar os saves DB2/chunks e registrar o transporte crossplay. O relatório está no diretório preservado, em `report.json`. O administrador conectou pelo cliente do jogo e confirmou que o mundo restaurado está correto, concluindo a validação de restauração desta execução. Esta execução validou a restauração no backend e a inicialização real, sem exercitar o botão de restauração no navegador, download pela nuvem ou o atualizador de imagens.
-
-### Diagnóstico BepInEx
-
-`app/mod_diagnostics.py` lê apenas evidências do stdout da execução atual, já submetidas à ocultação de senhas do supervisor. Mantém até 200 identidades de plugins e 50 avisos/erros distintos, sem executar DLLs. O snapshot de até 2.000 DLLs usa inode, tamanho e mtime no início do processo; alterações aparecem na consulta autenticada de plugins. Erros de inventário não bloqueiam a inicialização do jogo. Não há associação presumida entre nome de assembly e nome de plugin.
-
-O parser usa os formatos do [Chainloader BepInEx 5](https://github.com/BepInEx/BepInEx/blob/v5-lts/BepInEx/Bootstrap/Chainloader.cs). O evento Loading precede a tentativa; erros de dependência ou carregamento e a conclusão do carregador são registrados separadamente. Erros emitidos por outras fontes após detectar BepInEx são exibidos sem atribuir a causa ao plugin. A compatibilidade real ainda exige validação na Oracle.
-
-### BepInEx incluído na imagem
-
-`docker/bepinex.json` fixa BepInExPack_Valheim 5.4.2360 e SHA256 do download oficial. `docker/bundle_bepinex.py` verifica hash, caminhos e formato ELF64 x86-64 do Doorstop, mantém apenas core/configuração Linux e normaliza `doorstop_libs/libdoorstop_x64.so` para `libdoorstop.so`. O bundle determinístico, seus metadados e licença são copiados para `/opt/bepinex` na imagem; os binários não são versionados no Git. O pacote é distribuído sob a licença MIT do projeto BepInEx, preservada em `docker/licenses/BepInEx.txt`.
-
-Ao habilitar, o supervisor copia o pacote local para `data/mods`, verifica o hash e instala a configuração inicial do Valheim sem sobrescrever configurações existentes. Atualizações substituem apenas core/loader, mantendo plugins/config/patchers. Desativar dispensa toda essa instalação e não injeta Doorstop. A compatibilidade real com Valheim/FEX e plugins deve continuar sendo validada na Oracle.
-
-Para instalações avançadas, `BEPINEX_URL` e `BEPINEX_SHA256` continuam opcionais no Compose/API: ambos devem ser informados para um pacote personalizado. Com os dois campos vazios, é usado o pacote embutido. Os campos não aparecem no formulário comum do painel; para retornar ao padrão, remova as duas substituições do Compose e de `data/config/overrides.json` com o jogo parado. Bibliotecas nativas Windows/macOS não são carregadas por esse fluxo.
-
-### Validação inicial de BepInEx na Oracle — 15/11/2026 UTC
-
-Imagem 0.17.0, pacote padrão embutido 5.4.2360 e engine 5.4.23.6. Escolhido [ServerInfo 2.2.7](https://thunderstore.io/c/valheim/p/Odin_Sons/ServerInfo/), somente de servidor e sem alteração do mundo, com [JsonDotNET 13.0.4](https://thunderstore.io/c/valheim/p/ValheimModding/JsonDotNET/). A dependência inclui Newtonsoft.Json.dll e NewtonsoftJsonDetector.dll. Pacotes baixados do CDN oficial e hashes registrados; a instalação ocorreu após parada limpa e backup.
-
-O carregador informou 2 carregados, 0 ignorados e 0 falhas. O jogo atingiu online com crossplay e a API interna do plugin (`127.0.0.1:8880/serverinfo`) respondeu com a contagem de jogadores e os dois plugins. Não foi publicada porta adicional nem alterado o firewall. Evidências e configuração original estão em `data/mod-validation/20261115T004207Z`.
-
-Os logs reais acrescentam o GUID à mensagem Loading e contagens à conclusão do Chainloader. `app/mod_diagnostics.py` foi corrigido para aceitar essas variantes e BOM no início da saída, com teste de regressão; aplicar essa correção ao painel depende de uma nova imagem. O administrador confirmou conexão e jogo normal com crossplay ativado, sem mods no cliente (14/11/2026, horário de São Paulo). O administrador também confirmou conexão e jogo normal sem crossplay. Com o jogo parado, o backend do editor salvou CacheIntervalSeconds de 5 para 10 e recuperou a configuração anterior com hash idêntico; esse teste verifica gravação e recuperação, sem medir o efeito do intervalo durante execução. As DLLs foram preservadas com hashes idênticos. BepInEx e crossplay foram devolvidos às configurações anteriores à validação (desativado e ativado, respectivamente); a confirmação da inicialização final é registrada no relatório do servidor. Remoção física do plugin não foi testada.
-
-Na primeira partida após desativar BepInEx, ocorreu SIGSEGV na primeira cena e o processo permaneceu ativo, deixando o estado em iniciando. Não houve logs do carregador nem resposta da API do plugin nessa execução, confirmando sua desativação, mas a partida não pode ser considerada validada nessa tentativa. Evidências foram preservadas em `data/mod-validation/20261115T004207Z/disabled-startup-failure.log`, e o reinício controlado devolveu o jogo ao estado online, com BepInEx desativado e crossplay ativado. A API do plugin ficou inativa e não houve logs do carregador na nova execução. As DLLs e configurações foram preservadas. A recuperação foi manual, não uma comprovação da recuperação automática. O TODO registra a necessidade de detectar falha fatal sem saída do processo; a causa não foi atribuída ao BepInEx.
-
-### Watchdog de falha fatal na inicialização
-
-`app/startup_watchdog.py` acompanha cada processo novo. Reconhece o sinal fatal do Unity e a primeira cena; indícios de ZNet/world/chunks/salvamento ou jogo pronto bloqueiam encerramento forçado. O Loading: Done com vírgula e Total time é a conclusão inicial do Unity, não do mundo. Após sinal fatal, mensagens posteriores nunca devolvem a mesma execução ao estado online.
-
-A tarefa interna `recover-startup` usa o mesmo worker serializado. Envia SIGINT, espera 30 segundos e só permite SIGKILL ao grupo do processo se a execução ainda estiver comprovadamente na primeira cena. Reavalia o avanço dos logs antes de escalar; concede até 10 segundos para confirmar saída e limita a drenagem do stdout. Falta de saída após SIGKILL suspende a recuperação. Não chama snapshot, install ou restore, não remove o marcador de saída incompleta e não marca o mundo como salvo.
-
-A saída é contada uma única vez nos limites existentes (15/30/60/300 segundos e suspensão na quinta falha). A intenção de parada manual tem prioridade, e o desligamento do contêiner não dispara nova partida. Logs e tarefas de uma execução anterior não podem alterar o diagnóstico nem autorizar sinais em um processo novo. A tarefa não é persistida por pertencer ao PID atual, e sua execução não exige gravar estado de manutenção em disco. Demais paradas continuam usando o fluxo normal de salvamento, sem SIGKILL pelo supervisor.
-
-Validado no Linux da Oracle com processo Python isolado, diretório temporário e prazos reduzidos: simulou primeira cena e sinal fatal, ignorou SIGINT e foi encerrado com SIGKILL. O teste verificou uma falha contada, saves de teste idênticos, marcador mantido e ausência de backup, sem alterar a instância do jogo em execução. A ocorrência real em Valheim/FEX ainda precisa ser validada após publicação da nova imagem; não foi induzido SIGSEGV no jogo real.
-
-### Preferência persistida de execução
-
-`app/run_intent.py` mantém `data/config/run-intent.json`, com versão do formato, booleano running e revisão da solicitação. Ausência do arquivo mantém o padrão anterior de iniciar; arquivo inválido ou sem acesso mantém o jogo parado e expõe erro no painel, sem impedir a administração. Iniciar/Parar gravam por substituição atômica antes de aceitar/enfileirar a operação. Falha de persistência recusa a operação, e fila cheia não altera a preferência.
-
-A revisão impede que solicitações antigas substituam as mais recentes. Pedidos de Iniciar/Parar ainda na fila são cancelados quando substituídos. Uma parada durante instalação/preparação impede o lançamento do processo; uma parada durante manutenção impede o finally de religar o jogo. Tarefas automáticas antigas são descartadas no boot quando a preferência é parado.
-
-want_running continua sendo o controle temporário da recuperação: suspensão após falhas e shutdown do contêiner não são gravados como parada manual. Assim, um reboot pode retomar o jogo cuja preferência permanece ligado; a suspensão de recuperação daquela execução não é persistida. A preferência não entra nos backups de saves e não recebe liberação de edição pelo perfil SSH. O healthz informa desired_running e um indicador de erro de persistência para que o atualizador valide também o estado parado. Imagens antigas sem app.run_intent são recusadas pelo atualizador quando a preferência é parado.
-
-<a id="agente-local-de-atualizacao"></a>
-### Agente local de atualização
-
-`host-agent.py` é um processo separado no host. O instalador baixa os dois scripts atualizados para uma pasta temporária, executa a instalação com privilégios de root e remove os downloads temporários. Em instalações novas, o contêiner já recebe a integração. Reexecutar o instalador atualiza o serviço sem reiniciar o mundo; para conectar um contêiner anterior, aplique o Compose quando puder interromper o jogo. A instalação manual também está disponível por `sudo python3 host-agent.py install --directory /CAMINHO/DA/INSTALACAO`, com o arquivo ao lado do `update-server.py` atualizado. A instalação cria uma unidade systemd `valheim-arm-updater-ID.service`, cópias protegidas dos dois scripts em `/usr/local/lib/valheim-arm/ID` e configuração em `/etc/valheim-arm/ID.json`. O instalador cria e habilita esse serviço automaticamente. Em 15/11/2026, o agente foi instalado e habilitado no host de testes; após recriar somente o Valheim, confirmou-se a montagem do socket somente leitura e a resposta disponível pelo cliente usado pelo painel. O relato inicial de sucesso foi corrigido em 16/11/2026: o journal confirmou download/troca, timeout de prontidão da nova imagem, reaplicação da anterior e novo timeout. Após as correções, o administrador confirmou em 16/11/2026 a atualização da imagem pelo painel com instalação concluída com sucesso.
-
-O socket fica em `.update-agent/agent.sock`, diretório root:GID 10001 com modo 0750, socket 0660 e checagem SO_PEERCRED para UID 0/10001. A instalação acrescenta `compose.update-agent.yaml` à seleção COMPOSE_FILE no .env, preservando arquivos e overrides locais simples. Não substitui Compose nem recria contêineres automaticamente. Recrie `valheim` uma vez para aplicar o volume, após backup/parada apropriados:
-
-```bash
-sudo python3 host-agent.py install --directory "$PWD"
-sudo docker compose up -d --no-deps valheim
-```
-
-O serviço é persistente e privilegiado: executa exclusivamente o atualizador protegido com o destino definido na configuração root, normalmente `hfgalmeida/valheim-arm:latest`. A montagem do diretório no contêiner é somente leitura. O protocolo aceita GET /status e POST /update com apenas um request_id de 32 caracteres hexadecimais; não aceita comandos, imagem ou argumentos enviados pelo painel. Usa o mesmo flock do atualizador CLI, recusa simultaneidade, limita frequência e conserva a última solicitação para idempotência. Não expõe logs brutos pela API. Progresso não pode abortar rollback se falhar sua gravação.
-
-As rotas do painel GET/POST `/api/v1/image-update` exigem sessão; POST exige origem, CSRF e confirmação. Escritas do painel e agendamento automático aguardam uma atualização em curso. Após interrupção do agente, não há repetição automática da operação: o estado vira interrompido e exige verificação do host. Falhas podem exigir o retorno manual documentado em update-server.py. Diretórios `.update-agent` e seu override gerado não devem ser publicados no Git nem incluídos na imagem.
-
-Validação: testes automatizados de contrato, UID, repetição, falhas, bloqueios e navegador com novo login. Um teste isolado na Oracle usou agente temporário sem privilégios, contêiner descartável UID 10001 e diretório montado somente leitura; confirmou comunicação Unix, recusa de argumentos livres e retomada de status. O atualizador real não foi executado e nenhum serviço systemd foi instalado nesse teste.
-
-
-### Persistência do histórico de manutenção
-
-`data/config/maintenance-history.json` guarda registros limitados e sem a revisão interna de intenção de execução. A fila retomável continua separada em `maintenance.json`; carregar o histórico não reenfileira ações. Uma operação manual interrompida é marcada como falha ou cancelada, sem repetição; a retomada de tarefas automáticas continua obedecendo à fila existente. O arquivo de histórico não é incluído nos backups dos mundos nem liberado como arquivo editável ao usuário SSH. As durações somam o tempo monotônico das tentativas; uma queda abrupta pode perder a duração da última tentativa. `maintenance_history_error` informa falhas de gravação no estado da API.
-
-
-### Diagnóstico da contagem de jogadores
-
-`players` em `/state` mantém `count`/`reason` e acrescenta `state` (`unknown`, `snapshot`, `transition`, `stale`, `stopped`), `source`, `updated_at`, `age_seconds`, `expires_in_seconds`, `last_count`, `last_event_at`, `empty_for_seconds`, `idle_wait_seconds`, `idle_confirmed` e a última consulta `steam` da manutenção (`count`, `updated_at`, `age_seconds`). Horários são Unix UTC; idades, validade de 660 segundos e a janela vazia de 120 segundos usam relógio monotônico. `updated_at` registra o recebimento do snapshot, não o horário embutido no texto do jogo. `last_count` é histórico, nunca uma autorização para parar.
-
-Somente a linha completa de `Connections N ZDOS:` atualiza a contagem; texto embutido em nomes/erros não é aceito. Registros malformados e eventos de conexão, perda, timeout, descarte de socket ou reconexão Steam/PlayFab invalidam a observação e zeram a janela de segurança. Eventos não somam/subtraem jogadores. Após uma lacuna expirada, um novo zero recomeça a espera de 120 segundos, mesmo que o painel não tenha sido consultado no intervalo. A2S indisponível bloqueia a manutenção Steam; A2S divergente invalida a contagem. A consulta A2S sozinha nunca confirma zero. `idle_confirmed` representa somente a condição dos logs; a verificação Steam e a verificação final continuam obrigatórias quando aplicáveis. Ações manuais do administrador continuam imediatas; operadores aguardam as verificações de servidor vazio.
-
-Testes cobrem formatos anonimizados das desconexões PlayFab relatadas, reconexões, expiração sem polling, snapshots falsos/malformados, divergência A2S e ausência de sinais de parada automática quando a presença é desconhecida nos dois backends. Em 16/11/2026, uma reprodução somente de leitura dos logs atuais da Oracle reconheceu 170 snapshots e três eventos de conexão, sem alterar o servidor nem expor IDs de jogadores. A validação com entradas/saídas reais de clientes nos dois modos continua pendente no TODO.
-
-Na nova coleta de 16/11/2026, com crossplay ativo, foram observados 18 snapshots de zero jogadores, com intervalo de dez minutos nos registros recentes. Isso confirma a cadência observada, mas não valida entradas e saídas. Após um evento de conexão, a contagem pode permanecer desconhecida até o próximo snapshot; a espera de dois minutos para manutenção começa somente após um novo zero válido.
-
-Na validação assistida de 16/11/2026, o administrador confirmou entrada no jogo com crossplay ativo. Os logs registraram eventos de conexão às 18:48 e snapshot `Connections 1` às 18:53:42 (America/Sao_Paulo), após o zero anterior às 18:43:42. O administrador confirmou também 1 jogador no painel e informou a saída do jogo. Os logs registraram descarte de socket e perda de conexão às 18:54:16. Após sair, o administrador confirmou que o painel passou a mostrar `?`, validando a invalidação da contagem anterior. O snapshot de zero chegou às 19:03:42, e o administrador confirmou 0 jogadores no painel. Na consulta de 19:07:48, não havia novos eventos de conexão após esse zero: a janela de 120 segundos estava transcorrida e o snapshot permanecia dentro da validade de 660 segundos. Isso valida o ciclo básico de entrada/saída com crossplay; a indicação visual de zero confirmado, a reconexão durante a janela e a repetição sem crossplay continuam pendentes. Nenhuma manutenção real foi disparada para comprovar a parada. Nenhuma configuração foi alterada e nenhuma parada foi solicitada nessa coleta.
-
-Na sequência sem crossplay, o administrador confirmou entrada no jogo e relatou que o painel ainda mostrava carregamento. A consulta direta A2S retornou 1 jogador e `/healthz` já indicava `online` às 19:15. Os logs mostraram chunks concluídos às 19:10:24, `Opened Steam server` às 19:10:39 e personagem recebido às 19:14:06, sem mensagem final de carregamento. O supervisor foi ajustado para reconhecer chunks concluídos junto à abertura explícita do servidor Steam, em qualquer ordem; o simples `Game server connected` ou carregamento de cena continua insuficiente. A correção permanece local até publicar/aplicar nova imagem. O snapshot `Connections 1` chegou às 19:20:40 (America/Sao_Paulo), e o administrador confirmou 1 jogador no painel, corroborando a consulta A2S anterior. Após a saída informada pelo administrador, houve eventos de desconexão Steam às 19:21:34; a consulta direta A2S retornou zero às 19:21:56. O novo snapshot `Connections 0` chegou às 19:30:40, e o administrador confirmou zero no painel. Às 19:33:35, a consulta A2S continuava retornando zero e não havia novos eventos de conexão: a janela de 120 segundos estava transcorrida, com snapshot ainda válido. O ciclo básico de entrada e saída sem crossplay está validado por logs, painel e A2S; a transição visual para desconhecido nesse modo não foi explicitamente confirmada. Reconexão durante a janela e execução real de manutenção protegida continuam pendentes; nenhuma parada foi acionada nesta coleta.
-
-No início do teste de reconexão, na imagem 0.25.0 sem a correção local de prontidão, o administrador confirmou entrada e contagem desconhecida no painel. Os logs registraram handshake às 19:40:56 e personagem às 19:41:20; às 19:42, `/healthz` indicava `online` e A2S retornava 1. A ausência da correção na imagem explica o indicador de carregamento até a atividade do jogador. A saída foi registrada às 19:42:53, seguida de snapshot zero às 19:48:40. A reconexão começou às 19:48:55, cerca de 15 segundos depois do zero e dentro da janela de 120 segundos, com personagem recebido às 19:49:19. O administrador confirmou que o painel passou de 0 para `?` ao conectar, e A2S retornou 1 às 19:49:50. A invalidação por reconexão durante a janela está validada sem crossplay; nenhuma manutenção real foi solicitada.
-
-Para concluir a validação assistida em cada modo:
-
-1. Anotar o número real de jogadores, conectar e permanecer por pelo menos 12 minutos. Conferir transição para desconhecido e posterior snapshot com a contagem correta.
-2. Desconectar e observar o evento, o próximo snapshot de zero e a espera de 120 segundos. A saída não deve confirmar zero por dedução.
-3. Repetir com reconexão durante a espera: o evento deve invalidar o zero anterior. Conferir também expiração sem snapshots nos testes locais, sem interromper o log do servidor real.
-4. Sem crossplay, conferir adicionalmente a resposta A2S na porta do jogo + 1; ausência ou divergência deve bloquear a manutenção. Repetir com BepInEx ativo quando aplicável e registrar somente horários, contagens e resultados anonimizados. Não acionar parada automática apenas para coletar dados enquanto houver jogadores.
-
-
-Durante a verificação de imagem, somente a manutenção automática fica suspensa: início e recuperação de falhas da inicialização continuam permitidos. Uma recuperação da imagem anterior sem prontidão confirmada permanece em `rollback-unverified`, bloqueando novas atualizações até intervenção no host. O painel distingue esse caso de uma atualização incompleta e de um retorno efetivamente validado. O journal registra mudanças no estado observado do jogo durante a espera, sem dados de configuração ou credenciais.
-
-
-### Contas, autorização e auditoria
-
-`app/accounts.py` mantém até 50 contas adicionais em `data/config/panel-users.json`. A conta principal é resolvida diretamente do `admin.json` existente, sem redefinir sua senha na atualização; `set-password` continua sendo a recuperação local e invalida suas sessões. Hashes usam Argon2. Sessões são vinculadas à impressão do registro da conta: mudanças de senha, perfil ou ativação invalidam as sessões sem depender da interface. A senha temporária bloqueia todas as rotas autenticadas exceto sessão, saída e troca da própria senha. A troca valida a senha atual, rejeita repetir a senha e limita tentativas; encerra as sessões do usuário.
-
-A autorização é centralizada na dependência de sessão com negação padrão para operadores. `/state`, `/events` e `/jobs/{id}` filtram os dados por usuário; logs, configurações, diagnósticos detalhados, backups, dados de plugins e operações de terceiros não são enviados ao operador. O SSE revalida a sessão a cada atualização. `actor`, `actor_credential` (revisão de credencial, nunca token de sessão), `requires_idle` e `audit_request_id` são atribuídos no servidor, nunca aceitos no corpo da ação. A revisão não é exposta nas respostas nem incluída no histórico público.
-
-Solicitações do operador são independentes das do administrador na deduplicação. Parada e reinício recebem `requires_idle`, são persistidos quando adiados e passam pela mesma confirmação de zero/A2S e checagem final da manutenção automática. A intenção de permanecer parado só é persistida após a admissão e antes do SIGINT; falha na gravação impede o sinal e retoma o processo congelado. O worker revalida a conta antes de executar e imediatamente antes do sinal. Conta desativada, redefinida ou com perfil alterado cancela a solicitação ainda pendente. O administrador mantém ações imediatas.
-
-`app/audit.py` grava atomicamente `data/config/audit.json`, limitado a 2.000 eventos, 90 dias e 8 MiB. Registra solicitação/resultado HTTP e transições das tarefas com correlação e responsável; tarefas automáticas usam identidade de sistema. O resultado da atualização de imagem é reconciliado pelo request ID do agente após reconexão/reinício. Corpos de requisição, erros brutos, senhas, tokens, hashes de autenticação e conteúdo de arquivos de plugins não são registrados; mudanças de arquivos usam revisões. Contas e auditoria permanecem privadas no controle de acesso do host e fora dos backups de mundos.
-
-API administrativa: GET/POST `/api/v1/accounts`, PATCH `/api/v1/accounts/{id}`, POST `/api/v1/accounts/{id}/password`, GET `/api/v1/audit` (filtros `user`, `operation`, `since`, `until`, `limit`). Todos os perfis usam POST `/api/v1/password` com `current_password`/`password`. A auditoria exige escrita antes de novas alterações; falhas após efeitos ou em tarefas em execução aparecem como aviso, sem interromper salvamento/desligamento. Auditoria corrompida falha fechada e exige inspeção/recuperação do arquivo pelo administrador no host; não é descartada silenciosamente.
-
-
-### Interface em celulares
-
-A mesma página adapta o layout para larguras até 760 px e paisagem até 960 × 500 px. O seletor nativo `mobile-section` é preenchido a partir das abas visíveis do perfil e compartilha a seleção com a navegação desktop. Em telas pequenas, o resumo do mundo aparece na Visão geral e informações secundárias ficam recolhíveis. Alvos de toque têm ao menos 44 px, campos usam 16 px, a página respeita safe areas e mantém o zoom do navegador disponível. O editor de plugins conserva rolagem horizontal interna para linhas longas; a página não deve rolar horizontalmente.
-
-Os gráficos dimensionam o canvas conforme o espaço visível e a densidade de pixels, redesenhando ao voltar à Visão geral ou redimensionar a janela. Testes com API real e navegador emulado cobrem administrador/operador, primeiro acesso, navegação, formulários, confirmações e gráficos em 320, 390, 430, 768 e 844 px, com toque e orientação retrato/paisagem. Essa emulação não substitui uma verificação visual em dispositivos físicos Android/iOS.
-
-
-### Consulta de versão e reconciliação do agente
-
-A consulta pública usa o digest ARM64 de `latest` para identificar a tag semântica publicada. O cache é atualizado a cada 15 minutos, ao abrir a aba do servidor ou por GET autenticado `/api/v1/image-version` (administrador). Consultas concorrentes não bloqueiam o supervisor nem duplicam a requisição; um intervalo mínimo de 60 segundos limita o acesso ao Docker Hub. Falhas preservam a última informação, marcada como desatualizada. Consultar a versão não solicita atualização.
-
-Se uma implantação manual posterior já substituiu uma atualização incompleta, o script atual oferece `--reconcile --directory /CAMINHO/DA/INSTALACAO`. A reconciliação usa o mesmo bloqueio do atualizador, verifica IDs dos contêineres e imagens configuradas antes/depois, exige jogo/painel estáveis por 30 segundos e valida o proxy. Não executa pull, stop, up ou restauração de saves. A configuração Compose precisa ser válida; o instalador regenera o override gerenciado ausente. A cópia anterior do registro é preservada em `.image-update-recovery-*.json`, e o estado vira `reconciled`, sem afirmar que a tentativa antiga teve sucesso. Um registro reconciliado não serve para `--rollback` da instalação atual. Após o CLI atualizar o status, reinicie somente o serviço do agente para recarregar seu estado em memória.
-
-Em 16/11/2026, a instalação de testes estava online na 0.22.0, com 0.23.0 publicada. O override gerenciado ausente foi restaurado e o estado antigo `switching` foi reconciliado após validar a instalação, sem troca de imagem nem reinício dos contêineres. Posteriormente, em 16/11/2026, o administrador confirmou a atualização real pelo painel e a instalação concluída com sucesso.
-
-O instalador do agente também atualiza o `update-server.py` da instalação para manter o CLI e o serviço na mesma revisão, preservando a cópia anterior em `.update-server.py.previous`. Isso não sobrescreve o Compose nem as configurações do jogo.
-
-
-### Exclusão recuperável de plugins
-
-POST `/api/v1/plugins/delete` exige `name` relativo à pasta de plugins, `revision` SHA256 e `confirm:true`. POST `/api/v1/plugins/restore-deleted` exige `id` da cópia, revisão e confirmação. As rotas são administrativas e passam por sessão, CSRF, auditoria e bloqueio com jogo ativo ou tarefas pendentes. GET `/plugins` acrescenta `deleted` com ID, nome, tamanho, data e revisão; uploads continuam limitados à pasta principal.
-
-A exclusão valida o caminho e a revisão, grava metadados antes de mover a DLL para `data/mods/plugin-trash/UUID/plugin.dll` e não remove pastas nem configurações. Subpastas são aceitas apenas dentro de `BepInEx/plugins`; caminhos absolutos, atalhos, links simbólicos e arquivos não DLL são recusados. Cada exclusão tem cópia independente, sem sobrescrever versões excluídas anteriores. Restaurar exige integridade da cópia e publica o arquivo por hard link sem sobrescrever um destino concorrente; se o sistema de arquivos não suportar hard links, a cópia excluída é mantida e a operação falha. Falhas de limpeza após restaurar preservam os arquivos restantes. A lixeira está no bind persistente de dados e não é parte dos backups de mundos.
-
-
-### Diretório de identidades de jogadores
-
-`data/config/known-players.json` mantém até 500 registros. O formato antigo `Steam_ID: timestamp` é migrado em memória; a próxima gravação persiste metadados. `last_seen` só é atualizado por observação explícita no log e permanece nulo no cadastro manual de um ID nunca observado. `updated_at` ordena a retenção; `name`, `platform`, `source` e `confirmed` descrevem o cadastro. A leitura tolera registros inválidos; falhas de gravação da descoberta não interrompem o leitor do jogo.
-
-O parser aceita mensagens completas `Got connection SteamID ...` e `PlayFab socket with remote ID playfab/... received local Platform ID ...`. Apenas o ID de plataforma é retido; o handle de transporte é descartado. Identidades Steam de 17 dígitos mantêm o comportamento anterior. Outras plataformas são candidatas não confirmadas: não se presume que o ID de transporte seja aceito nas permissões nem se converte seu prefixo. Nome de personagem/ZDOID, ordem das mensagens e join code não associam identidades. Os casos de outras plataformas são sintéticos e dependem de validação real posterior.
-
-PUT `/api/v1/player-directory` exige administrador, CSRF e `confirm:true`, com `id` (até 128 caracteres), `name` opcional (80) e `platform` opcional (40). A confirmação representa conferência administrativa no F2, não verificação técnica da conta. A gravação é atômica e auditada, sem alterar listas ou reiniciar o jogo. O seletor desvia candidatos para esse formulário; cadastro direto nas listas continua disponível. IDs corrigidos são registros separados, sem fusão automática com o candidato de transporte. Esses dados privados não são enviados ao operador nem usados pela contagem/manutenção automática.
-
-
-### Estabilidade de inicialização e perfil FEX
-
-`app/startup_diagnostics.py` persiste até 20 registros em `data/config/startup-history.json`, fora das pastas compartilhadas e da resposta do operador. Guarda somente metadados de fase, perfil, versão FEX, sinal/código, assinatura conhecida de PlatformInitializer, prontidão e término. Não copia logs, argumentos, nomes de mundo, IPs, IDs de jogadores ou credenciais. Registros ativos de um supervisor anterior aparecem como interrompidos; isso não afirma que o jogo caiu. Falhas no histórico são informadas sem bloquear o leitor ou a recuperação.
-
-Em `FEX_GAME_MODE=auto`, uma falha fatal na primeira cena, antes de qualquer evidência do mundo e com fase conhecida, seleciona `compatible` para novos processos do jogo até reiniciar o supervisor. `standard` impede essa seleção e `compatible` a força desde a primeira partida. O perfil injeta apenas no ambiente do FEX do jogo `FEX_SMCCHECKS=full`, `FEX_MONOHACKS=0`, `FEX_MULTIBLOCK=0`, `FEX_DISKCACHE=0` e `FEX_TSOENABLED=1`. Ele permanece por toda a vida do processo iniciado; não é desfeito ao ficar online. Não modifica opções do SteamCMD, cache existente, saves, mods ou limites de cinco falhas. Não é uma correção comprovada da causa do SIGSEGV. A [configuração oficial do FEX-2611.1](https://github.com/FEX-Emu/FEX/blob/FEX-2611.1/FEXCore/Source/Interface/Config/Config.json.in) descreve SMC completo como lento; desempenho e eficácia no Valheim precisam de medições reais.
-
-Em 16/11/2026, os logs da imagem anterior mostraram uma falha `PlatformInitializer:EarlyInitialize`, seguida de outra tentativa travada, SIGINT, escalada para SIGKILL antes do mundo e posterior partida online. Isso observa recuperação real, sem provar a causa nem a integridade por comparação de saves. O novo perfil foi aceito pelo FEX-2611.1 em `uname -m` isolado, retornando x86_64. A nova integração foi exercitada no Linux por processo sintético isolado: SIGINT ignorado, SIGKILL após prazo reduzido de teste, uma falha contabilizada, próximo perfil compatível, save temporário com hash idêntico e nenhum backup. O jogo real não foi reiniciado. Partidas repetidas reais com a nova imagem permanecem pendentes.
-
-`app/game_logs.py` drena linhas maiores que o limite do StreamReader até o delimitador, sem interpretar seu final como uma nova mensagem. O descarte invalida a presença e marca a fase desconhecida, impedindo SIGKILL de recuperação antes do mundo. Logs posteriores continuam sendo consumidos; um heartbeat isolado não converte fase desconhecida em mundo carregado.
-
-
-### Monitoramento da idade dos backups
-
-`app/backup_freshness.py` calcula observações e incidentes sem alterar o jogo. `Alerts.check_freshness()` consulta o arquivo local em thread, mantém cache administrativo em `alerts.freshness` de `/state` e reavalia ao consultar/salvar `/alerts`. O loop roda a cada 30 segundos, sem painel aberto. PUT `/alerts` aceita `backup_max_age_hours` e `cloud_max_age_hours`, inteiros 0–720 (36 por padrão); campos omitidos preservam configurações anteriores. Zero desativa a categoria; notificações Discord desligadas não desativam o monitor do painel. Alterações são administrativas, exigem CSRF e são auditadas.
-
-O backup local usa a data UTC do nome nativo de um arquivo disponível, não vazio, sem symlink e acompanhado de checksum completo. `.partial`, nomes desconhecidos, datas futuras e marcadores incompletos não confirmam sucesso. Não há releitura de gigabytes de saves a cada consulta: essa observação de idade não substitui validação de integridade. A ausência de todas as cópias depois de uma observação válida gera atraso/indisponibilidade. Erro de leitura aparece como desconhecido e não confirma normalização; a cobrança ainda respeita a última carência persistida.
-
-A nuvem usa `last_success` somente após rclone concluir arquivo e checksum. `monitor_since` identifica ativação/destino atual; trocar conexão ou pasta limpa sucesso/arquivo anteriores e inicia carência. A carência local começa no primeiro monitoramento sem cópia anterior. Reiniciar contêiner não a reinicia. Mudanças de prazo iniciam nova geração de monitoramento, cancelando avisos pendentes dessa configuração sem emitir uma normalização falsa; arquivos antigos conhecidos continuam sujeitos ao novo prazo.
-
-`backup_age` e `cloud_age` são categorias independentes das falhas explícitas. Seus incidentes e âncoras ficam em `data/config/backup-age-state.json`, excluído dos backups, mantendo o esquema original de `alert-state.json` legível ao voltar a imagens anteriores. Os avisos mantêm o intervalo de cinco minutos e o estado de notificação persistente; desativar monitor/nuvem não anuncia um sucesso inexistente. O webhook continua privado; nenhuma mensagem inclui nomes de mundo, destinos, tokens ou logs. Os estados públicos são `ok`, `overdue`, `grace`, `disabled`, `inactive` e `unknown`, com datas, prazo, idade e horário da consulta.
+The project code is MIT licensed. Bundled components, game files, fonts, and libraries retain their own licenses; see their source/package notices and the license files shipped with the image/repository.

@@ -21,13 +21,13 @@ class Metrics:
             memory = int((cgroup / "memory.current").read_text())
             raw = (cgroup / "memory.max").read_text().strip()
             memory_limit = int(raw) if raw != "max" else psutil.virtual_memory().total
-            scope = "contêiner (cgroup v2)"
+            scope = "container (cgroup v2)"
         except (OSError, ValueError, KeyError):
             proc = psutil.Process()
             cpu_seconds = sum(proc.cpu_times()[:2])
             memory = proc.memory_info().rss
             memory_limit = psutil.virtual_memory().total
-            scope = "supervisor somente (cgroup v2 indisponível)"
+            scope = "supervisor only (cgroup v2 unavailable)"
         net = psutil.net_io_counters()
         disk = psutil.disk_usage(self.data)
         sample = {

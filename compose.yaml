@@ -8,14 +8,14 @@ services:
     user: "10001:10001"
     stop_grace_period: 6m
     mem_limit: ${VALHEIM_MEMORY_LIMIT:-10g}
-    # Limite combinado de RAM + swap; não cria swap no host.
+    # Combined RAM + swap limit; this does not create host swap.
     memswap_limit: ${VALHEIM_MEMORY_SWAP_LIMIT:-14g}
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     environment:
       SERVER_NAME: ${SERVER_NAME:-Valheim ARM}
       WORLD_NAME: ${WORLD_NAME:-Dedicated}
-      SERVER_PASSWORD: ${SERVER_PASSWORD:?Defina SERVER_PASSWORD no .env}
+      SERVER_PASSWORD: ${SERVER_PASSWORD:?Set SERVER_PASSWORD in .env}
       PUBLIC: ${PUBLIC:-true}
       CROSSPLAY: ${CROSSPLAY:-false}
       PRESET: ${PRESET:-}
@@ -39,7 +39,7 @@ services:
       BEPINEX: ${BEPINEX:-false}
       BEPINEX_URL: ${BEPINEX_URL:-}
       BEPINEX_SHA256: ${BEPINEX_SHA256:-}
-      PANEL_ORIGIN: https://${SERVER_IP:?Defina SERVER_IP no .env}
+      PANEL_ORIGIN: https://${SERVER_IP:?Set SERVER_IP in .env}
       FEX_ROOTFS: /opt/rootfs
       FEX_GAME_MODE: ${FEX_GAME_MODE:-auto}
       FEX_DISKCACHE: ${FEX_DISKCACHE:-0}
@@ -51,7 +51,7 @@ services:
     ports:
       - "2456-2457:2456-2457/udp"
     volumes:
-      # Bind mount persistente: remover o contêiner não apaga os arquivos do host.
+      # Persistent bind mount: removing containers does not delete host files.
       - ./data:/data
     healthcheck:
       test: ["CMD", "/opt/venv/bin/python", "-m", "app.cli", "health"]
@@ -71,7 +71,7 @@ services:
     command: ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     restart: unless-stopped
     environment:
-      SERVER_IP: ${SERVER_IP:?Defina SERVER_IP no .env}
+      SERVER_IP: ${SERVER_IP:?Set SERVER_IP in .env}
       XDG_DATA_HOME: /data
       XDG_CONFIG_HOME: /config
     ports: ["443:443"]

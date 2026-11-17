@@ -7,7 +7,7 @@ DEFAULT_HOURS = 36
 
 def hours(value):
     if type(value) is not int or not 0 <= value <= 720:
-        raise ValueError("O prazo deve ser um número inteiro entre 0 e 720 horas")
+        raise ValueError("The deadline must be an integer from 0 to 720 hours")
     return value
 
 

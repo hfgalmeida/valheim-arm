@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Instalação interativa para Ubuntu 24.04/26.04 ARM64. Não compila o jogo nem o FEX.
+# Interactive Ubuntu 24.04/26.04 ARM64 installation. No local game or FEX compilation.
 set -Eeuo pipefail
 set +x
 
@@ -9,7 +9,7 @@ ROOT=()
 DOCKER=(docker)
 DOCKER_SUITE=''
 
-die() { printf '\nErro: %s\n' "$*" >&2; exit 1; }
+die() { printf '\nError: %s\n' "$*" >&2; exit 1; }
 log() { printf '\n%s\n' "$*"; }
 
 valid_ipv4() {
@@ -35,17 +35,17 @@ ubuntu_suite() {
     case "$1:$2" in
         ubuntu:24.04) printf 'noble\n' ;;
         ubuntu:26.04) printf 'resolute\n' ;;
-        *) die 'A instalação automática suporta Ubuntu 24.04 e 26.04 LTS.' ;;
+        *) die 'Automatic installation supports Ubuntu 24.04 and 26.04 LTS.' ;;
     esac
 }
 
 prepare_docker() {
     if ! command -v docker >/dev/null 2>&1; then
-        log 'Instalando Docker e Docker Compose pelo repositório oficial…'
+        log 'Installing Docker and Docker Compose from the official repository…'
         local package
         for package in docker.io podman-docker containerd runc; do
             if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
-                die "Já existe $package. Instale Docker Compose conforme https://docs.docker.com/engine/install/ubuntu/ e execute novamente."
+                die "$package is already installed. Install Docker Compose using https://docs.docker.com/engine/install/ubuntu/ and run the installer again."
             fi
         done
         "${ROOT[@]}" apt-get update
@@ -65,27 +65,27 @@ prepare_docker() {
     if ! docker info >/dev/null 2>&1; then
         DOCKER=("${ROOT[@]}" docker)
     fi
-    "${DOCKER[@]}" info >/dev/null || die 'Não foi possível acessar o Docker.'
+    "${DOCKER[@]}" info >/dev/null || die 'Could not access Docker.'
     if ! "${DOCKER[@]}" compose version >/dev/null 2>&1; then
         "${ROOT[@]}" apt-get update
         "${ROOT[@]}" apt-get install -y docker-compose-plugin
     fi
-    "${DOCKER[@]}" compose version >/dev/null || die 'Docker Compose indisponível.'
+    "${DOCKER[@]}" compose version >/dev/null || die 'Docker Compose unavailable.'
 }
 
 prepare_firewall() {
     local status
     if ! command -v ufw >/dev/null 2>&1; then
-        log 'UFW não instalado. Confira regras locais adicionais e a rede OCI; as portas serão publicadas pelo Docker.'
+        log 'UFW is not installed. Check host and provider firewalls; Docker will publish the ports.'
         return
     fi
-    status="$(LC_ALL=C "${ROOT[@]}" ufw status)" || die 'Não foi possível consultar o UFW.'
+    status="$(LC_ALL=C "${ROOT[@]}" ufw status)" || die 'Could not query UFW.'
     if [[ "$status" == *'Status: active'* ]]; then
-        log 'Liberando UDP 2456–2457 e TCP 443 no UFW ativo…'
+        log 'Allowing UDP 2456–2457 and TCP 443 in active UFW…'
         "${ROOT[@]}" ufw allow 2456:2457/udp
         "${ROOT[@]}" ufw allow 443/tcp
     else
-        log 'UFW inativo; nenhuma regra local alterada.'
+        log 'UFW inactive; no host rules changed.'
     fi
 }
 
@@ -95,7 +95,7 @@ fetch_if_missing() {
     temporary="$(mktemp "${target}.download.XXXXXX")"
     if ! curl --fail --silent --show-error --location --retry 3 "$SOURCE_URL/$remote" -o "$temporary"; then
         rm -f -- "$temporary"
-        die "Não foi possível baixar $remote. Tente novamente."
+        die "Could not download $remote. Try again."
     fi
     mv -- "$temporary" "$target"
 }
@@ -104,7 +104,7 @@ fetch_if_missing() {
 prepare_update_agent() {
     local stage script failed=0
     command -v python3 >/dev/null 2>&1 || "${ROOT[@]}" apt-get install -y python3
-    log 'Preparando a atualização da imagem pelo painel…'
+    log 'Preparing image updates from the panel…'
     stage="$(mktemp -d)"
     for script in host-agent.py update-server.py; do
         if ! curl --fail --silent --show-error --location --retry 3 \
@@ -120,7 +120,7 @@ prepare_update_agent() {
     fi
     rm -f -- "$stage/host-agent.py" "$stage/update-server.py"
     rmdir -- "$stage"
-    (( failed == 0 )) || die 'Não foi possível preparar o serviço de atualização. Corrija o erro acima e execute o instalador novamente.'
+    (( failed == 0 )) || die 'Could not prepare the updater service. Fix the error above and run the installer again.'
     # The agent protects Compose sources and .env with root-only permissions.
     DOCKER=("${ROOT[@]}" docker)
 }
@@ -130,29 +130,29 @@ create_config() {
     detected="$(curl -4 --fail --silent --show-error --connect-timeout 5 --max-time 8 https://api.ipify.org 2>/dev/null || true)"
     valid_ipv4 "$detected" || detected=''
     while true; do
-        read -r -p "IP público do servidor${detected:+ [$detected]}: " ip
+        read -r -p "Public server IP${detected:+ [$detected]}: " ip || die "Input closed before an IP address was provided."
         ip="${ip:-$detected}"
         valid_ipv4 "$ip" && break
-        printf 'Informe um IPv4 válido.\n'
+        printf 'Enter a valid IPv4 address.\n'
     done
-    read -r -p 'Nome do servidor [Meu Valheim]: ' name
-    name="${name:-Meu Valheim}"
-    [[ ${#name} -le 64 && ! "$name" =~ [[:cntrl:]] ]] || die 'Nome inválido: máximo 64 caracteres.'
+    read -r -p 'Server name [My Valheim]: ' name
+    name="${name:-My Valheim}"
+    [[ ${#name} -le 64 && ! "$name" =~ [[:cntrl:]] ]] || die 'Invalid name: maximum 64 characters.'
     while true; do
-        IFS= read -r -p 'Nome do mundo [Dedicated]: ' world
+        IFS= read -r -p 'World name [Dedicated]: ' world || die 'Input closed before a world name was provided.'
         world="${world:-Dedicated}"
         if [[ ${#world} -le 64 && "$world" =~ ^[[:alnum:]_\ -]+$ && "$world" != ' '* && "$world" != *' ' ]]; then
             break
         fi
-        printf 'Use até 64 caracteres: letras, números, espaços internos, hífen ou sublinhado.\n'
+        printf 'Use up to 64 characters: letters, numbers, internal spaces, hyphens, or underscores.\n'
     done
     while true; do
-        read -r -s -p 'Senha para entrar no jogo (5–128 caracteres): ' password
+        read -r -s -p 'Game password (5–128 characters): ' password || die 'Input closed before a password was provided.'
         printf '\n'
         if [[ ${#password} -ge 5 && ${#password} -le 128 && ! "$password" =~ [[:cntrl:]] ]]; then
             break
         fi
-        printf 'Use de 5 a 128 caracteres, sem caracteres de controle.\n'
+        printf 'Use 5 to 128 characters without control characters.\n'
     done
     temporary="$(mktemp .env.new.XXXXXX)"
     {
@@ -168,17 +168,17 @@ create_config() {
 }
 
 check_platform() {
-    [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || die 'Use uma instância Ubuntu 24.04 ou 26.04 LTS ARM64.'
+    [[ "$(uname -s)" == Linux && "$(uname -m)" == aarch64 ]] || die 'Use an Ubuntu 24.04 or 26.04 LTS ARM64 host.'
     # shellcheck source=/dev/null
     . /etc/os-release
     DOCKER_SUITE="$(ubuntu_suite "${ID:-}" "${VERSION_ID:-}")"
-    [[ "$(getconf PAGESIZE)" == 4096 ]] || die 'Esta imagem exige páginas de memória de 4 KiB.'
+    [[ "$(getconf PAGESIZE)" == 4096 ]] || die 'This image requires 4 KiB memory pages.'
 }
 
 main() {
     check_platform
     if (( EUID != 0 )); then
-        command -v sudo >/dev/null || die 'É necessário sudo para preparar o servidor.'
+        command -v sudo >/dev/null || die 'sudo is required to prepare the server.'
         ROOT=(sudo)
         sudo -v
     fi
@@ -192,19 +192,23 @@ main() {
     chmod 0755 -- "$INSTALL_DIR"
     cd -- "$INSTALL_DIR"
     INSTALL_DIR="$PWD"
-    log "Preparando Valheim em $INSTALL_DIR"
+    log "Preparing Valheim in $INSTALL_DIR"
     fetch_if_missing compose.yaml compose.yaml
     fetch_if_missing update-server.py update-server.py
-    SERVER_ADDRESS='IP configurado no .env'
+    mkdir -p scripts
+    chmod 0755 scripts
+    fetch_if_missing scripts/collect-diagnostics.py scripts/collect-diagnostics.py
+    chmod 0644 scripts/collect-diagnostics.py
+    SERVER_ADDRESS='IP configured in .env'
     if [[ -f .env ]]; then
-        log 'Configuração existente preservada.'
+        log 'Existing configuration preserved.'
     else
         create_config
     fi
     "${ROOT[@]}" install -d -o 10001 -g 10001 -m 0700 data
     prepare_update_agent
     "${DOCKER[@]}" compose config --quiet
-    log 'Baixando a imagem pública e preparando o acesso aos dados…'
+    log 'Downloading the public image and preparing data access…'
     local configured_image
     configured_image="$("${DOCKER[@]}" compose config --images | head -n 1)"
     if [[ "$configured_image" == valheim-arm-local:* ]]; then
@@ -218,26 +222,26 @@ main() {
             --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE valheim \
             prepare-access --access-uid "$access_uid"
     else
-        log 'Instalação como root: execute pelo sudo do usuário SSH para preparar acesso sem sudo aos dados.'
+        log 'Running as root: use sudo from your SSH account to prepare direct access to shared data.'
     fi
     # Re-running the installer must not replace or restart a running world.
     if [[ -n "$("${DOCKER[@]}" compose ps --status running --quiet valheim)" ]]; then
-        log 'O servidor já está em execução. Seus arquivos e o jogo foram preservados.'
-        log 'Se o painel ainda não tiver acesso ao atualizador, aplique a integração quando puder interromper o jogo:'
+        log 'The server is already running. Its files and game process were preserved.'
+        log 'If the panel cannot access the updater yet, apply the integration when you can interrupt the game:'
         printf 'cd %q && sudo docker compose up -d --no-deps valheim\n' "$INSTALL_DIR"
         return
     fi
     "${DOCKER[@]}" compose run --rm --no-deps valheim preflight
     if ! "${ROOT[@]}" test -f data/config/admin.json; then
-        log 'Defina agora a senha do painel (diferente da senha do jogo).'
+        log 'Set the panel password now (different from the game password).'
         "${DOCKER[@]}" compose run --rm --no-deps valheim set-password
     fi
     "${DOCKER[@]}" compose up -d --no-build
-    log 'Servidor iniciado! O primeiro download do jogo pode levar alguns minutos.'
-    printf 'Instalação: %s\nJogo: %s:2456\nPainel: https://%s\n' "$INSTALL_DIR" "$SERVER_ADDRESS" "$SERVER_ADDRESS"
-    printf 'Acompanhe: cd %q && sudo docker compose logs -f valheim\n' "$INSTALL_DIR"
-    printf 'Na Oracle, libere UDP 2456–2457 para jogar e TCP 443 para acessar o painel.\n'
-    printf 'O painel usa um certificado local: veja a seção Painel no README.\n'
+    log 'Server started! The first game download may take a few minutes.'
+    printf 'Installation: %s\nGame: %s:2456\nPanel: https://%s\n' "$INSTALL_DIR" "$SERVER_ADDRESS" "$SERVER_ADDRESS"
+    printf 'Follow progress: cd %q && sudo docker compose logs -f valheim\n' "$INSTALL_DIR"
+    printf 'Allow UDP 2456–2457 for the game and TCP 443 for the panel in your host and provider firewalls.\n'
+    printf 'The panel uses a local certificate; see Panel access in the README.\n'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -32,6 +32,7 @@ from .backups import Backups, digest
 from .cloud import Cloud
 from .file_access import FileAccess
 from .config import ConfigStore, atomic_json
+from .compatibility import operation_record
 from .players import Players, query_steam
 from .player_directory import PlayerDirectory
 
@@ -58,7 +59,7 @@ class SteamError(RuntimeError):
     def __init__(self, code, output):
         self.code, self.output = code, output
         super().__init__(
-            f"SteamCMD falhou (código de saída {code}); consulte os logs e /data/home/Steam/logs/stderr.txt"
+            f"SteamCMD failed (exit code {code}); check the logs and /data/home/Steam/logs/stderr.txt"
         )
 
 
@@ -74,7 +75,7 @@ def save_completed(line):
 def public_build(output):
     match = re.search(r'"896660"\s*\{', output)
     if not match:
-        raise RuntimeError("Metadados do app não encontrados")
+        raise RuntimeError("Application metadata not found")
     tokens = iter(re.findall(r'"([^"\n]*)"|([{}])', output[match.end() :]))
 
     def block():
@@ -83,39 +84,39 @@ def public_build(output):
             if brace == "}":
                 return result
             if brace:
-                raise ValueError("Metadados Steam inválidos")
+                raise ValueError("Invalid Steam metadata")
             key = string
             value, mark = next(tokens)
             result[key] = block() if mark == "{" else value
-        raise ValueError("Metadados Steam incompletos")
+        raise ValueError("Incomplete Steam metadata")
 
     try:
         value = block()["depots"]["branches"]["public"]["buildid"]
         if not value.isdigit():
-            raise ValueError("Build inválido")
+            raise ValueError("Invalid build")
         return value
     except (KeyError, StopIteration, ValueError) as exc:
-        raise RuntimeError("Build público não encontrado; atualização adiada") from exc
+        raise RuntimeError("Public build not found; update deferred") from exc
 
 
 def preflight(data: Path):
     if platform.system() != "Linux" or platform.machine() not in ("aarch64", "arm64"):
-        raise RuntimeError("Execute a imagem em um host Linux ARM64 na instância Oracle")
+        raise RuntimeError("Run this image on a Linux ARM64 host")
     kernel = tuple(map(int, platform.release().split("-")[0].split(".")[:2]))
     if kernel < (5, 15) or os.sysconf("SC_PAGE_SIZE") != 4096:
-        raise RuntimeError("A plataforma de referência exige kernel >=5.15 e páginas de 4 KiB")
+        raise RuntimeError("This image requires kernel >=5.15 and 4 KiB memory pages")
     features = Path("/proc/cpuinfo").read_text()
     if not all(feature in features for feature in ("atomics", "crc32", "asimd", "dcpop")):
-        raise RuntimeError("CPU ARMv8.2 com atomics/CRC/ASIMD necessária para esta imagem")
+        raise RuntimeError("This image requires an ARMv8.2 CPU with atomics/CRC/ASIMD")
     if not shutil.which("FEXInterpreter") or not Path("/opt/rootfs/usr/bin/env").exists():
-        raise RuntimeError("FEX ou rootfs ausente; reconstrua a imagem")
+        raise RuntimeError("FEX or rootfs missing; rebuild the image")
     data.mkdir(parents=True, exist_ok=True)
     (data / "home").mkdir(exist_ok=True)
     (data / "cache").mkdir(exist_ok=True)
     with tempfile.TemporaryFile(dir=data):
         pass
     if shutil.disk_usage(data).free < 6 * 1024**3:
-        raise RuntimeError("Disponibilize ao menos 6 GiB livres para instalação e atualização")
+        raise RuntimeError("At least 6 GiB of free space is required for installation and updates")
     result = subprocess.run(
         ["FEXInterpreter", "/usr/bin/env", "VALHEIM_PREFLIGHT=1", "/usr/bin/uname", "-m"],
         capture_output=True,
@@ -124,7 +125,7 @@ def preflight(data: Path):
     )
     if result.returncode or "x86_64" not in result.stdout:
         raise RuntimeError(
-            "Smoke test do FEX falhou; confira kernel, rootfs e logs: " + result.stderr[-1000:]
+            "FEX smoke test failed; check kernel, rootfs, and logs: " + result.stderr[-1000:]
         )
 
 
@@ -155,7 +156,7 @@ def check_crossplay(install):
         if p.name.lower() == "libparty.so"
     )
     if not libraries:
-        raise RuntimeError("Crossplay: biblioteca Party não encontrada na instalação do Valheim")
+        raise RuntimeError("Crossplay: Party library not found in the Valheim installation")
     env = os.environ.copy()
     env["FEX_ROOTFS"] = str(root)
     env.pop("LD_TRACE_LOADED_OBJECTS", None)
@@ -170,7 +171,7 @@ def check_crossplay(install):
         )
         if result.returncode:
             raise RuntimeError(
-                "Crossplay: dependência x86 ausente ou incompatível; atualize a imagem Docker. "
+                "Crossplay: missing or incompatible x86 dependency; update the Docker image. "
                 + result.stderr[-2000:]
             )
 
@@ -181,12 +182,12 @@ def download(url, target, limit=256 * 1024**2):
     request = urllib.request.Request(url, headers={"User-Agent": "valheim-arm"})
     with urllib.request.urlopen(request, timeout=60) as source, target.open("wb") as output:
         if not source.url.startswith("https://"):
-            raise ValueError("Redirecionamento para protocolo inseguro")
+            raise ValueError("Redirect to an insecure protocol")
         total = 0
         while chunk := source.read(1024 * 1024):
             total += len(chunk)
             if total > limit:
-                raise ValueError("Download excede o limite")
+                raise ValueError("Download exceeds the limit")
             output.write(chunk)
 
 
@@ -202,7 +203,7 @@ def install_steam(data):
         with tarfile.open(archive) as pack:
             pack.extractall(steam, filter="data")
     if not executable.exists():
-        raise RuntimeError("Instalação do SteamCMD incompleta")
+        raise RuntimeError("Incomplete SteamCMD installation")
 
 
 BEPINEX_BUNDLE = Path("/opt/bepinex")
@@ -220,9 +221,7 @@ def install_bepinex(data, install, settings):
         mods / "libdoorstop.so",
     ):
         if any(part.is_symlink() for part in (target, *target.parents)):
-            raise ValueError(
-                "Links simbólicos não são permitidos nos destinos gerenciados do BepInEx"
-            )
+            raise ValueError("Symbolic links are not allowed in managed BepInEx paths")
     bundled = not settings.bepinex_url
     metadata = json.loads((BEPINEX_BUNDLE / "metadata.json").read_text()) if bundled else {}
     expected = metadata["sha256"] if bundled else settings.bepinex_sha256.lower()
@@ -243,12 +242,12 @@ def install_bepinex(data, install, settings):
             else:
                 download(settings.bepinex_url, archive)
             if digest(archive) != expected:
-                raise ValueError("SHA256 do BepInEx não confere")
+                raise ValueError("BepInEx SHA256 mismatch")
             unpack = Path(tmp) / "unpack"
             unpack.mkdir()
             with zipfile.ZipFile(archive) as pack:
                 if sum(p.file_size for p in pack.infolist()) > 1024**3:
-                    raise ValueError("Pacote BepInEx excessivo")
+                    raise ValueError("BepInEx package too large")
                 for item in pack.infolist():
                     parts = Path(item.filename).parts
                     if (
@@ -257,9 +256,9 @@ def install_bepinex(data, install, settings):
                         or "\\" in item.filename
                         or ":" in item.filename
                     ):
-                        raise ValueError("Caminho inseguro no pacote BepInEx")
+                        raise ValueError("Unsafe path in the BepInEx package")
                     if (item.external_attr >> 16) & 0o170000 == 0o120000:
-                        raise ValueError("Links não permitidos no pacote BepInEx")
+                        raise ValueError("Links are not allowed in the BepInEx package")
                 pack.extractall(unpack)
             roots = []
             for library in (*unpack.rglob("libdoorstop.so"), *unpack.rglob("libdoorstop_x64.so")):
@@ -271,18 +270,18 @@ def install_bepinex(data, install, settings):
                 if (root / "BepInEx/core").is_dir():
                     roots.append((root, library))
             if len(roots) != 1:
-                raise ValueError("Use BepInExPack_Valheim Linux com Doorstop x64 e BepInEx/core")
+                raise ValueError("Use Linux BepInExPack_Valheim with Doorstop x64 and BepInEx/core")
             source, library = roots[0]
             if not all(
                 (source / "BepInEx/core" / name).is_file()
                 for name in ("BepInEx.dll", "BepInEx.Preloader.dll")
             ):
-                raise ValueError("Pacote BepInEx incompleto")
+                raise ValueError("Incomplete BepInEx package")
             for directory in ("plugins", "config", "patchers"):
                 (mods / "BepInEx" / directory).mkdir(parents=True, exist_ok=True)
             core = mods / "BepInEx/core"
             if core.is_symlink():
-                raise ValueError("BepInEx/core não pode ser um link simbólico")
+                raise ValueError("BepInEx/core must not be a symbolic link")
             shutil.rmtree(core, ignore_errors=True)
             shutil.copytree(source / "BepInEx/core", core)
             default_config = source / "BepInEx/config/BepInEx.cfg"
@@ -307,7 +306,7 @@ def install_bepinex(data, install, settings):
         if link.is_symlink():
             link.unlink()
         if link.exists():
-            raise ValueError("Instalação contém BepInEx fora do diretório gerenciado")
+            raise ValueError("Installation contains BepInEx outside its managed directory")
         link.symlink_to(destination, target_is_directory=name == "BepInEx")
 
 
@@ -347,7 +346,7 @@ class Runtime:
         self.recovery_error = None
         self.last_failure = None
         self.schedule_started = datetime.now(ZoneInfo(self.config.effective().timezone))
-        self.state = "parado"
+        self.state = "stopped"
         self.logs = deque(maxlen=500)
         self.jobs = deque()
         self.maintenance_history = MaintenanceHistory(data)
@@ -373,28 +372,29 @@ class Runtime:
         self.daily = json.loads(self.daily_path.read_text()) if self.daily_path.exists() else {}
         self.pending_path = data / "config/maintenance.json"
         for job in json.loads(self.pending_path.read_text()) if self.pending_path.exists() else []:
+            job = operation_record(job)
             self.jobs.append(job)
-            if job["state"] == "executando":
-                job["state"] = "falha"
+            if job["state"] == "running":
+                job["state"] = "failed"
                 job["error"] = (
-                    "Manutenção interrompida pelo supervisor; não será repetida automaticamente"
+                    "Maintenance interrupted by the supervisor; it will not repeat automatically"
                 )
                 self.emit(job["error"])
-            elif job["state"] in ("fila", "adiado"):
+            elif job["state"] in ("queued", "deferred"):
                 if not self.run_intent.running:
-                    job["state"] = "cancelado"
+                    job["state"] = "cancelled"
                     continue
-                job["state"] = "fila"
+                job["state"] = "queued"
                 self.queue.put_nowait(job)
 
         pending_ids = {job["id"] for job in self.jobs}
         for job in self.maintenance_history.load():
             if job["id"] in pending_ids:
                 continue
-            if job["state"] in ("fila", "adiado", "executando"):
-                job["state"] = "falha" if job["state"] == "executando" else "cancelado"
+            if job["state"] in ("queued", "deferred", "running"):
+                job["state"] = "failed" if job["state"] == "running" else "cancelled"
                 job["error"] = (
-                    "Operação interrompida pelo supervisor; não será repetida automaticamente"
+                    "Operation interrupted by the supervisor; it will not repeat automatically"
                 )
                 job["finished"] = time.time()
             self.jobs.append(job)
@@ -427,7 +427,7 @@ class Runtime:
             self.running.server_password if self.running else "",
         }:
             if password:
-                message = message.replace(password, "[senha]")
+                message = message.replace(password, "[password]")
         self.logs.append({"time": time.time(), "message": message[:4000]})
         log.info("%s", message[:4000])
 
@@ -437,15 +437,15 @@ class Runtime:
             self.running.server_password if self.running else "",
         }:
             if password:
-                message = message.replace(password, "[senha]")
+                message = message.replace(password, "[password]")
         self.last_failure = {"time": time.time(), "source": source, "message": message[:1000]}
 
     def diagnostics(self):
         retry = None
         if self.closing:
             phase, detail = "stopping", "Supervisor encerrando."
-        elif self.state == "parando":
-            phase, detail = "stopping", "Aguardando salvamento e saída do jogo."
+        elif self.state == "stopping":
+            phase, detail = "stopping", "Waiting for the game to save and exit."
         elif self.live and self.startup_watchdog.fatal:
             phase = (
                 "recovering"
@@ -454,31 +454,31 @@ class Runtime:
             )
             detail = (
                 self.recovery_error
-                or "Sinal fatal detectado; aguardando recuperação controlada da inicialização."
+                or "Fatal signal detected; waiting for controlled startup recovery."
             )
         elif self.live:
             if self.game_ready:
-                phase, detail = "ready", "Mundo carregado e conexão do servidor inicializada."
+                phase, detail = "ready", "World loaded and server connection initialized."
             elif not self.world_loaded:
-                phase, detail = "starting", "Aguardando o carregamento do mundo."
+                phase, detail = "starting", "Waiting for the world to load."
             else:
-                phase, detail = "starting", "Mundo carregado; aguardando a conexão do servidor."
+                phase, detail = "starting", "World loaded; waiting for the server connection."
         elif self.active and self.active["action"] in ("start", "restart", "update", "restore"):
-            phase, detail = "starting", "Preparando o jogo: " + self.state + "."
+            phase, detail = "starting", "Preparing the game: " + self.state + "."
         elif self.run_intent.error:
             phase, detail = "failed", self.run_intent.error
         elif self.recovery_error:
             phase, detail = "failed", self.recovery_error
         elif self.want_running and self.next_recovery > 0:
-            phase, detail = "recovering", "Nova tentativa automática de inicialização agendada."
+            phase, detail = "recovering", "Automatic startup retry scheduled."
             retry = max(0, int(self.next_recovery - time.monotonic()))
-        elif self.state == "falha":
+        elif self.state == "failed":
             phase, detail = (
                 "failed",
-                "O jogo encontrou uma falha; consulte a última falha e os logs.",
+                "The game failed; check the last failure and logs.",
             )
         else:
-            phase, detail = "stopped", "Jogo parado."
+            phase, detail = "stopped", "Game stopped."
         return {
             "phase": phase,
             "detail": detail,
@@ -521,7 +521,7 @@ class Runtime:
         self, action, backup=None, actor=None, require_idle=False, request_id=None, credential=None
     ):
         if action not in ("start", "stop", "restart", "update", "backup", "restore"):
-            raise ValueError("Ação desconhecida")
+            raise ValueError("Unknown action")
         if action == "restore":
             self.backups.resolve(backup or "")
         operator_start = action == "start" and (actor or {}).get("role") == "operator"
@@ -534,8 +534,8 @@ class Runtime:
                 and pending["action"] == action
                 and pending.get("backup") == backup
                 and (
-                    pending["state"] in ("fila", "executando")
-                    or (require_idle and pending["state"] == "adiado")
+                    pending["state"] in ("queued", "running")
+                    or (require_idle and pending["state"] == "deferred")
                 )
                 and (
                     action not in ("start", "stop")
@@ -556,15 +556,15 @@ class Runtime:
             revision = self.set_run_intent(action == "start")
             for pending in self.jobs:
                 if pending["action"] in ("start", "stop") and pending["state"] in (
-                    "fila",
-                    "adiado",
+                    "queued",
+                    "deferred",
                 ):
-                    pending["state"] = "cancelado"
+                    pending["state"] = "cancelled"
         job = {
             "id": uuid.uuid4().hex,
             "action": action,
             "backup": backup,
-            "state": "fila",
+            "state": "queued",
             "created": time.time(),
         }
         if actor:
@@ -589,13 +589,13 @@ class Runtime:
         )
         for job in self.jobs:
             job.setdefault("origin", origin(job))
-            if job["state"] not in ("fila", "executando", "adiado"):
+            if job["state"] not in ("queued", "running", "deferred"):
                 job.setdefault("finished", now)
             for field in ("error", "result"):
                 if isinstance(job.get(field), str):
                     for secret in secrets:
                         if secret:
-                            job[field] = job[field].replace(secret, "[senha]")
+                            job[field] = job[field].replace(secret, "[password]")
                     job[field] = job[field][:1000]
         self.trim_jobs()
         self.maintenance_history.save(self.jobs, secrets)
@@ -611,13 +611,13 @@ class Runtime:
                     for j in self.jobs
                     if (j.get("scheduled") or j.get("requires_idle"))
                     and j["action"] != "recover-startup"
-                    and j["state"] in ("fila", "executando", "adiado")
+                    and j["state"] in ("queued", "running", "deferred")
                 ],
             )
             self.persistence_error = None
         except OSError:
             self.persistence_error = (
-                "Não foi possível persistir manutenção; confira espaço e permissões"
+                "Could not persist maintenance; check disk space and permissions"
             )
             self.emit(self.persistence_error)
 
@@ -632,16 +632,16 @@ class Runtime:
         self.want_running = False
         for job in self.jobs:
             if (job.get("scheduled") or job.get("requires_idle")) and job["state"] in (
-                "fila",
-                "adiado",
+                "queued",
+                "deferred",
             ):
-                job["state"] = "cancelado"
+                job["state"] = "cancelled"
         self.persist_pending()
 
     def recovery_failed(self, startup=True):
         self.startup_failures += 1
         if self.startup_failures >= MAX_RECOVERY_FAILURES:
-            self.recovery_error = "Recuperação suspensa após cinco falhas consecutivas; consulte os logs e use Iniciar para tentar novamente"
+            self.recovery_error = "Recovery suspended after five consecutive failures; check the logs and use Start to retry"
             self.disable_recovery()
             self.emit(self.recovery_error)
             return
@@ -651,7 +651,7 @@ class Runtime:
             else 300
         )
         self.next_recovery = time.monotonic() + delay
-        self.emit(f"Recuperação automática: nova tentativa de iniciar em {delay}s")
+        self.emit(f"Automatic recovery: next startup attempt in {delay}s")
 
     async def boot(self):
         import fcntl
@@ -660,7 +660,7 @@ class Runtime:
         try:
             fcntl.flock(self.lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError("Outro supervisor já utiliza este volume")
+            raise RuntimeError("Another supervisor already uses this volume")
         await asyncio.to_thread(preflight, self.data)
         self.host_update_task = asyncio.create_task(self.host_updates.run())
         self.worker_task = asyncio.create_task(self.worker())
@@ -673,7 +673,7 @@ class Runtime:
         if self.run_intent.running:
             self.schedule_once("start")
         else:
-            self.emit("Preferência preservada: jogo permanece parado; painel disponível")
+            self.emit("Preference preserved: game remains stopped; panel available")
 
     async def run_steam(self, args, timeout=1800):
         await asyncio.to_thread(install_steam, self.data)
@@ -706,7 +706,7 @@ class Runtime:
                         text = line.decode(errors="replace").strip()
                         lines.append(text)
                         if len(lines) > 50000:
-                            raise RuntimeError("Saída SteamCMD excessiva")
+                            raise RuntimeError("SteamCMD output too large")
                         self.emit("SteamCMD: " + text)
                     code = await child.wait()
                 except BaseException:
@@ -716,7 +716,7 @@ class Runtime:
                     raise
                 if code == 42 and attempt < 3:
                     self.emit(
-                        "SteamCMD solicitou reinício após autoatualização (código 42); executando novamente"
+                        "SteamCMD requested a restart after self-update (exit code 42); running again"
                     )
                     continue
                 if code:
@@ -770,14 +770,14 @@ class Runtime:
                         cache.unlink(missing_ok=True)
                     delay = 10 * (attempt + 1)
                     self.emit(
-                        f"SteamCMD: Missing configuration; metadados serão consultados novamente em {delay}s (tentativa {attempt + 2}/3)"
+                        f"SteamCMD: Missing configuration; querying metadata again in {delay}s (attempt {attempt + 2}/3)"
                     )
                     await asyncio.sleep(delay)
 
         return await asyncio.wait_for(fetch(), timeout=1800)
 
     async def install(self):
-        self.state = "instalando"
+        self.state = "installing"
         stage = self.data / "installs" / uuid.uuid4().hex
         stage.mkdir()
         try:
@@ -786,7 +786,7 @@ class Runtime:
                 "Success! App '896660' fully installed" not in output
                 or not (stage / "valheim_server.x86_64").is_file()
             ):
-                raise RuntimeError("SteamCMD não confirmou instalação válida")
+                raise RuntimeError("SteamCMD did not confirm a valid installation")
             # All game processes are stopped before this method is called.
             pointer = self.data / ".next-current"
             pointer.unlink(missing_ok=True)
@@ -802,7 +802,7 @@ class Runtime:
         except BaseException:
             if self.current_install() != stage:
                 shutil.rmtree(stage, ignore_errors=True)
-            self.state = "parado"
+            self.state = "stopped"
             raise
 
     async def start(self):
@@ -820,7 +820,7 @@ class Runtime:
             try:
                 await asyncio.to_thread(check_crossplay, install)
             except Exception:
-                self.state = "falha"
+                self.state = "failed"
                 raise
         await asyncio.to_thread(install_bepinex, self.data, install, settings)
         steam_lib = self.data / "home/.steam/sdk64"
@@ -841,26 +841,24 @@ class Runtime:
             ]
         self.players.reset()
         if self.closing or not self.want_running or not self.run_intent.running:
-            self.state = "parado"
-            self.emit(
-                "Inicialização cancelada pela intenção de parada; nenhum processo do jogo iniciado"
-            )
+            self.state = "stopped"
+            self.emit("Startup cancelled by stop preference; no game process started")
             return
-        self.state = "iniciando"
+        self.state = "starting"
         self.stop_request = None
         self.running = settings
         await asyncio.to_thread(self.mod_diagnostics.begin, settings.bepinex)
         if self.closing or not self.want_running or not self.run_intent.running:
-            self.state = "parado"
+            self.state = "stopped"
             return
         profile, game_environment = self.startup_diagnostics.environment()
         self.clean_stop = False
         atomic_json(self.clean_marker, {"started": time.time(), "world": settings.world_name})
         self.startup_diagnostics.begin(profile, settings)
-        self.emit("Inicializando jogo com perfil FEX: " + profile)
+        self.emit("Starting game with FEX profile: " + profile)
         if profile == "compatible":
             self.emit(
-                "Perfil de compatibilidade FEX: verificação completa de código; impacto de desempenho ainda em validação"
+                "FEX compatibility profile: full code checking; performance impact still requires validation"
             )
         try:
             self.process = await asyncio.create_subprocess_exec(
@@ -896,7 +894,7 @@ class Runtime:
             # cannot authorize forced first-scene cleanup.
             self.startup_watchdog.phase_unknown = True
             self.emit(
-                "Linha excessiva do jogo descartada; presença invalidada e encerramento forçado da inicialização bloqueado"
+                "Oversized game line discarded; player presence invalidated and forced startup cleanup blocked"
             )
 
         try:
@@ -911,12 +909,12 @@ class Runtime:
                 )
                 self.startup_diagnostics.observe(text, self.startup_watchdog)
                 if fatal:
-                    self.state = "falha"
+                    self.state = "failed"
                     self.game_ready = False
                     self.join_code = None
                     self.record_failure("game", self.startup_watchdog.fatal)
                     self.emit(
-                        "Sinal fatal detectado no jogo; recuperação será avaliada sem criar backup"
+                        "Fatal signal detected in the game; recovery will be evaluated without creating a backup"
                     )
                 self.players.consume(text)
                 self.player_directory.consume(text)
@@ -979,23 +977,23 @@ class Runtime:
             if self.process is None or self.process is process:
                 self.players.reset()
                 self.join_code = None
-                self.emit("Leitura do log falhou: " + str(exc))
+                self.emit("Log reading failed: " + str(exc))
         finally:
             code = await process.wait()
             if self.process is None or self.process is process:
                 self.join_code = None
-                self.state = "parado" if code in (0, -signal.SIGINT) else "falha"
+                self.state = "stopped" if code in (0, -signal.SIGINT) else "failed"
                 self.players.reset()
-                self.emit(f"Processo do jogo encerrado: {code}")
+                self.emit(f"Game process exited: {code}")
                 expected = self.stop_request is not None and self.stop_request[0] is process
                 self.startup_diagnostics.finish(code, self.startup_watchdog, expected)
                 if not expected and self.want_running and not self.closing:
                     self.record_failure(
                         "game",
                         (
-                            self.startup_watchdog.fatal + f"; saída do processo: {code}"
+                            self.startup_watchdog.fatal + f"; process exit: {code}"
                             if self.startup_watchdog.fatal
-                            else f"Processo do jogo encerrado inesperadamente: {code}"
+                            else f"Game process exited unexpectedly: {code}"
                         ),
                     )
                     if (
@@ -1008,7 +1006,7 @@ class Runtime:
 
     def suspend_startup_recovery(self, message):
         self.recovery_error = message
-        self.state = "falha"
+        self.state = "failed"
         self.disable_recovery()
         self.record_failure("game", message)
         self.emit(message)
@@ -1032,7 +1030,7 @@ class Runtime:
             return
         if not watchdog.safe_to_terminate:
             self.suspend_startup_recovery(
-                "Sinal fatal com mundo iniciado ou fase desconhecida; recuperação automática suspensa para preservar os saves. Solicite parada pelo painel ou Docker e confira os logs."
+                "Fatal signal after world loading or with unknown phase; automatic recovery suspended to preserve saves. Stop through the panel or Docker and check the logs."
             )
             return
         self.clean_stop = False
@@ -1043,7 +1041,7 @@ class Runtime:
             except ProcessLookupError:
                 pass
             self.emit(
-                f"Recuperação da primeira cena: SIGINT enviado; aguardando saída por até {STARTUP_FATAL_GRACE}s"
+                f"First-scene recovery: SIGINT sent; waiting up to {STARTUP_FATAL_GRACE}s for exit"
             )
             exited = await self.wait_game_exit(process, STARTUP_FATAL_GRACE)
             if self.process is not process or watchdog.process is not process:
@@ -1052,13 +1050,13 @@ class Runtime:
                 # Logs may have advanced while SIGINT was being handled.
                 if not watchdog.safe_to_terminate:
                     self.suspend_startup_recovery(
-                        "O mundo começou a carregar durante a parada; encerramento forçado cancelado e recuperação suspensa."
+                        "The world started loading during shutdown; forced termination cancelled and recovery suspended."
                     )
                     return
                 if self.closing:
                     return
                 self.emit(
-                    "Processo fatal travado antes de carregar o mundo; encerrando grupo com SIGKILL, sem backup nem confirmação de salvamento"
+                    "Fatal process stuck before world loading; killing its process group without a backup or save confirmation"
                 )
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -1066,7 +1064,7 @@ class Runtime:
                     pass
                 if not await self.wait_game_exit(process, STARTUP_KILL_TIMEOUT):
                     self.suspend_startup_recovery(
-                        "Processo fatal não encerrou após SIGKILL; recuperação suspensa. Verifique a instância pelo SSH."
+                        "Fatal process did not exit after SIGKILL; recovery suspended. Check the host over SSH."
                     )
                     return
             if self.reader:
@@ -1078,15 +1076,15 @@ class Runtime:
                     reader.cancel()
                     await asyncio.gather(reader, return_exceptions=True)
             self.stop_request = None
-            self.state = "falha"
+            self.state = "failed"
             self.emit(
-                "Inicialização fatal encerrada; saves existentes preservados e marcador de saída incompleta mantido"
+                "Fatal startup stopped; existing saves preserved and unclean-exit marker retained"
             )
             if self.want_running and not self.closing:
                 self.recovery_failed(startup=True)
         except (OSError, RuntimeError) as exc:
             self.suspend_startup_recovery(
-                "Falha ao encerrar inicialização fatal; recuperação suspensa: " + str(exc)
+                "Could not stop fatal startup; recovery suspended: " + str(exc)
             )
 
     async def stop(self, safe=True, stop_intent=False, authorize=None):
@@ -1095,25 +1093,25 @@ class Runtime:
         if not self.live and not pending:
             if not self.clean_stop:
                 raise RuntimeError(
-                    "O jogo terminou sem parada limpa; inicie e encerre corretamente antes de manter os saves"
+                    "The game exited without a clean shutdown; start and stop it correctly before maintaining saves"
                 )
             return
         if not pending:
             if safe:
                 if not self.players.idle():
                     raise MaintenanceDeferred(
-                        "Aguardando zero jogadores confirmado por dois minutos"
+                        "Waiting for zero players to be confirmed for two minutes"
                     )
                 if not self.running.crossplay:
                     count = await asyncio.to_thread(query_steam, self.running.server_port + 1)
                     self.players.observe_steam(count)
                     if count is None:
                         raise MaintenanceDeferred(
-                            f"Consulta Steam indisponível (UDP {self.running.server_port + 1}); parada não solicitada ao jogo. Confira os logs ou solicite a parada pelo Docker"
+                            f"Steam query unavailable (UDP {self.running.server_port + 1}); shutdown not requested. Check the logs or stop through Docker"
                         )
                     if count != 0:
                         raise MaintenanceDeferred(
-                            f"Consulta Steam detectou {count} jogador(es), em divergência com o log; parada não solicitada ao jogo"
+                            f"Steam query detected {count} player(s), differing from the log; shutdown not requested"
                         )
             pid = process.pid
             if safe:
@@ -1125,18 +1123,18 @@ class Runtime:
                     await asyncio.sleep(0.25)
                     if not self.players.idle():
                         raise MaintenanceDeferred(
-                            "Conexão detectada na verificação final; parada cancelada"
+                            "Connection detected during the final check; shutdown cancelled"
                         )
                 if authorize and not authorize():
-                    raise JobCancelled("Conta alterada antes da parada; solicitação cancelada")
+                    raise JobCancelled("Account changed before shutdown; request cancelled")
                 if stop_intent:
                     self.set_run_intent(False)
                 requested = time.monotonic()
                 os.killpg(pid, signal.SIGINT)
                 self.stop_request = (process, requested)
-                self.state = "parando"
+                self.state = "stopping"
                 self.emit(
-                    f"SIGINT enviado ao jogo; aguardando salvamento e saída por até {GAME_STOP_TIMEOUT}s"
+                    f"SIGINT sent to the game; waiting up to {GAME_STOP_TIMEOUT}s for save and exit"
                 )
             finally:
                 if safe:
@@ -1147,7 +1145,7 @@ class Runtime:
         else:
             if stop_intent and self.run_intent.running:
                 self.set_run_intent(False)
-            self.emit("Aguardando a parada já solicitada; mantendo o prazo original")
+            self.emit("Waiting for the requested shutdown; keeping the original deadline")
         requested = self.stop_request[1]
         deadline = requested + GAME_STOP_TIMEOUT
         next_progress = time.monotonic() + STOP_PROGRESS_INTERVAL
@@ -1160,46 +1158,44 @@ class Runtime:
                 try:
                     await asyncio.wait_for(asyncio.shield(reader), timeout=LOG_DRAIN_TIMEOUT)
                 except asyncio.TimeoutError:
-                    self.emit("Jogo encerrado; finalizando leitura do log que permaneceu aberta")
+                    self.emit("Game exited; closing the log reader that remained open")
                     reader.cancel()
                     await asyncio.gather(reader, return_exceptions=True)
                 break
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                self.state = "falha"
+                self.state = "failed"
                 raise RuntimeError(
-                    f"Parada excedeu {GAME_STOP_TIMEOUT}s; jogo não foi morto, backup/reinício cancelados"
+                    f"Shutdown exceeded {GAME_STOP_TIMEOUT}s; game was not killed, backup/restart cancelled"
                 )
             if time.monotonic() >= next_progress:
-                self.emit(f"Aguardando o jogo salvar e encerrar; restam até {remaining:.0f}s")
+                self.emit(f"Waiting for game save and exit; up to {remaining:.0f}s remaining")
                 next_progress = time.monotonic() + STOP_PROGRESS_INTERVAL
             await asyncio.wait([reader], timeout=min(1, remaining))
         if not reader.cancelled():
             await reader
         if process.returncode not in (0, -signal.SIGINT):
-            raise RuntimeError("Saída anormal; backup/atualização cancelados")
+            raise RuntimeError("Abnormal exit; backup/update cancelled")
         if self.last_save < requested:
             raise RuntimeError(
-                "Saída sem confirmação de salvamento concluído; backup/atualização cancelados"
+                "Exit without a completed-save confirmation; backup/update cancelled"
             )
         self.clean_stop = True
-        self.state = "parado"
+        self.state = "stopped"
         self.clean_marker.unlink(missing_ok=True)
-        self.emit("Jogo encerrado com salvamento confirmado")
+        self.emit("Game stopped with save confirmation")
 
     def alert_condition(self, key, active):
         try:
             self.alerts.condition(key, active)
         except Exception:
-            self.alerts.error = "Falha ao registrar estado de alerta no disco."
+            self.alerts.error = "Could not record alert state on disk."
 
     async def snapshot(self, reason):
         if self.live:
-            raise RuntimeError("Backup consistente exige servidor parado")
+            raise RuntimeError("A consistent backup requires the game to be stopped")
         if not self.clean_stop:
-            raise RuntimeError(
-                "Backup cancelado: último encerramento não foi confirmado como limpo"
-            )
+            raise RuntimeError("Backup cancelled: the last shutdown was not confirmed clean")
         try:
             name = await asyncio.to_thread(
                 self.backups.create,
@@ -1225,23 +1221,21 @@ class Runtime:
     async def execute(self, job):
         action = job["action"]
         if job.get("actor") and self.account_authorizer and not self.account_authorizer(job):
-            raise JobCancelled("Conta ou credenciais alteradas; solicitação cancelada")
+            raise JobCancelled("Account or credentials changed; request cancelled")
         guarded_stop = bool(job.get("requires_idle") and action == "stop")
         if (
             self.host_updates.busy
             and (job.get("scheduled") or job.get("requires_idle"))
             and action in ("stop", "restart", "backup", "update")
         ):
-            raise MaintenanceDeferred(
-                "Atualização da imagem em andamento; manutenção automática adiada"
-            )
+            raise MaintenanceDeferred("Image update in progress; automatic maintenance deferred")
         if job.get("scheduled") and (not self.want_running or not self.run_intent.running):
-            job["result"] = "Tarefa automática dispensada: servidor deve permanecer parado"
+            job["result"] = "Automatic task skipped: the game should remain stopped"
             return
         if action in ("start", "stop") and not job.get("scheduled") and not guarded_stop:
             revision = job.get("intent_revision")
             if revision is not None and revision != self.run_intent.revision:
-                job["result"] = "Solicitação substituída por uma preferência mais recente"
+                job["result"] = "Request replaced by a newer preference"
                 return
             if revision is None:
                 self.set_run_intent(action == "start")
@@ -1250,7 +1244,7 @@ class Runtime:
             if self.recovery_error:
                 raise RuntimeError(self.recovery_error)
             job["result"] = (
-                "Inicialização fatal tratada; nova tentativa respeita o limite de recuperação e a intenção de parada"
+                "Fatal startup handled; the next attempt respects recovery limits and stop preference"
             )
             return
         if action == "start":
@@ -1278,20 +1272,20 @@ class Runtime:
             return
         if action == "restore":
             if self.live:
-                raise RuntimeError("Pare o jogo antes de restaurar")
+                raise RuntimeError("Stop the game before restoring")
             await asyncio.to_thread(self.backups.validate, self.backups.resolve(job["backup"]))
             job["backup_created"] = await self.snapshot("pre-restore")
             manifest = await asyncio.to_thread(self.backups.restore, job["backup"])
-            job["result"] = "Saves restaurados. Mundo do arquivo: " + manifest["world"]
+            job["result"] = "Saves restored. Archived world: " + manifest["world"]
             return
         if action == "update" and job.get("scheduled") and self.latest_build is not None:
             if self.installed_build() == self.latest_build:
-                job["result"] = "Versão já instalada; parada dispensada"
+                job["result"] = "Version already installed; shutdown skipped"
                 return
         if (job.get("scheduled") or job.get("requires_idle")) and (
             not self.live or not self.game_ready
         ):
-            raise MaintenanceDeferred("Aguardando o jogo ficar pronto antes da manutenção")
+            raise MaintenanceDeferred("Waiting for the game to become ready before maintenance")
         was_running = self.live
         try:
             # Explicit administrator actions bypass admission/idle checks only.
@@ -1349,13 +1343,13 @@ class Runtime:
             for pending in self.jobs:
                 if (
                     pending.get("scheduled")
-                    and pending["state"] in ("fila", "adiado")
+                    and pending["state"] in ("queued", "deferred")
                     and (
                         pending["action"] in ("backup", "restart")
                         or action == pending["action"] == "update"
                     )
                 ):
-                    pending["state"] = "cancelado"
+                    pending["state"] = "cancelled"
             self.persist_pending()
         if action == "update":
             self.failed_update_build = None
@@ -1363,28 +1357,28 @@ class Runtime:
     async def worker(self):
         while True:
             job = await self.queue.get()
-            if job["state"] == "cancelado":
+            if job["state"] == "cancelled":
                 self.queue.task_done()
                 continue
             self.active = job
             job.setdefault("started", time.time())
             job["attempts"] = job.get("attempts", 0) + 1
             attempt_started = time.monotonic()
-            job["state"] = "executando"
+            job["state"] = "running"
             job.pop("error", None)
             self.persist_history()
-            self.emit("Executando operação: " + job["action"])
+            self.emit("Running operation: " + job["action"])
             try:
                 if job.get("scheduled") and job["action"] != "recover-startup":
                     self.persist_pending()
                     if self.persistence_error:
                         raise MaintenanceDeferred(self.persistence_error)
                 await self.execute(job)
-                job["state"] = "concluído"
+                job["state"] = "completed"
             except JobCancelled as exc:
-                job["state"], job["result"] = "cancelado", str(exc)
+                job["state"], job["result"] = "cancelled", str(exc)
             except Exception as exc:
-                job["state"], job["error"] = "falha", str(exc)
+                job["state"], job["error"] = "failed", str(exc)
                 deferred = (
                     isinstance(exc, MaintenanceDeferred)
                     and (job.get("scheduled") or job.get("requires_idle"))
@@ -1395,7 +1389,7 @@ class Runtime:
                 if not deferred:
                     self.record_failure(job["action"], str(exc))
                 self.emit(
-                    ("Operação adiada" if deferred else "Operação falhou")
+                    ("Operation deferred" if deferred else "Operation failed")
                     + " ("
                     + job["action"]
                     + "): "
@@ -1406,12 +1400,12 @@ class Runtime:
                 if job["action"] == "start":
                     self.recovery_failed(startup=False)
                 if deferred:
-                    job["state"] = "adiado"
+                    job["state"] = "deferred"
                     self.next_retry = time.monotonic() + 300
             except asyncio.CancelledError:
-                job["state"] = "falha"
+                job["state"] = "failed"
                 job["error"] = (
-                    "Operação interrompida pelo supervisor; não será repetida automaticamente"
+                    "Operation interrupted by the supervisor; it will not repeat automatically"
                 )
                 raise
             finally:
@@ -1428,7 +1422,7 @@ class Runtime:
             for pending in self.jobs:
                 if (
                     pending.get("scheduled")
-                    and pending["state"] in ("fila", "adiado")
+                    and pending["state"] in ("queued", "deferred")
                     and pending["action"] in ("restart", "backup", "update")
                 ):
                     priorities = {"backup": 0, "restart": 1, "update": 2}
@@ -1436,14 +1430,14 @@ class Runtime:
                     self.persist_pending()
                     return
         if any(
-            j["action"] == action and j["state"] in ("fila", "executando", "adiado")
+            j["action"] == action and j["state"] in ("queued", "running", "deferred")
             for j in self.jobs
         ):
             return
         job = {
             "id": uuid.uuid4().hex,
             "action": action,
-            "state": "fila",
+            "state": "queued",
             "scheduled": True,
             "created": time.time(),
         }
@@ -1484,7 +1478,7 @@ class Runtime:
             and time.monotonic() >= self.next_recovery
         ):
             self.next_recovery = time.monotonic() + 300
-            self.emit("Tentando iniciar o servidor automaticamente")
+            self.emit("Automatically attempting to start the server")
             self.schedule_once("start")
         # Image verification must allow startup/crash recovery, while daily
         # maintenance remains paused so it cannot interrupt the new game.
@@ -1532,16 +1526,14 @@ class Runtime:
             and time.monotonic() >= self.next_retry
         ):
             for job in self.jobs:
-                if job["state"] == "adiado":
-                    job["state"] = "fila"
+                if job["state"] == "deferred":
+                    job["state"] = "queued"
                     self.queue.put_nowait(job)
 
     async def shutdown(self):
         self.closing = True
         self.want_running = False
-        self.emit(
-            "Desligamento do contêiner solicitado; suspendendo tarefas e preparando parada do jogo"
-        )
+        self.emit("Container shutdown requested; suspending tasks and preparing game shutdown")
         if self.host_update_task:
             self.host_update_task.cancel()
             await asyncio.gather(self.host_update_task, return_exceptions=True)
@@ -1565,17 +1557,17 @@ class Runtime:
             # Discard queued operations, preserving scheduled intents on disk.
             while not self.queue.empty():
                 queued = self.queue.get_nowait()
-                if queued["state"] != "cancelado":
-                    queued["state"] = "adiado" if queued.get("scheduled") else "cancelado"
+                if queued["state"] != "cancelled":
+                    queued["state"] = "deferred" if queued.get("scheduled") else "cancelled"
                 self.queue.task_done()
         if self.active and self.active["action"] != "check-update":
             self.emit(
-                f"Aguardando operação {self.active['action']} em andamento por até {SHUTDOWN_JOB_TIMEOUT}s"
+                f"Waiting up to {SHUTDOWN_JOB_TIMEOUT}s for active operation {self.active['action']}"
             )
             try:
                 await asyncio.wait_for(self.queue.join(), timeout=SHUTDOWN_JOB_TIMEOUT)
             except asyncio.TimeoutError:
-                self.emit("Supervisor aguardava operação ao receber desligamento")
+                self.emit("Supervisor was waiting for an operation when shutdown arrived")
         if self.worker_task:
             self.worker_task.cancel()
             await asyncio.gather(self.worker_task, return_exceptions=True)

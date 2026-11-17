@@ -34,14 +34,14 @@ class RunIntent:
             pass
         except (OSError, ValueError, TypeError):
             self.running = False
-            self.error = "Preferência de execução inválida ou indisponível; jogo mantido parado. Use Iniciar ou Parar para gravar uma nova preferência."
+            self.error = "Run preference invalid or unavailable; game kept stopped. Use Start or Stop to save a new preference."
 
     def set(self, running):
         revision = uuid.uuid4().hex
         try:
             atomic_json(self.path, {"version": 1, "running": running, "revision": revision})
         except OSError:
-            self.error = "Não foi possível salvar a preferência de execução. Operação não aceita; confira espaço e permissões."
+            self.error = "Could not save the run preference. Operation rejected; check disk space and permissions."
             raise ValueError(self.error) from None
         self.running, self.revision, self.error = running, revision, None
         return revision

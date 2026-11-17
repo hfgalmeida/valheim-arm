@@ -31,15 +31,15 @@ class FakeUpdater(host_update.Updater):
         if args[:2] == ("image", "inspect"):
             return json.dumps([{"Id": "sha256:old" if self.same else "sha256:new"}])
         if self.failure == "preflight" and args[-1] == "preflight":
-            raise RuntimeError("preflight failed")
+            raise RuntimeError("preflight Failed")
         if self.failure == "backup" and args[-1] == host_update.BACKUP_CODE:
-            raise RuntimeError("backup failed")
+            raise RuntimeError("backup Failed")
         return ""
 
     def wait_ready(self):
         self.readiness += 1
         if self.failure == "startup" and self.readiness == 1:
-            raise RuntimeError("new image failed")
+            raise RuntimeError("new image Failed")
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def test_backup_failure_restarts_old_container_without_switch(updater):
 
 def test_new_image_failure_rolls_back_and_preserves_settings(updater):
     updater.failure = "startup"
-    with pytest.raises(RuntimeError, match="anterior restaurada"):
+    with pytest.raises(RuntimeError, match="previous image restored"):
         updater.update("public/image:latest")
     assert "VALHEIM_IMAGE=valheim-arm-local:previous-old" in (updater.root / ".env").read_text()
     assert updater.readiness == 2
@@ -124,12 +124,12 @@ def test_env_update_removes_duplicate_image_assignments_without_executing(tmp_pa
 def test_ready_requires_game_online_not_just_panel(updater):
     with (
         patch.object(
-            updater, "compose", return_value=json.dumps({"supervisor": "ok", "game": "iniciando"})
+            updater, "compose", return_value=json.dumps({"supervisor": "ok", "game": "starting"})
         ),
         patch.object(host_update.time, "monotonic", side_effect=[0, 1, 1000]),
         patch.object(host_update.time, "sleep"),
     ):
-        with pytest.raises(RuntimeError, match="pronto"):
+        with pytest.raises(RuntimeError, match="ready"):
             host_update.Updater.wait_ready(updater)
 
 
@@ -142,7 +142,7 @@ def test_insufficient_disk_does_not_stop_or_pull(updater):
     )
 
 
-@pytest.mark.skipif(os.name != "posix", reason="Bloqueio de arquivo Linux necessário")
+@pytest.mark.skipif(os.name != "posix", reason="Linux file locking required")
 def test_offline_backup_requires_clean_stop_and_exclusive_volume(tmp_path, monkeypatch):
     import fcntl
     from app.backups import Backups
@@ -155,7 +155,7 @@ def test_offline_backup_requires_clean_stop_and_exclusive_volume(tmp_path, monke
     code = host_update.BACKUP_CODE.replace("Path('/data')", "Path(" + repr(str(tmp_path)) + ")")
     marker = config / "game-active.json"
     marker.write_text("{}")
-    with pytest.raises(SystemExit, match="Parada limpa"):
+    with pytest.raises(SystemExit, match="Clean shutdown"):
         exec(code, {})
     assert not list(tmp_path.glob("backups/*.tar.gz"))
     marker.unlink()
@@ -177,14 +177,15 @@ def write_stopped_intent(updater):
     path.write_text(json.dumps({"version": 1, "running": False}))
 
 
-def test_wait_ready_accepts_healthy_panel_with_intentionally_stopped_game(updater):
+@pytest.mark.parametrize("game_state", ["stopped", "parado"])
+def test_wait_ready_accepts_healthy_panel_with_intentionally_stopped_game(updater, game_state):
     write_stopped_intent(updater)
     with (
         patch.object(
             updater,
             "compose",
             return_value=json.dumps(
-                {"supervisor": "ok", "game": "parado", "desired_running": False}
+                {"supervisor": "ok", "game": game_state, "desired_running": False}
             ),
         ) as compose,
         patch.object(host_update.time, "monotonic", side_effect=[0, 1, 2, 35]),
@@ -203,7 +204,7 @@ def test_old_image_rollback_is_refused_before_stopping_when_intent_is_stopped(up
         return original(*args, **kwargs)
 
     with patch.object(updater, "run", side_effect=run):
-        with pytest.raises(RuntimeError, match="não suporta"):
+        with pytest.raises(RuntimeError, match="cannot"):
             updater.restore({"previous": "old:image"})
     assert not any(command[:2] == ("compose", "stop") for command in updater.commands)
 
@@ -240,7 +241,7 @@ class ReconcileUpdater(FakeUpdater):
 
 def reconciliation_fixture(updater):
     value = ReconcileUpdater(updater.root)
-    value.save({"phase": "switching", "previous": "old:image", "target": "failed:image"})
+    value.save({"phase": "switching", "previous": "old:image", "target": "Failed:image"})
     status = updater.root / ".update-agent/status.json"
     status.parent.mkdir()
     status.write_text(json.dumps({"state": "failed", "message": "old failure"}))

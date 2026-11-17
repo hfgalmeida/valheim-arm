@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       fex_version:
-        description: 'FEX: latest ou tag estável, por exemplo FEX-2611'
+        description: 'FEX: latest or a stable tag, for example FEX-2611'
         required: true
         default: latest
         type: string
@@ -47,10 +47,10 @@ jobs:
           version = Path("VERSION").read_text(encoding="utf-8").strip()
           number = r"(?:0|[1-9][0-9]*)"
           if not re.fullmatch(rf"{number}\.{number}\.{number}", version):
-              raise SystemExit("VERSION deve conter somente X.Y.Z, por exemplo 0.1.0, sem prefixo v.")
+              raise SystemExit("VERSION must contain X.Y.Z, for example 1.0.0, without a v prefix.")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"version={version}\n")
-          print(f"Versão da imagem: {version}")
+          print(f"Image version: {version}")
           PY
       - run: sudo apt-get update && sudo apt-get install -y acl
       - run: pip install -r requirements-dev.txt
@@ -75,12 +75,12 @@ jobs:
           HUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [[ -z "$DOCKERHUB_USERNAME" || -z "$HUB_TOKEN" ]]; then
-            echo '::error::Configure DOCKERHUB_USERNAME e o secret DOCKERHUB_TOKEN neste repositório.'
+            echo '::error::Set DOCKERHUB_USERNAME and the DOCKERHUB_TOKEN secret in this repository.'
             exit 1
           fi
           image="${CONFIGURED_IMAGE:-${GITHUB_REPOSITORY,,}}"
           if [[ ! "$image" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
-            echo '::error::DOCKERHUB_IMAGE deve ser namespace/repositorio, em minúsculas e sem tag.'
+            echo '::error::DOCKERHUB_IMAGE must be lowercase namespace/repository without a tag.'
             exit 1
           fi
           echo "image=$image" >> "$GITHUB_OUTPUT"
@@ -106,7 +106,7 @@ jobs:
               https://api.github.com/repos/FEX-Emu/FEX/releases/latest | jq -er '.tag_name')"
           fi
           if [[ ! "$version" =~ ^FEX-[0-9]{4}(\.[0-9]+)?$ ]]; then
-            echo '::error::Versão FEX inválida; use latest ou uma tag estável FEX-AAAA[.N].'
+            echo '::error::Invalid FEX version; use latest or a stable FEX-YYYY[.N] tag.'
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -190,8 +190,8 @@ jobs:
           {
             echo '### Docker Hub — ARM64'
             echo
-            echo 'Tags publicadas:'
+            echo 'Published tags:'
             jq -r '.tags[] | "- `" + . + "`"' <<< "$METADATA"
             echo
-            echo 'Preflight FEX e configuração HTTPS validados; o teste real do Valheim deve ser realizado no servidor.'
+            echo 'FEX preflight and HTTPS configuration passed. Real Valheim testing is performed on the deployment host.'
           } >> "$GITHUB_STEP_SUMMARY"

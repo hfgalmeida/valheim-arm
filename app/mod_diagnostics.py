@@ -53,7 +53,7 @@ class ModDiagnostics:
                             path
                         )
         except (OSError, ValueError):
-            self.scan_error = "Não foi possível comparar todas as DLLs com o início da sessão."
+            self.scan_error = "Could not compare all DLLs with the session startup."
 
     def consume(self, line):
         if not self.enabled:

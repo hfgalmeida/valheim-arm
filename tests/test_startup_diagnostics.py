@@ -173,7 +173,7 @@ def test_oversized_line_tail_cannot_forge_snapshot_and_reader_continues(runtime)
         assert runtime.startup_watchdog.phase_unknown
         assert runtime.startup_diagnostics.history[-1]["phase"] == "unknown"
         assert not runtime.world_loaded
-        assert any("Linha excessiva" in entry["message"] for entry in runtime.logs)
+        assert any("Oversized game line" in entry["message"] for entry in runtime.logs)
         assert not any(entry["message"].startswith("x") for entry in runtime.logs)
 
     asyncio.run(scenario())

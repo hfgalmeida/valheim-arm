@@ -15,13 +15,13 @@ MAX_ARCHIVE = 32 * 1024**2
 
 def bundle(archive, output, settings, license_path):
     if hashlib.sha256(archive.read_bytes()).hexdigest() != settings["sha256"]:
-        raise ValueError("SHA256 do pacote BepInEx não confere")
+        raise ValueError("BepInEx package SHA256 mismatch")
     with zipfile.ZipFile(archive) as pack:
         entries = pack.infolist()
         if sum(item.file_size for item in entries) > 128 * 1024**2:
-            raise ValueError("Pacote BepInEx excessivo")
+            raise ValueError("BepInEx package too large")
         if len({item.filename for item in entries}) != len(entries):
-            raise ValueError("Entradas duplicadas no pacote")
+            raise ValueError("Duplicate package entries")
         for item in entries:
             path = PurePosixPath(item.filename)
             if (
@@ -30,7 +30,7 @@ def bundle(archive, output, settings, license_path):
                 or any(c in item.orig_filename for c in "\\:\x00")
                 or (item.external_attr >> 16) & 0o170000 == 0o120000
             ):
-                raise ValueError("Caminho inseguro no pacote BepInEx")
+                raise ValueError("Unsafe path in the BepInEx package")
         prefix = "BepInExPack_Valheim/"
         library = pack.read(prefix + "doorstop_libs/libdoorstop_x64.so")
         if (
@@ -38,7 +38,7 @@ def bundle(archive, output, settings, license_path):
             or library[5:6] != b"\x01"
             or library[18:20] != b"\x3e\x00"
         ):
-            raise ValueError("Doorstop deve ser ELF64 Linux x86-64")
+            raise ValueError("Doorstop must be ELF64 Linux x86-64")
         for required in (
             "BepInEx/core/BepInEx.dll",
             "BepInEx/core/BepInEx.Preloader.dll",
@@ -84,7 +84,7 @@ def main():
         with urllib.request.urlopen(request, timeout=60) as source:
             payload = source.read(MAX_ARCHIVE + 1)
         if len(payload) > MAX_ARCHIVE:
-            raise ValueError("Download BepInEx excessivo")
+            raise ValueError("BepInEx download too large")
         archive.write_bytes(payload)
         bundle(archive, output, settings, license_path)
 

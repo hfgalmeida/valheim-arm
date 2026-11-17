@@ -14,35 +14,35 @@ AGE_KEYS = {"backup_age", "cloud_age"}
 
 MESSAGES = {
     "backup_age": (
-        "Backup local atrasado ou indisponível: o prazo configurado foi excedido ou a última cópia disponível foi removida. Consulte o painel.",
-        "Backup local novamente dentro do prazo configurado.",
+        "Local backup overdue or unavailable: the configured deadline passed or the last available copy was removed. Check the panel.",
+        "Local backups are within the configured deadline again.",
     ),
     "cloud_age": (
-        "Envio à nuvem atrasado: nenhum envio concluído dentro do prazo configurado. Consulte o painel.",
-        "Envio à nuvem novamente dentro do prazo configurado.",
+        "Cloud upload overdue: no upload completed within the configured deadline. Check the panel.",
+        "Cloud uploads are within the configured deadline again.",
     ),
     "backup": (
-        "Falha no backup. Consulte o painel; o backup anterior foi preservado.",
-        "Backup normalizado: um novo backup foi concluído.",
+        "Backup failed. Check the panel; the previous backup was preserved.",
+        "Backup recovered: a new backup completed.",
     ),
     "cloud": (
-        "Falha no envio de backup à nuvem. Consulte a conexão no painel.",
-        "Envio de backup à nuvem normalizado.",
+        "Cloud backup upload failed. Check the connection in the panel.",
+        "Cloud backup uploads have recovered.",
     ),
     "game": (
-        "Recuperação automática suspensa após falhas consecutivas. Consulte o painel.",
-        "Servidor recuperado: mundo carregado e conexão inicializada.",
+        "Automatic recovery suspended after consecutive failures. Check the panel.",
+        "Server recovered: world loaded and connection initialized.",
     ),
     "disk": (
-        "Pouco espaço em disco: menos de 6 GiB livres no volume de dados.",
-        "Espaço em disco normalizado: pelo menos 7 GiB livres.",
+        "Low disk space: less than 6 GiB free on the data volume.",
+        "Disk space recovered: at least 7 GiB free.",
     ),
 }
 
 
 def validate_url(url):
     if not re.fullmatch(r"https://discord\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]{20,200}", url):
-        raise ValueError("Informe uma URL de webhook https://discord.com/api/webhooks/…")
+        raise ValueError("Enter a webhook URL starting with https://discord.com/api/webhooks/…")
     return url
 
 
@@ -84,7 +84,7 @@ class Alerts:
                     raise ValueError
         except (OSError, ValueError, TypeError):
             self.settings, self.incidents = {}, {}
-            self.error = "Estado de alertas inválido; reconfigure no painel."
+            self.error = "Invalid alert state; reconfigure it in the panel."
 
     def persist_incidents(self, records):
         # Keep the original state schema readable when rolling back the image.
@@ -109,10 +109,10 @@ class Alerts:
 
     def configure(self, enabled, url="", backup_max_age_hours=None, cloud_max_age_hours=None):
         if self.lock.locked():
-            raise ValueError("Aguarde o envio em andamento.")
+            raise ValueError("Wait for the upload to finish.")
         url = validate_url(url.strip()) if url.strip() else self.settings.get("url", "")
         if enabled and not url:
-            raise ValueError("Informe o webhook antes de ativar os alertas.")
+            raise ValueError("Enter a webhook before enabling notifications.")
         settings = {"enabled": enabled, "url": url}
         for key, value in (
             ("backup_max_age_hours", backup_max_age_hours),
@@ -159,7 +159,7 @@ class Alerts:
                         "checked_at": now,
                         "age_seconds": None,
                         "due_at": None,
-                        "error": "Não foi possível consultar os backups locais; confira espaço e permissões.",
+                        "error": "Could not inspect local backups; check disk space and permissions.",
                     }
                     continue
                 statuses[name], updated[key] = observe(
@@ -196,18 +196,18 @@ class Alerts:
                     raise ValueError
         except Exception:
             raise ValueError(
-                "Não foi possível entregar ao Discord. Verifique o webhook e a conexão."
+                "Could not deliver to Discord. Check the webhook and connection."
             ) from None
 
     async def test(self):
         if not self.settings.get("url"):
-            raise ValueError("Salve um webhook antes de testar.")
+            raise ValueError("Save a webhook before testing.")
         if self.lock.locked() or time.monotonic() < self.test_after:
-            raise ValueError("Aguarde 60 segundos entre testes.")
+            raise ValueError("Wait 60 seconds between tests.")
         self.test_after = time.monotonic() + 60
         async with self.lock:
             await asyncio.to_thread(
-                self.post, "Valheim ARM · Teste de notificações recebido com sucesso."
+                self.post, "Valheim ARM · Notification test received successfully."
             )
         return {"sent": True}
 
@@ -259,7 +259,5 @@ class Alerts:
             try:
                 await self.poll(runtime)
             except Exception:
-                self.error = (
-                    "Falha na verificação dos alertas; nova tentativa automática em 30 segundos."
-                )
+                self.error = "Alert check failed; automatically retrying in 30 seconds."
             await asyncio.sleep(30)

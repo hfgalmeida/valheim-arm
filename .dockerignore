@@ -22,3 +22,6 @@ compose.update-agent.yaml
 .agent-*-backup-*/
 
 .update-server.py.previous
+
+TODO.md
+valheim-diagnostics-*.tar.gz
