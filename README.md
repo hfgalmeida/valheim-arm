@@ -1,6 +1,8 @@
-# Valheim ARM
+# Valheim Dedicated Server for ARM64
 
 A Docker-based Valheim dedicated server for Linux ARM64 hosts. Install, play, and manage your world from an HTTPS web panel.
+
+[Install](#install) · [Docker Hub](https://hub.docker.com/r/hfgalmeida/valheim-arm) · [Configuration reference](docs/REFERENCE.md) · [Report an issue](https://github.com/hfgalmeida/valheim-arm/issues/new/choose)
 
 ## Features
 
@@ -12,6 +14,10 @@ A Docker-based Valheim dedicated server for Linux ARM64 hosts. Install, play, an
 - **Bundled optional BepInEx**, plugin uploads, recoverable deletion, and a configuration editor.
 
 See the [server reference](docs/REFERENCE.md) for settings and commands.
+
+![Valheim ARM web panel showing server status, player count, administration tabs, and resource charts](docs/images/panel-overview.png)
+
+*Panel preview with demonstration data. Metrics are illustrative, not performance benchmarks.*
 
 ## Install
 
