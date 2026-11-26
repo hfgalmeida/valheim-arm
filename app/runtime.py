@@ -344,6 +344,7 @@ class Runtime:
         self.startup_failures = 0
         self.ready_since = None
         self.recovery_error = None
+        self.recovery_after_exit = None
         self.last_failure = None
         self.schedule_started = datetime.now(ZoneInfo(self.config.effective().timezone))
         self.state = "stopped"
@@ -630,6 +631,7 @@ class Runtime:
 
     def disable_recovery(self):
         self.want_running = False
+        self.recovery_after_exit = None
         for job in self.jobs:
             if (job.get("scheduled") or job.get("requires_idle")) and job["state"] in (
                 "queued",
@@ -808,6 +810,7 @@ class Runtime:
     async def start(self):
         if self.live:
             return
+        self.recovery_after_exit = None
         self.startup_watchdog.reset(None)
         self.join_code = None
         self.game_ready = self.world_loaded = self.transport_ready = False
@@ -885,6 +888,13 @@ class Runtime:
         if self.startup_watchdog.process is not process:
             self.startup_watchdog.reset(process)
         steam_server_opened = False
+        repeated_fatal_lines = 0
+
+        def flush_fatal_repeats():
+            nonlocal repeated_fatal_lines
+            if repeated_fatal_lines:
+                self.emit(f"Suppressed {repeated_fatal_lines} identical fatal-signal lines")
+                repeated_fatal_lines = 0
 
         def oversized_line():
             if self.process is not None and self.process is not process:
@@ -908,6 +918,10 @@ class Runtime:
                     allow_fatal=not self.closing and self.stop_request is None,
                 )
                 self.startup_diagnostics.observe(text, self.startup_watchdog)
+                if not fatal and text == self.startup_watchdog.fatal:
+                    repeated_fatal_lines += 1
+                    continue
+                flush_fatal_repeats()
                 if fatal:
                     self.state = "failed"
                     self.game_ready = False
@@ -981,11 +995,14 @@ class Runtime:
         finally:
             code = await process.wait()
             if self.process is None or self.process is process:
+                flush_fatal_repeats()
                 self.join_code = None
                 self.state = "stopped" if code in (0, -signal.SIGINT) else "failed"
                 self.players.reset()
                 self.emit(f"Game process exited: {code}")
+                resumed = self.resume_recovery_after_exit(process)
                 expected = self.stop_request is not None and self.stop_request[0] is process
+                expected = expected and not resumed
                 self.startup_diagnostics.finish(code, self.startup_watchdog, expected)
                 if not expected and self.want_running and not self.closing:
                     self.record_failure(
@@ -1008,8 +1025,41 @@ class Runtime:
         self.recovery_error = message
         self.state = "failed"
         self.disable_recovery()
+        # Refusing to kill a live world must not permanently disable recovery
+        # after that same process exits on its own. Never persist a process/PID.
+        if (
+            self.live
+            and self.startup_watchdog.process is self.process
+            and self.startup_watchdog.fatal
+            and self.run_intent.running
+            and not self.closing
+            and self.startup_failures < MAX_RECOVERY_FAILURES
+        ):
+            self.recovery_after_exit = (self.process, self.run_intent.revision)
         self.record_failure("game", message)
         self.emit(message)
+
+    def resume_recovery_after_exit(self, process):
+        pending = self.recovery_after_exit
+        if pending is None or pending[0] is not process:
+            return False
+        if process.returncode is None:
+            return False
+        self.recovery_after_exit = None
+        if (
+            self.process is not process
+            or self.closing
+            or not self.run_intent.running
+            or self.run_intent.revision != pending[1]
+            or self.startup_failures >= MAX_RECOVERY_FAILURES
+        ):
+            return False
+        self.want_running = True
+        self.recovery_error = None
+        if self.stop_request is not None and self.stop_request[0] is process:
+            self.stop_request = None
+        self.emit("Fatal process exit confirmed; automatic recovery resumed without a backup")
+        return True
 
     async def wait_game_exit(self, process, seconds):
         deadline = time.monotonic() + seconds
@@ -1030,7 +1080,7 @@ class Runtime:
             return
         if not watchdog.safe_to_terminate:
             self.suspend_startup_recovery(
-                "Fatal signal after world loading or with unknown phase; automatic recovery suspended to preserve saves. Stop through the panel or Docker and check the logs."
+                "Fatal signal after world loading or with unknown phase; forced termination blocked to preserve saves. Automatic recovery will resume after this process exits. Stop through the panel or Docker if it remains stuck."
             )
             return
         self.clean_stop = False
@@ -1050,7 +1100,7 @@ class Runtime:
                 # Logs may have advanced while SIGINT was being handled.
                 if not watchdog.safe_to_terminate:
                     self.suspend_startup_recovery(
-                        "The world started loading during shutdown; forced termination cancelled and recovery suspended."
+                        "The world started loading during shutdown; forced termination cancelled. Automatic recovery will resume after this process exits."
                     )
                     return
                 if self.closing:
